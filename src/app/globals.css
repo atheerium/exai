@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 152 30% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 152 30% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 152 30% 9%;
+    --primary: 152 68% 24%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 150 33% 95%;
+    --secondary-foreground: 152 45% 15%;
+    --muted: 150 25% 95%;
+    --muted-foreground: 152 10% 42%;
+    --accent: 145 42% 93%;
+    --accent-foreground: 152 48% 16%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 20% 88%;
+    --input: 150 20% 84%;
+    --ring: 152 68% 30%;
+    --radius: 0.55rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  ::selection {
+    background: hsl(145 60% 45% / 0.25);
+  }
+}
+
+@layer components {
+  /* Soft gradient background used across marketing + app surfaces */
+  .exaai-gradient {
+    background:
+      radial-gradient(1200px 600px at 15% -10%, hsl(150 60% 92% / 0.9), transparent 60%),
+      radial-gradient(1000px 500px at 100% 0%, hsl(155 55% 88% / 0.8), transparent 55%),
+      linear-gradient(180deg, hsl(150 40% 98%), hsl(0 0% 100%));
+  }
+
+  .exaai-card {
+    @apply rounded-lg border bg-card shadow-sm;
+  }
+
+  /* Algerian-inspired subtle geometry: star-and-crescent motif drawn with
+     simple gradients — restrained, per PRD 12.1. */
+  .algerian-motif {
+    background-image:
+      radial-gradient(circle at 50% 50%, hsl(152 68% 24% / 0.08) 0, transparent 42%),
+      repeating-linear-gradient(45deg, hsl(152 40% 30% / 0.05) 0 2px, transparent 2px 14px);
+  }
+
+  .prose-exam p {
+    margin: 0.35rem 0;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-block {
+    display: block !important;
+  }
+  body {
+    background: white;
+  }
+}

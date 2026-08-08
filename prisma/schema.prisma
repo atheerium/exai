@@ -1,0 +1,167 @@
+// Exaai data model — conceptual entities from PRD sections 13–15
+// Storage technology: SQLite for the MVP (swap for Postgres when scaling).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  language     String   @default("en") // "en" | "fr"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  sessions     Session[]
+  exams        Exam[]
+  favourites   FavouriteTask[]
+  customTasks  CustomTask[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Exam {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title        String       @default("Untitled exam")
+  status       String       @default("DRAFT") // NEW | DRAFT | ACTIVE | EXPORTED | ARCHIVED
+  config       ExamConfig?
+  sections     ExamSection[]
+  sources      Source[]
+  generations  Generation[]
+  lastOpenedAt DateTime     @default(now())
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model ExamConfig {
+  id          String @id @default(cuid())
+  examId      String @unique
+  exam        Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+  level       String // middle | secondary
+  grade       String
+  stream      String?
+  length      Int    @default(150) // words
+  unit        String
+  topic       String
+  customTopic Boolean @default(false)
+}
+
+model ExamSection {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  type      String // TEXT | PART_ONE | TEXT_EXPLORATION | WRITING
+  heading   String?
+  order     Int      @default(0)
+  content   String? // JSON blob of section-level data (e.g. {text, candidates})
+  tasks     Task[]
+  topics    Topic[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Task {
+  id             String    @id @default(cuid())
+  sectionId      String
+  section        ExamSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  skill          String? // e.g. VOCABULARY | MORPHOLOGY | PHONOLOGY | GRAMMAR | DISCOURSE | READING
+  prompt         String
+  instruction    String?
+  answer         String?
+  marks          Float     @default(1)
+  order          Int       @default(0)
+  manualEdited   Boolean   @default(false)
+  generationId   String?
+  candidates     String? // JSON array of candidate tasks {prompt, answer, marks}
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Topic {
+  id        String   @id @default(cuid())
+  sectionId String
+  section   ExamSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  kind      String // GUIDED | FREE
+  title     String?
+  situation String?
+  instruction String?
+  keywords  String? // slash-separated keywords for guided topic
+  form      String?
+  marks     Float    @default(5)
+  order     Int      @default(0)
+  manualEdited Boolean @default(false)
+  candidates String? // JSON array of candidate topics
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Source {
+  id             String   @id @default(cuid())
+  examId         String
+  exam           Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  sectionId      String?
+  title          String?
+  author         String?
+  publication    String?
+  url            String?
+  accessedAt     String?
+  adaptationNote String?
+  isExternal     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+}
+
+model Generation {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  type      String // TEXT | PART_ONE | TEXT_EXPLORATION | WRITING | TASK_ALT | TOPIC_ALT
+  provider  String   @default("mock")
+  status    String   @default("OK") // OK | ERROR
+  error     String?
+  createdAt DateTime @default(now())
+}
+
+model FavouriteTask {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  content   String // JSON
+  createdAt DateTime @default(now())
+}
+
+model CustomTask {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  content   String // JSON
+  createdAt DateTime @default(now())
+}
+
+model GuideConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique // e.g. "ms4", "3as-lang"
+  name      String
+  version   String
+  sourceRef String? // link to official guide document
+  active    Boolean  @default(true)
+  data      String // JSON rule set
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
