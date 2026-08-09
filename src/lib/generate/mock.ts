@@ -290,5 +290,25 @@ export function topicAlternatives(ctx: MockContext, count = 3): { guided: Genera
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Facade entry points (same shape as the OpenAI provider, PRD 15.3)
+// ---------------------------------------------------------------------------
+
+export function generateTextCandidates(ctx: MockContext): { title: string; text: string }[] {
+  return [generateText(ctx, 0), ...textAlternatives(ctx, 2)];
+}
+
+export function generatePartOneCandidates(ctx: MockContext): GeneratedTask[][] {
+  return [generatePartOne(ctx, 0), ...taskAlternatives(ctx, "PART_ONE", 2)];
+}
+
+export function generateTextExplorationCandidates(ctx: MockContext): GeneratedTask[][] {
+  return [generateTextExploration(ctx, 0), ...taskAlternatives(ctx, "TEXT_EXPLORATION", 2)];
+}
+
+export function generateWritingCandidates(ctx: MockContext): { guided: GeneratedTopic; free: GeneratedTopic }[] {
+  return [generateWriting(ctx, 0), ...topicAlternatives(ctx, 2)];
+}
+
 // Re-exported helper for the dispatch layer
 export { countWords };

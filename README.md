@@ -32,6 +32,12 @@ npx prisma db seed        # guide governance metadata
 npm run dev               # http://localhost:3000
 ```
 
+Tests (unit + provider integration against a local stub, no API key needed):
+
+```bash
+npm test                  # 34 tests: guide rules, generation engine, facade, openai provider, rate limiting
+```
+
 Smoke test (needs a running server):
 
 ```bash
@@ -51,14 +57,18 @@ bash scripts/smoke.sh     # BASE_URL and EMAIL are overridable
 - **Persistence** (§15, §6) — autosave on edits, drafts, library, archive
 - **Export** (§18, §35) — PDF + Word with the official-style section headings and marks; preview screen renders the same document
 - **Guide engine** (§19) — configurable rules per grade (lengths, marks, task families, skill categories, writing forms), governance metadata seeded into `GuideConfig` with version + source reference
+- **Favourites + custom tasks** (§9.2, US-020/021/022) — save any task with the star icon; the replacement panel offers AI alternatives, favourites and custom tasks as tabs; a dedicated favourites page lists and manages them
+- **Analytics** (§28) — every user action writes a `ProductEvent` row (signup, exam created, parameters, generations, replacements, exports, failures) tied to the user/exam for funnel and reliability analysis
+- **Guide-version traceability** (§19.3, §47) — `ExamConfig` records the guide version used, surfaced in exports
+- **Login throttling** (§29) — failed logins are rate-limited per IP+email (5 attempts / 15 min window) with a lockout, returning 429 + `Retry-After`
 - **Generation ledger** (§27, §28) — every operation writes a `Generation` row (type, provider, status, error) for cost/quality monitoring
 
 ## AI provider
 
-The product deliberately does not expose AI plumbing to teachers. Server-side, generation runs through `src/lib/generate/index.ts`:
+The product deliberately does not expose AI plumbing to teachers. Server-side, generation runs through a pluggable facade (`src/lib/generate/index.ts`):
 
 - `AI_PROVIDER=mock` (default) — deterministic, seeded generation from a curated theme corpus (`src/data/themes.ts`). Produces structurally valid exams with correct marks and unit alignment, no API key, works offline.
-- `AI_PROVIDER=openai` — set `OPENAI_API_KEY` and `OPENAI_MODEL`; wire the real provider into `src/lib/generate/index.ts` (the facade is designed for this).
+- `AI_PROVIDER=openai` — a fully implemented OpenAI-compatible provider (`src/lib/generate/openai.ts`). It requests JSON output, parses and validates every response against the guide rules (task counts, mark totals, skills, guided/free keywords), and surfaces clear errors on malformed output. Configure `OPENAI_API_KEY`, optionally `OPENAI_MODEL` and `OPENAI_BASE_URL` (any OpenAI-compatible endpoint).
 
 All candidates pass `validateCandidate` (structure, length, marks totals, section completeness) before the teacher sees them (PRD §17). Marks totals are enforced (Part One = 7, Text exploration = 8, Writing = 5).
 

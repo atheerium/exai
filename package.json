@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "node --import tsx --test src/lib/guide.test.ts src/lib/generate/mock.test.ts src/lib/generate/facade.test.ts src/lib/generate/openai.test.ts src/lib/rate-limit.test.ts",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
     "postinstall": "prisma generate"

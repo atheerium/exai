@@ -117,6 +117,11 @@ rm -f /tmp/other.jar
 [ "$CODE" = "404" ] && echo "isolation ok (404)" || echo "isolation FAILED ($CODE)"
 
 echo "== replacements =="
+ORIG_TEXT=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+print(t['text'][:40])")
 curl -s -b "$JAR" -X POST "$BASE/api/exams/$E1/replace" -H "Content-Type: application/json" \
   -d '{"kind":"TEXT","index":1}' | python3 -c "
 import sys,json
@@ -124,6 +129,13 @@ d=json.load(sys.stdin)
 t=[s for s in d['sections'] if s['type']=='TEXT'][0]
 assert t['candidates'], 'text candidates lost'
 print('text alternative selected, candidates', len(t['candidates']))"
+curl -s -b "$JAR" "$BASE/api/exams/$E1" | ORIG_TEXT="$ORIG_TEXT" python3 -c "
+import sys,json,os
+d=json.load(sys.stdin)
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+texts=[c['text'][:40] for c in t['candidates']]
+assert os.environ['ORIG_TEXT'] in texts, 'replaced-away text not recoverable (PRD 15.3)'
+print('replaced-away text preserved as candidate')"
 TR=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)

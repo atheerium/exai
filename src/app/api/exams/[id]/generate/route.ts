@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       sections.find((s: any) => s.type === type);
 
     if (type === "TEXT") {
-      const candidates = generateTextCandidates(ctx);
+      const candidates = await generateTextCandidates(ctx);
       const v = validateCandidate("TEXT", { text: candidates[0].text, title: candidates[0].title });
       if (!v.ok) {
         await log("ERROR", v.issues.join("; "));
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await log("OK");
       await track("text_generated", { userId: user.id, examId: id });
     } else if (type === "PART_ONE" || type === "TEXT_EXPLORATION") {
-      const sets = type === "PART_ONE" ? generatePartOneCandidates(ctx) : generateTextExplorationCandidates(ctx);
+      const sets = type === "PART_ONE" ? await generatePartOneCandidates(ctx) : await generateTextExplorationCandidates(ctx);
       const v = validateCandidate(type, sets[0]);
       if (!v.ok) {
         await log("ERROR", v.issues.join("; "));
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await log("OK");
       await track(type === "PART_ONE" ? "part_one_generated" : "part_two_generated", { userId: user.id, examId: id });
     } else if (type === "WRITING") {
-      const cands = generateWritingCandidates(ctx);
+      const cands = await generateWritingCandidates(ctx);
       const v = validateCandidate("WRITING", cands[0]);
       if (!v.ok) {
         await log("ERROR", v.issues.join("; "));
@@ -169,8 +169,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
       const sets =
         task.section.type === "PART_ONE"
-          ? generatePartOneCandidates(ctx)
-          : generateTextExplorationCandidates(ctx);
+          ? await generatePartOneCandidates(ctx)
+          : await generateTextExplorationCandidates(ctx);
       const index = task.order;
       const candidates = sets.slice(1).map((s) => s[index]).filter(Boolean);
       await prisma.task.update({ where: { id: task.id }, data: { candidates: JSON.stringify(candidates) } });
@@ -179,7 +179,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     } else if (type === "TOPIC_ALT" && body.topicId) {
       const topic = await prisma.topic.findFirst({ where: { id: body.topicId, section: { examId: id } } });
       if (!topic) return NextResponse.json({ error: "Topic not found." }, { status: 404 });
-      const cands = generateWritingCandidates(ctx);
+      const cands = await generateWritingCandidates(ctx);
       const sets = (topic.kind === "GUIDED" ? cands.map((c) => c.guided) : cands.map((c) => c.free)).slice(1);
       await prisma.topic.update({ where: { id: topic.id }, data: { candidates: JSON.stringify(sets) } });
       await log("OK");

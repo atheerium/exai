@@ -27,12 +27,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const content = section.content ? JSON.parse(section.content) : {};
       const candidates = content.candidates ?? [];
       if (!candidates[body.index]) return NextResponse.json({ error: "Alternative not found." }, { status: 404 });
+      // Capture the current text BEFORE replacing so it stays recoverable (PRD 15.3).
+      const previous = { title: content.title ?? "", text: content.text ?? "" };
       content.title = candidates[body.index].title;
       content.text = candidates[body.index].text;
-      // Keep the old current text as a recoverable candidate (PRD 15.3).
-      const old = { title: section.content ? JSON.parse(section.content).title : "", text: content.text };
-      if (old.text !== candidates[body.index].text) {
-        candidates.push(old);
+      if (previous.text && previous.text !== content.text) {
+        candidates.push(previous);
       }
       content.candidates = candidates;
       await prisma.examSection.update({ where: { id: section.id }, data: { content: JSON.stringify(content) } });
