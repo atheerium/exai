@@ -5,6 +5,7 @@ set -euo pipefail
 BASE="${BASE_URL:-http://localhost:3000}"
 EMAIL="${EMAIL:-smoke$(date +%s)@exaai.test}"
 JAR="$(mktemp /tmp/exai-test.XXXXXX)"
+DB_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/prisma/dev.db"
 trap 'rm -f "$JAR" /tmp/exam-smoke.pdf /tmp/exam-smoke.docx /tmp/unauth.txt' EXIT
 
 echo "== register $EMAIL =="
@@ -190,6 +191,53 @@ curl -s -b "$JAR" -o /tmp/exam-empty.pdf -w "empty pdf %{http_code} %{size_downl
 head -c 5 /tmp/exam-empty.pdf | grep -q "%PDF-" && echo "empty-exam pdf valid" || echo "FAILED: empty pdf invalid"
 rm -f /tmp/exam-empty.pdf
 
+echo "== catalog endpoint =="
+curl -s -b "$JAR" "$BASE/api/catalog" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+assert 'levels' in d and len(d['levels'].get('middle', [])) >= 1
+assert len(d['guides']) >= 7
+print('catalog levels:', sorted(d['levels'].keys()), '| guides:', len(d['guides']))"
+
+echo "== auth negatives =="
+CODE=$(curl -s -o /tmp/wrong.json -w "%{http_code}" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"wrongpass\"}")
+rm -f /tmp/wrong.json
+[ "$CODE" = "401" ] && echo "wrong password -> 401" || echo "FAILED: wrong password got $CODE"
+CODE=$(curl -s -o /tmp/dup.json -w "%{http_code}" -X POST "$BASE/api/auth/register" -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"secret123\"}")
+rm -f /tmp/dup.json
+[ "$CODE" = "409" ] && echo "duplicate email -> 409" || echo "FAILED: duplicate email got $CODE"
+
+echo "== generate before config rejected =="
+E5=$(curl -s -b "$JAR" -X POST "$BASE/api/exams" -H "Content-Type: application/json" -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+CODE=$(curl -s -b "$JAR" -o /tmp/noconfig.json -w "%{http_code}" -X POST "$BASE/api/exams/$E5/generate" -H "Content-Type: application/json" -d '{"type":"TEXT"}')
+rm -f /tmp/noconfig.json
+[ "$CODE" = "400" ] && echo "generate without config -> 400" || echo "FAILED: got $CODE"
+
+echo "== delete exam =="
+curl -s -b "$JAR" -X DELETE "$BASE/api/exams/$E5" | python3 -c "import sys,json;assert json.load(sys.stdin).get('ok');print('delete ok')"
+curl -s -b "$JAR" "$BASE/api/exams" | python3 -c "
+import sys,json
+items = json.load(sys.stdin)['exams']
+assert all(e['id'] != '$E5' for e in items), 'deleted exam still listed'
+print('deleted exam absent from library')"
+
+echo "== security: hashed password + httpOnly cookie =="
+python3 - "$DB_FILE" "$EMAIL" <<'PYEOF'
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1])
+row = con.execute("SELECT passwordHash FROM User WHERE email=?", (sys.argv[2],)).fetchone()
+assert row, "user not found"
+h = row[0]
+assert h.startswith("$2"), "password NOT bcrypt-hashed"
+print("password stored as bcrypt:", h[:7] + "...")
+PYEOF
+curl -s -D /tmp/cookie-hdr.txt -o /tmp/cookie-body.json -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"secret123\"}"
+grep -i "set-cookie" /tmp/cookie-hdr.txt | head -1 | grep -qi "httponly" && echo "session cookie is httpOnly" || echo "FAILED: cookie not httpOnly"
+rm -f /tmp/cookie-hdr.txt /tmp/cookie-body.json
+
 echo "== favourites =="
 T1=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
 import sys,json
@@ -223,7 +271,6 @@ assert p['tasks'][1]['prompt'] == '1. Applied from favourite'
 print('applied ok:', p['tasks'][1]['prompt'])"
 
 echo "== analytics events =="
-DB_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/prisma/dev.db"
 python3 - "$DB_FILE" <<'PYEOF'
 import sqlite3, sys
 db = sys.argv[1]
