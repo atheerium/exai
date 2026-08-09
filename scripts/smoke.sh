@@ -275,6 +275,21 @@ curl -s -D /tmp/cookie-hdr.txt -o /tmp/cookie-body.json -X POST "$BASE/api/auth/
 grep -i "set-cookie" /tmp/cookie-hdr.txt | head -1 | grep -qi "httponly" && echo "session cookie is httpOnly" || echo "FAILED: cookie not httpOnly"
 rm -f /tmp/cookie-hdr.txt /tmp/cookie-body.json
 
+echo "== archive / restore (US-026) =="
+E6=$(curl -s -b "$JAR" -X POST "$BASE/api/exams" -H "Content-Type: application/json" -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+curl -s -b "$JAR" -X PATCH "$BASE/api/exams/$E6" -H "Content-Type: application/json" -d '{"status":"ARCHIVED"}' >/dev/null
+curl -s -b "$JAR" "$BASE/api/exams" | python3 -c "
+import sys,json
+items = json.load(sys.stdin)['exams']
+assert all(e['id'] != '$E6' for e in items), 'archived exam still listed'
+print('archived exam hidden from library')"
+curl -s -b "$JAR" -X PATCH "$BASE/api/exams/$E6" -H "Content-Type: application/json" -d '{"status":"DRAFT"}' >/dev/null
+curl -s -b "$JAR" "$BASE/api/exams" | python3 -c "
+import sys,json
+items = json.load(sys.stdin)['exams']
+assert any(e['id'] == '$E6' for e in items), 'restored exam missing'
+print('restored exam visible again')"
+
 echo "== favourites =="
 T1=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
 import sys,json
