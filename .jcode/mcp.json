@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "neon": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "--header",
+        "Authorization: Bearer ${NEON_API_KEY}",
+        "https://mcp.neon.tech/mcp"
+      ],
+      "env": {}
+    }
+  }
+}
