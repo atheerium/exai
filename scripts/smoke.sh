@@ -152,6 +152,44 @@ t=[s for s in d['sections'] if s['type']=='TEXT'][0]
 assert t['text'] == 'Edited passage text for the persistence check.'
 print('edited text persisted')"
 
+echo "== generate-more-alternatives endpoints =="
+T4=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+p=[s for s in d['sections'] if s['type']=='TEXT_EXPLORATION'][0]
+print(p['tasks'][0]['id'])")
+curl -s -b "$JAR" -X POST "$BASE/api/exams/$E1/generate" -H "Content-Type: application/json" \
+  -d "{\"type\":\"TASK_ALT\",\"taskId\":\"$T4\"}" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+p=[s for s in d['sections'] if s['type']=='TEXT_EXPLORATION'][0]
+assert len(p['tasks'][0]['candidates']) >= 1, 'no new task candidates'
+print('task alternatives regenerated:', len(p['tasks'][0]['candidates']))"
+W2=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+p=[s for s in d['sections'] if s['type']=='WRITING'][0]
+print(p['topics'][1]['id'])")
+curl -s -b "$JAR" -X POST "$BASE/api/exams/$E1/generate" -H "Content-Type: application/json" \
+  -d "{\"type\":\"TOPIC_ALT\",\"topicId\":\"$W2\"}" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+p=[s for s in d['sections'] if s['type']=='WRITING'][0]
+free=[t for t in p['topics'] if t['kind']=='FREE'][0]
+assert len(free['candidates']) >= 1, 'no new topic candidates'
+print('topic alternatives regenerated:', len(free['candidates']))"
+
+echo "== unauthenticated API rejected =="
+CODE=$(curl -s -o /tmp/unauth-api.json -w "%{http_code}" "$BASE/api/exams")
+rm -f /tmp/unauth-api.json
+[ "$CODE" = "401" ] && echo "GET /api/exams without session -> 401" || echo "FAILED: got $CODE"
+
+echo "== empty exam still exports valid PDF =="
+E4=$(curl -s -b "$JAR" -X POST "$BASE/api/exams" -H "Content-Type: application/json" -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+curl -s -b "$JAR" -o /tmp/exam-empty.pdf -w "empty pdf %{http_code} %{size_download}B\n" "$BASE/api/exams/$E4/export?format=pdf"
+head -c 5 /tmp/exam-empty.pdf | grep -q "%PDF-" && echo "empty-exam pdf valid" || echo "FAILED: empty pdf invalid"
+rm -f /tmp/exam-empty.pdf
+
 echo "== favourites =="
 T1=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
 import sys,json
