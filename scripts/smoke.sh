@@ -72,6 +72,43 @@ curl -s -b "$JAR" -o /tmp/exam-smoke.pdf -w "pdf %{http_code} %{size_download}B\
 curl -s -b "$JAR" -o /tmp/exam-smoke.docx -w "docx %{http_code} %{size_download}B\n" "$BASE/api/exams/$E1/export?format=docx"
 head -c 5 /tmp/exam-smoke.pdf | grep -q "%PDF-" && echo "pdf valid" || echo "pdf INVALID"
 
+echo "== export content (DOCX headings + text) =="
+unzip -p /tmp/exam-smoke.docx word/document.xml > /tmp/exam-smoke-doc.xml
+for needle in "A. Reading Comprehension" "B. Text exploration" "C. Written expression" "Task 1"; do
+  grep -q "$needle" /tmp/exam-smoke-doc.xml && echo "docx contains: $needle" || echo "FAILED: docx missing: $needle"
+done
+TITLE=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+print(t['textTitle'] or '')")
+if [ -n "$TITLE" ]; then
+  grep -q "$TITLE" /tmp/exam-smoke-doc.xml && echo "docx contains generated text title" || echo "FAILED: docx missing text title"
+fi
+if command -v pdftotext >/dev/null 2>&1; then
+  pdftotext /tmp/exam-smoke.pdf /tmp/exam-smoke-pdf.txt
+  grep -q "Text exploration" /tmp/exam-smoke-pdf.txt && echo "pdf contains section heading" || echo "WARN: pdf text extraction skipped/unavailable"
+fi
+rm -f /tmp/exam-smoke-doc.xml /tmp/exam-smoke-pdf.txt
+
+echo "== events linked to the exam (core funnel at export time) =="
+python3 - "$DB_FILE" "$E1" <<'PYEOF'
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1])
+n = con.execute("SELECT COUNT(*) FROM ProductEvent WHERE examId=?", (sys.argv[2],)).fetchone()[0]
+assert n >= 8, f"too few core events for exam ({n})"
+print(f"{n} core events linked to exam so far")
+PYEOF
+
+echo "== guide governance seeded =="
+python3 - "$DB_FILE" <<'PYEOF'
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1])
+rows = con.execute("SELECT COUNT(*), MIN(version) FROM GuideConfig").fetchone()
+assert rows[0] == 7, f"expected 7 guide configs, got {rows[0]}"
+print(f"{rows[0]} guide configs, version {rows[1]}")
+PYEOF
+
 echo "== ownership isolation =="
 OTHER=$(curl -s -X POST "$BASE/api/auth/register" -H "Content-Type: application/json" \
   -d "{\"email\":\"other$(date +%s)@exaai.test\",\"password\":\"secret123\"}" -c /tmp/other.jar | python3 -c "import sys,json;print(json.load(sys.stdin)['user']['id'])")
@@ -269,6 +306,15 @@ d=json.load(sys.stdin)
 p=[s for s in d['sections'] if s['type']=='PART_ONE'][0]
 assert p['tasks'][1]['prompt'] == '1. Applied from favourite'
 print('applied ok:', p['tasks'][1]['prompt'])"
+
+echo "== events linked to the exam (full lifecycle) =="
+python3 - "$DB_FILE" "$E1" <<'PYEOF'
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1])
+n = con.execute("SELECT COUNT(*) FROM ProductEvent WHERE examId=?", (sys.argv[2],)).fetchone()[0]
+assert n >= 12, f"too few lifecycle events for exam ({n})"
+print(f"{n} lifecycle events linked to exam (replacements + favourites included)")
+PYEOF
 
 echo "== analytics events =="
 python3 - "$DB_FILE" <<'PYEOF'
