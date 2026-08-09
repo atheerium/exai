@@ -112,6 +112,14 @@ if command -v pdftotext >/dev/null 2>&1; then
 fi
 rm -f /tmp/exam-smoke-doc.xml /tmp/exam-smoke-pdf.txt
 
+echo "== export carries French language when configured =="
+E7=$(curl -s -b "$JAR" -X POST "$BASE/api/exams" -H "Content-Type: application/json" -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+curl -s -b "$JAR" -X PATCH "$BASE/api/exams/$E7" -H "Content-Type: application/json" \
+  -d '{"config":{"level":"middle","grade":"4am","length":150,"unit":"u-env","topic":"Protecting our planet","language":"fr"}}' >/dev/null
+curl -s -b "$JAR" -o /tmp/exam-fr.docx -w "fr docx %{http_code} %{size_download}B\n" "$BASE/api/exams/$E7/export?format=docx"
+unzip -p /tmp/exam-fr.docx word/document.xml | grep -q "Language: French" && echo "fr export carries 'Language: French' in metadata" || echo "FAILED: fr language metadata missing"
+rm -f /tmp/exam-fr.docx
+
 echo "== events linked to the exam (core funnel at export time) =="
 python3 - "$DB_FILE" "$E1" <<'PYEOF'
 import sqlite3, sys
