@@ -45,7 +45,7 @@ export interface ExportDocument {
 
 export function assembleDocument(exam: ExamDto): ExportDocument {
   const grade = exam.config?.grade ?? "";
-  const guide = grade ? getGuide(grade) : null;
+  const guide = grade ? getGuide(grade, exam.config?.language ?? "en") : null;
   const section = (type: string): SectionDto | undefined => exam.sections.find((s) => s.type === type);
   const textSec = section("TEXT");
   const p1Sec = section("PART_ONE");

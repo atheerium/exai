@@ -412,7 +412,13 @@ function guide(key: string, name: string, level: Level, grade: string): Guide {
   };
 }
 
-export function getGuide(grade: string): Guide {
+export function getGuide(grade: string, language = "en"): Guide {
+  // Language-aware resolution (PRD 38.1): a localized guide like "fr-3as"
+  // takes precedence for that language; otherwise fall back to the default.
+  if (language && language !== "en") {
+    const localized = GUIDES[`${language}-${grade}`];
+    if (localized) return localized;
+  }
   const g = GUIDES[grade];
   if (!g) throw new Error(`No guide configuration for grade "${grade}"`);
   return g;

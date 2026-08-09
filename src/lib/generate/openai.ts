@@ -59,6 +59,7 @@ function basePrompt(ctx: GenContext) {
     unit: ctx.unit,
     topic: ctx.topic,
     lengthWords: ctx.length,
+    language: ctx.language,
     guideVersion: ctx.guide.version,
   };
 }

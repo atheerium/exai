@@ -46,7 +46,7 @@ export function TasksStage({
   onApplied: () => void;
 }) {
   const { t } = useI18n();
-  const guide = exam.config ? getGuide(exam.config.grade) : null;
+  const guide = exam.config ? getGuide(exam.config.grade, exam.config.language ?? "en") : null;
   const [answers, setAnswers] = React.useState(false);
   const [replacing, setReplacing] = React.useState<TaskDto | null>(null);
   const [moreBusy, setMoreBusy] = React.useState(false);

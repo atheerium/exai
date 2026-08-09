@@ -13,6 +13,7 @@ export interface ResolvedExamRules {
   grade: string;
   stream: string | null;
   length: number;
+  language: string;
 }
 
 export function resolveRules(params: {
@@ -22,6 +23,7 @@ export function resolveRules(params: {
   length?: number;
   unit: string;
   topic: string;
+  language?: string;
 }): ResolvedExamRules {
   const gradeDef = getGrade(params.grade);
   if (gradeDef.level !== params.level) {
@@ -30,7 +32,8 @@ export function resolveRules(params: {
   if (gradeDef.streams && params.stream && !gradeDef.streams.includes(params.stream)) {
     throw new Error(`Stream "${params.stream}" is not valid for grade ${params.grade}`);
   }
-  const guide = getGuide(params.grade);
+  const language = params.language && params.language !== "en" ? params.language : "en";
+  const guide = getGuide(params.grade, language);
   const unit = gradeDef.units.find((u) => u.key === params.unit) ?? gradeDef.units[0];
   if (!unit) throw new Error("No unit found for this grade");
   const length = params.length ?? guide.defaultLength;
@@ -46,6 +49,7 @@ export function resolveRules(params: {
     grade: params.grade,
     stream: params.stream ?? null,
     length,
+    language,
   };
 }
 

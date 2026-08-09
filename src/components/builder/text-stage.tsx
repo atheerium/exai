@@ -30,7 +30,7 @@ export function TextStage({
   onReplace: (index: number) => void;
 }) {
   const { t } = useI18n();
-  const guide = exam.config ? getGuide(exam.config.grade) : null;
+  const guide = exam.config ? getGuide(exam.config.grade, exam.config.language ?? "en") : null;
   const [alt, setAlt] = React.useState(-1);
   const candidates = section?.candidates ?? [];
   const source = exam.sources[0];

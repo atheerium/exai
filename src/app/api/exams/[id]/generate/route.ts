@@ -30,6 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       unit: exam.config.unit,
       topic: exam.config.topic,
       examId: exam.id,
+      language: exam.config.language,
     });
 
     const log = (status: string, error?: string) =>

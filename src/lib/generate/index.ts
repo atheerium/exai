@@ -23,6 +23,7 @@ export interface GenContext {
   themeKey: string;
   seed: string;
   stream?: string | null;
+  language: string;
 }
 
 export function buildContext(input: {
@@ -33,6 +34,7 @@ export function buildContext(input: {
   unit: string;
   topic: string;
   examId: string;
+  language?: string;
 }): GenContext {
   const rules = resolveRules({
     level: input.level,
@@ -41,6 +43,7 @@ export function buildContext(input: {
     length: input.length,
     unit: input.unit,
     topic: input.topic,
+    language: input.language,
   });
   return {
     grade: rules.grade,
@@ -51,6 +54,7 @@ export function buildContext(input: {
     themeKey: rules.themeKey,
     seed: `${input.examId}:${rules.grade}:${input.unit}:${input.topic}`,
     stream: rules.stream,
+    language: rules.language,
   };
 }
 

@@ -33,7 +33,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       validateConfigInputs(body.config);
       const gradeDef = getGrade(body.config.grade);
       const unit = gradeDef.units.find((u) => u.key === body.config.unit) ?? gradeDef.units[0];
-      const guide = getGuide(body.config.grade);
+      const guide = getGuide(body.config.grade, body.config.language === "fr" ? "fr" : "en");
       const title =
         `English exam — ${gradeDef.label.toUpperCase()} — ${unit?.label ?? ""}`.trim() ||
         "Untitled exam";
