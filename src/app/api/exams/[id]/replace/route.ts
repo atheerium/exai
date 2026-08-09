@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { loadExamDto } from "@/lib/serialize";
 import { track } from "@/lib/events";
+import { captureRevision } from "@/lib/revisions";
 
 // Select a candidate for one item (text, task or topic). Only that item is
 // replaced; the previous value stays recoverable (PRD sections 9.2, 15.3).
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await prisma.examSection.update({ where: { id: section.id }, data: { content: JSON.stringify(content) } });
       await prisma.generation.create({ data: { examId: id, type: "TEXT", provider: "select", status: "OK" } });
       await track("text_alternative_selected", { userId: user.id, examId: id });
+      await captureRevision(id, "Text alternative selected");
     } else if (body.kind === "TASK" && body.taskId) {
       const task = await prisma.task.findFirst({ where: { id: body.taskId, section: { examId: id } } });
       if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
@@ -56,6 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
       await prisma.generation.create({ data: { examId: id, type: "TASK_ALT", provider: "select", status: "OK" } });
       await track("task_replaced", { userId: user.id, examId: id });
+      await captureRevision(id, "Task replaced");
     } else if (body.kind === "TOPIC" && body.topicId) {
       const topic = await prisma.topic.findFirst({ where: { id: body.topicId, section: { examId: id } } });
       if (!topic) return NextResponse.json({ error: "Topic not found." }, { status: 404 });
@@ -74,6 +77,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
       await prisma.generation.create({ data: { examId: id, type: "TOPIC_ALT", provider: "select", status: "OK" } });
       await track("topic_replaced", { userId: user.id, examId: id });
+      await captureRevision(id, "Topic replaced");
     } else {
       return NextResponse.json({ error: "Invalid replacement request." }, { status: 400 });
     }

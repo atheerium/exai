@@ -128,6 +128,31 @@ function parseTaskSets(json: any, count: number, marksTotal: number): GeneratedT
   });
 }
 
+export async function generateRewriteCandidates(
+  ctx: GenContext,
+  opts: { text: string; title?: string; target: "simpler" | "harder" }
+): Promise<{ title: string; text: string }[]> {
+  const direction =
+    opts.target === "simpler"
+      ? "Rewrite the passage to be SIMPLER: shorter sentences, fewer subordinate clauses, plainer vocabulary, same meaning and content."
+      : "Rewrite the passage to be HARDER: richer vocabulary, more complex sentence structures, still appropriate for the grade.";
+  const json = await chat({
+    ...basePrompt(ctx),
+    kind: "REWRITE",
+    target: opts.target,
+    request:
+      direction +
+      ' Keep the same title and topic. Return exactly {"candidates":[{"title":"...","text":"..."}]} with 3 different rewritten versions of about the same length.',
+  });
+  const candidates = Array.isArray(json?.candidates) ? json.candidates : null;
+  if (!candidates || candidates.length < 3) throw new Error("AI output missing rewrite candidates.");
+  return candidates
+    .slice(0, 3)
+    .map((c: any) => ({
+      title: String(c?.title ?? opts.title ?? ""),
+      text: String(c?.text ?? ""),
+    }));
+}
 export async function generateWritingCandidates(
   ctx: GenContext
 ): Promise<{ guided: GeneratedTopic; free: GeneratedTopic }[]> {

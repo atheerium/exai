@@ -3,12 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Sparkles, LayoutDashboard, Library, Plus, LogOut, Languages, Star } from "lucide-react";
+import { Sparkles, LayoutDashboard, Library, Plus, LogOut, Languages, Star, Settings } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
 
-export function AppNav({ userName }: { userName: string }) {
+export function AppNav({ userName, isAdmin: admin = false }: { userName: string; isAdmin?: boolean }) {
   const router = useRouter();
   const { t, lang, setLang } = useI18n();
 
@@ -42,6 +42,12 @@ export function AppNav({ userName }: { userName: string }) {
               <Star className="h-4 w-4" />
               {t("nav.favourites")}
             </Link>
+            {admin && (
+              <Link href="/ops" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+                <Settings className="h-4 w-4" />
+                Ops
+              </Link>
+            )}
           </nav>
         </div>
         <div className="flex items-center gap-2">

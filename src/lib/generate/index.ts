@@ -83,6 +83,13 @@ export async function generateWritingCandidates(
   return impl().generateWritingCandidates(ctx);
 }
 
+export async function generateRewriteCandidates(
+  ctx: GenContext,
+  opts: { text: string; title?: string; target: "simpler" | "harder" }
+): Promise<{ title: string; text: string }[]> {
+  return impl().generateRewriteCandidates(ctx, opts);
+}
+
 export function validateCandidate(type: GenerationRequest["type"], payload: unknown): { ok: boolean; issues: string[] } {
   const issues: string[] = [];
   if (type === "TEXT") {

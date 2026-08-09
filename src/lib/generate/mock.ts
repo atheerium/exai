@@ -310,5 +310,67 @@ export function generateWritingCandidates(ctx: MockContext): { guided: Generated
   return [generateWriting(ctx, 0), ...topicAlternatives(ctx, 2)];
 }
 
+// ---------------------------------------------------------------------------
+// Rewrite tools (US-023): simplify or make a passage harder
+// ---------------------------------------------------------------------------
+
+export function generateRewrite(
+  ctx: MockContext,
+  opts: { text: string; title?: string; target: "simpler" | "harder" },
+  variant = 0
+): GeneratedText {
+  const theme = getTheme(ctx.themeKey);
+  const rng = new Seeded(ctx.seed + `:rewrite:${opts.target}:${variant}`);
+  const topic = ctx.topic.toLowerCase();
+
+  if (opts.target === "simpler") {
+    // Split long sentences at commas and drop subordinate clauses.
+    const sentences = opts.text.split(/(?<=[.!?])\s+/);
+    const simplified = sentences.flatMap((s) => {
+      const parts = s.split(", ");
+      if (parts.length > 2) {
+        const head = parts[0].replace(/[.,;:]$/, "") + ".";
+        const tail = parts.slice(1).join(", ");
+        return [head, tail.charAt(0).toUpperCase() + tail.slice(1)];
+      }
+      return [s];
+    });
+    let out = simplified.join(" ");
+    // Guarantee a visible change even when the passage is already simple.
+    if (out === opts.text) {
+      out = opts.text
+        .replace(/\bhowever\b/g, "but")
+        .replace(/\btherefore\b/g, "so")
+        .replace(/\badditionally\b/g, "also");
+    }
+    return { title: opts.title || theme.title.replace(/\{topic\}/g, titleCaseTopic(topic)), text: out, words: countWords(out) };
+  }
+
+  // Harder: merge sentences with connectors and insert detail sentences.
+  const detail = rng.take(theme.detail, 2).map((s) => s.replace(/\{topic\}/g, topic));
+  const sentences = opts.text.split(/(?<=[.!?])\s+/);
+  const rebuilt: string[] = [];
+  for (let i = 0; i < sentences.length; i++) {
+    if (i > 0 && i % 2 === 1) {
+      rebuilt.push("; " + sentences[i]);
+    } else {
+      rebuilt.push(sentences[i]);
+    }
+  }
+  const insertAt = Math.max(1, rebuilt.length - 1);
+  rebuilt.splice(insertAt, 0, ...detail.map((d) => " " + d));
+  const out = rebuilt.join(" ");
+  return { title: opts.title || theme.title.replace(/\{topic\}/g, titleCaseTopic(topic)), text: out, words: countWords(out) };
+}
+
+export function generateRewriteCandidates(
+  ctx: MockContext,
+  opts: { text: string; title?: string; target: "simpler" | "harder" }
+): { title: string; text: string }[] {
+  const primary = generateRewrite(ctx, opts, 0);
+  const alts = [1, 2].map((v) => generateRewrite(ctx, opts, v));
+  return [primary, ...alts];
+}
+
 // Re-exported helper for the dispatch layer
 export { countWords };

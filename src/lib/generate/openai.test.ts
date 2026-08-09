@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, validateCandidate } from "./index";
+import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, generateRewriteCandidates, validateCandidate } from "./index";
 
 // Canned OpenAI-compatible responses keyed by the "kind" field the provider
 // embeds in its prompt. These let us validate the full provider plumbing
@@ -55,6 +55,12 @@ const CANNED: Record<string, any> = {
         form: "an opinion paragraph",
         marks: 5,
       },
+    })),
+  },
+  REWRITE: {
+    candidates: Array.from({ length: 3 }, (_, i) => ({
+      title: "Learning for life",
+      text: `Education is changing quickly. Teachers use new tools, and students practise at their own pace (rewrite variant ${i + 1}). Schools will still matter, but they will work differently, with more projects and less memorisation. Every learner should have access to good teaching, wherever they live.`,
     })),
   },
 };
@@ -154,6 +160,21 @@ test("openai provider: writing sets validate (guided keywords, free without)", a
   }
 });
 
+test("openai provider: rewrite candidates flow through the stub and validate", async () => {
+  const base = await generateTextCandidates(buildContext(input));
+  const rewritten = await generateRewriteCandidates(buildContext(input), {
+    text: base[0].text,
+    title: base[0].title,
+    target: "simpler",
+  });
+  assert.equal(rewritten.length, 3);
+  for (const c of rewritten) {
+    assert.ok(c.text.length > 50);
+    const v = validateCandidate("TEXT", c);
+    assert.ok(v.ok, v.issues.join("; "));
+  }
+});
+
 test("openai provider: missing API key fails with a clear error", async () => {
   const key = process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
@@ -161,6 +182,6 @@ test("openai provider: missing API key fails with a clear error", async () => {
   process.env.OPENAI_API_KEY = key;
 });
 
-test("openai provider: all four generation types reached the stub", () => {
-  assert.ok(requests >= 4, `expected >= 4 stub requests, got ${requests}`);
+test("openai provider: all five generation types reached the stub", () => {
+  assert.ok(requests >= 5, `expected >= 5 stub requests, got ${requests}`);
 });

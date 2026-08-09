@@ -35,7 +35,7 @@ npm run dev               # http://localhost:3000
 Tests (unit + provider integration against a local stub, no API key needed):
 
 ```bash
-npm test                  # 35 tests: guide rules, corpus-wide generation, facade, openai provider, rate limiting
+npm test                  # 39 tests: guide rules, corpus-wide generation, facade, openai provider, rate limiting, rewrite
 ```
 
 Smoke test (needs a running server):
@@ -61,6 +61,10 @@ bash scripts/smoke.sh     # BASE_URL and EMAIL are overridable
 - **Analytics** (§28) — every user action writes a `ProductEvent` row (signup, exam created, parameters, generations, replacements, exports, failures) tied to the user/exam for funnel and reliability analysis
 - **Guide-version traceability** (§19.3, §47) — `ExamConfig` records the guide version used, surfaced in exports
 - **Login throttling** (§29) — failed logins are rate-limited per IP+email (5 attempts / 15 min window) with a lockout, returning 429 + `Retry-After`
+- **Password recovery** (§6) — forgot/reset flow with single-use hashed tokens, session invalidation on reset, and a pluggable mailer (reset links are logged; the API returns `devUrl` outside production; wire SMTP before launch)
+- **AI rewrite tools** (US-023) — Simplify and Make harder buttons on the reading text; rewritten versions are added to the alternatives panel without touching the current text (mock + OpenAI providers)
+- **Version history** (US-024) — every generation/replacement/parameters change auto-captures a revision; the builder's Versions panel lists them with one-click restore (capped at 50 per exam)
+- **Operations view** (US-030) — admin-gated `/ops` page showing the AI generation ledger, funnel event counts and guide governance metadata (`ADMIN_EMAILS` env grants access)
 - **Generation ledger** (§27, §28) — every operation writes a `Generation` row (type, provider, status, error) for cost/quality monitoring
 
 ## AI provider

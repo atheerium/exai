@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { loadExamDto } from "@/lib/serialize";
-import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, validateCandidate, providerName } from "@/lib/generate";
+import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, generateRewriteCandidates, validateCandidate, providerName } from "@/lib/generate";
 import { track } from "@/lib/events";
+import { captureRevision } from "@/lib/revisions";
 import type { GeneratedTask, GeneratedTopic } from "@/types";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
     if (!exam.config) return NextResponse.json({ error: "Set the exam parameters first." }, { status: 400 });
 
-    const body = (await req.json()) as { type: string; taskId?: string; topicId?: string };
+    const body = (await req.json()) as { type: string; taskId?: string; topicId?: string; target?: "simpler" | "harder" };
     const type = body.type;
     const provider = providerName();
 
@@ -74,6 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
       await log("OK");
       await track("text_generated", { userId: user.id, examId: id });
+      await captureRevision(id, "Text generated");
     } else if (type === "PART_ONE" || type === "TEXT_EXPLORATION") {
       const sets = type === "PART_ONE" ? await generatePartOneCandidates(ctx) : await generateTextExplorationCandidates(ctx);
       const v = validateCandidate(type, sets[0]);
@@ -114,6 +116,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       await log("OK");
       await track(type === "PART_ONE" ? "part_one_generated" : "part_two_generated", { userId: user.id, examId: id });
+      await captureRevision(id, type === "PART_ONE" ? "Part One generated" : "Text exploration generated");
     } else if (type === "WRITING") {
       const cands = await generateWritingCandidates(ctx);
       const v = validateCandidate("WRITING", cands[0]);
@@ -161,6 +164,39 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
       await log("OK");
       await track("writing_generated", { userId: user.id, examId: id });
+      await captureRevision(id, "Writing generated");
+    } else if (type === "REWRITE") {
+      const textSection = sectionOf(exam.sections, "TEXT");
+      if (!textSection?.content) {
+        return NextResponse.json({ error: "Generate the reading text first." }, { status: 400 });
+      }
+      const current = JSON.parse(textSection.content);
+      if (!current.text) {
+        return NextResponse.json({ error: "Generate the reading text first." }, { status: 400 });
+      }
+      const target = body.target === "harder" ? "harder" : "simpler";
+      const candidates = await generateRewriteCandidates(ctx, {
+        text: current.text,
+        title: current.title,
+        target,
+      });
+      for (const c of candidates) {
+        const v = validateCandidate("TEXT", c);
+        if (!v.ok) {
+          await log("ERROR", v.issues.join("; "));
+          await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
+          return NextResponse.json({ error: v.issues.join(" ") }, { status: 422 });
+        }
+      }
+      const existing = current.candidates ?? [];
+      current.candidates = [...existing, ...candidates];
+      await prisma.examSection.update({
+        where: { id: textSection.id },
+        data: { content: JSON.stringify(current) },
+      });
+      await log("OK");
+      await track("text_rewritten", { userId: user.id, examId: id, meta: { target } });
+      await captureRevision(id, target === "simpler" ? "Simplified text" : "Hardened text");
     } else if (type === "TASK_ALT" && body.taskId) {
       const task = await prisma.task.findFirst({
         where: { id: body.taskId, section: { examId: id } },

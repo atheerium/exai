@@ -12,6 +12,7 @@ import { TextStage } from "./text-stage";
 import { TasksStage } from "./tasks-stage";
 import { WritingStage } from "./writing-stage";
 import { PreviewStage } from "./preview-stage";
+import { VersionsButton, VersionsModal } from "./versions-modal";
 
 export type Stage = "params" | "text" | "partOne" | "partTwo" | "writing" | "preview";
 
@@ -30,6 +31,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
   const [stage, setStage] = React.useState<Stage>(() => initialStage(initialExam));
   const [generating, setGenerating] = React.useState<string | null>(null);
   const [saveState, setSaveState] = React.useState<"idle" | "saving" | "saved">("idle");
+  const [versionsOpen, setVersionsOpen] = React.useState(false);
   const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const section = (type: string): SectionDto | undefined => exam.sections.find((s) => s.type === type);
@@ -146,6 +148,30 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     }
   }
 
+  async function rewrite(target: "simpler" | "harder") {
+    if (generating) return;
+    setGenerating("REWRITE");
+    try {
+      const res = await fetch(`/api/exams/${exam.id}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "REWRITE", target }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error ?? "Rewrite failed.", "error");
+        return;
+      }
+      setExam(data);
+      toast(
+        target === "simpler" ? "Simpler versions added to alternatives" : "Harder versions added to alternatives",
+        "success"
+      );
+    } finally {
+      setGenerating(null);
+    }
+  }
+
   async function submitParameters(config: {
     level: string;
     grade: string;
@@ -205,6 +231,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
           <span className="max-w-[220px] truncate font-medium sm:max-w-xs">{exam.title}</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <VersionsButton onClick={() => setVersionsOpen(true)} />
           {saveState === "saving" && (
             <span className="inline-flex items-center gap-1">
               <Save className="h-3 w-3 animate-pulse" /> {t("builder.saving")}
@@ -262,6 +289,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
               setExam((prev) => applySectionPatch(prev, patch));
             }}
             onGenerate={() => generate("TEXT")}
+            onRewrite={rewrite}
             onReplace={(index) => replaceItem("TEXT", textSec!.id, index)}
           />
         )}
@@ -317,6 +345,12 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
       </div>
 
       {/* Bottom navigation */}
+      <VersionsModal
+        open={versionsOpen}
+        onClose={() => setVersionsOpen(false)}
+        examId={exam.id}
+        onRestored={refreshExam}
+      />
       <div className="no-print flex items-center justify-between gap-3">
         <button
           onClick={() => stageIndex > 0 && setStage(STEPS[stageIndex - 1].key)}

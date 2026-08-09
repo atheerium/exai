@@ -16,12 +16,14 @@ model User {
   name         String?
   passwordHash String
   language     String   @default("en") // "en" | "fr"
+  role         String   @default("teacher") // "teacher" | "admin"
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   sessions     Session[]
   exams        Exam[]
   favourites   FavouriteTask[]
   customTasks  CustomTask[]
+  passwordResets PasswordResetToken[]
 }
 
 model Session {
@@ -43,6 +45,7 @@ model Exam {
   sections     ExamSection[]
   sources      Source[]
   generations  Generation[]
+  revisions    ExamRevision[]
   lastOpenedAt DateTime     @default(now())
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -180,4 +183,29 @@ model ProductEvent {
 
   @@index([name, createdAt])
   @@index([userId, createdAt])
+}
+
+// Password reset tokens (PRD section 6). Only the hash is stored; each token is
+// single-use and expires.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// Version history snapshots (PRD 15.3, US-024). A snapshot captures the exam
+// configuration and section content so an earlier state can be restored.
+model ExamRevision {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  label     String
+  snapshot  String // JSON of config + sections
+  createdAt DateTime @default(now())
+
+  @@index([examId, createdAt])
 }

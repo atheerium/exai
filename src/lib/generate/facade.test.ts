@@ -6,6 +6,7 @@ import {
   generatePartOneCandidates,
   generateTextExplorationCandidates,
   generateWritingCandidates,
+  generateRewriteCandidates,
   validateCandidate,
 } from "./index";
 
@@ -60,6 +61,21 @@ test("generateWritingCandidates yields 3 valid writing pairs", async () => {
   assert.equal(pairs.length, 3);
   for (const p of pairs) {
     const v = validateCandidate("WRITING", p);
+    assert.ok(v.ok, v.issues.join("; "));
+  }
+});
+
+test("generateRewriteCandidates yields valid text candidates", async () => {
+  const ctx = buildContext(input);
+  const base = await generateTextCandidates(ctx);
+  const rewritten = await generateRewriteCandidates(ctx, {
+    text: base[0].text,
+    title: base[0].title,
+    target: "harder",
+  });
+  assert.equal(rewritten.length, 3);
+  for (const c of rewritten) {
+    const v = validateCandidate("TEXT", c);
     assert.ok(v.ok, v.issues.join("; "));
   }
 });

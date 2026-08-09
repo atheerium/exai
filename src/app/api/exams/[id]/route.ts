@@ -5,6 +5,7 @@ import { loadExamDto } from "@/lib/serialize";
 import { validateConfigInputs } from "@/lib/guide";
 import { getGrade, getGuide } from "@/data/guides";
 import { track } from "@/lib/events";
+import { captureRevision } from "@/lib/revisions";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -64,6 +65,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         prisma.exam.update({ where: { id }, data: { title, status: "ACTIVE" } }),
       ]);
       await track("parameters_completed", { userId: user.id, examId: id });
+      await captureRevision(id, "Parameters set");
     }
 
     if (body.title) {

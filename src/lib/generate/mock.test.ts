@@ -9,6 +9,8 @@ import {
   textAlternatives,
   taskAlternatives,
   topicAlternatives,
+  generateRewriteCandidates,
+  countWords,
   type MockContext,
 } from "./mock";
 
@@ -90,6 +92,32 @@ test("taskAlternatives and topicAlternatives return N candidate sets", () => {
   assert.equal(taskAlternatives(ctx(), "PART_ONE", 3).length, 3);
   assert.equal(taskAlternatives(ctx(), "TEXT_EXPLORATION", 3).length, 3);
   assert.equal(topicAlternatives(ctx(), 3).length, 3);
+});
+
+test("rewrite simplifies or hardens the passage (US-023)", () => {
+  const base = generateText(ctx(), 0).text;
+
+  const simpler = generateRewriteCandidates(ctx(), { text: base, title: "T", target: "simpler" });
+  assert.equal(simpler.length, 3);
+  for (const c of simpler) {
+    assert.ok(c.text.length > 50);
+    assert.notEqual(c.text, base, "simpler output must differ");
+    assert.ok(countWords(c.text) <= countWords(base) + 2, `simpler not shorter: ${countWords(c.text)} vs ${countWords(base)}`);
+  }
+
+  const harder = generateRewriteCandidates(ctx(), { text: base, title: "T", target: "harder" });
+  assert.equal(harder.length, 3);
+  for (const c of harder) {
+    assert.notEqual(c.text, base, "harder output must differ");
+    assert.ok(countWords(c.text) >= countWords(base), `harder not longer: ${countWords(c.text)} vs ${countWords(base)}`);
+  }
+});
+
+test("rewrite is deterministic for a fixed seed and variant", () => {
+  const base = generateText(ctx(), 0).text;
+  const a = generateRewriteCandidates(ctx(), { text: base, target: "simpler" });
+  const b = generateRewriteCandidates(ctx(), { text: base, target: "simpler" });
+  assert.deepEqual(a, b);
 });
 
 test("generation is deterministic for a fixed seed and variant", () => {

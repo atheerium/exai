@@ -44,6 +44,24 @@ export async function requireUser() {
   return user;
 }
 
+// Admin access (PRD section 25). A user is admin when their stored role is
+// "admin" or their email is listed in ADMIN_EMAILS (comma-separated) — the
+// env-based path avoids a DB migration for the first operator.
+export function isAdmin(user: { email: string; role: string }): boolean {
+  if (user.role === "admin") return true;
+  const adminEmails = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return adminEmails.includes(user.email.toLowerCase());
+}
+
+export async function requireAdmin() {
+  const user = await requireUser();
+  if (!isAdmin(user)) throw new Error("FORBIDDEN");
+  return user;
+}
+
 export async function destroySession() {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;

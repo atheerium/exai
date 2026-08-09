@@ -8,6 +8,7 @@ export type EventName =
   | "exam_created"
   | "parameters_completed"
   | "text_generated"
+  | "text_rewritten"
   | "text_alternative_selected"
   | "part_one_generated"
   | "task_replaced"
@@ -20,7 +21,10 @@ export type EventName =
   | "favourite_applied"
   | "exam_exported_pdf"
   | "exam_exported_docx"
-  | "generation_failed";
+  | "generation_failed"
+  | "password_reset_requested"
+  | "password_reset_completed"
+  | "exam_revision_restored";
 
 export async function track(name: EventName, opts: { userId?: string; examId?: string; meta?: Record<string, unknown> } = {}) {
   try {

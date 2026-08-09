@@ -18,6 +18,7 @@ export function TextStage({
   generating,
   onEdit,
   onGenerate,
+  onRewrite,
   onReplace,
 }: {
   exam: ExamDto;
@@ -25,6 +26,7 @@ export function TextStage({
   generating: boolean;
   onEdit: (patch: any) => void;
   onGenerate: () => void;
+  onRewrite: (target: "simpler" | "harder") => void;
   onReplace: (index: number) => void;
 }) {
   const { t } = useI18n();
@@ -148,10 +150,30 @@ export function TextStage({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={onGenerate} disabled={generating}>
               <RefreshCw className={`h-4 w-4 ${generating ? "animate-spin" : ""}`} />
               {t("builder.regenerate")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onRewrite("simpler")}
+              disabled={!!generating}
+              title="Rewrite the passage in simpler English"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Simplify
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onRewrite("harder")}
+              disabled={!!generating}
+              title="Rewrite the passage at a harder level"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Make harder
             </Button>
             {generating && <span className="text-sm text-muted-foreground">{t("common.generating")}</span>}
           </div>

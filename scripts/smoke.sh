@@ -36,6 +36,26 @@ t=[s for s in d['sections'] if s['type']=='TEXT'][0]
 assert len(t['text'].split()) > 100, 'text too short'
 print('words', len(t['text'].split()), '| candidates', len(t['candidates']))"
 
+echo "== rewrite tools (US-023) =="
+CUR=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+print(len(t['candidates']))")
+curl -s -b "$JAR" -X POST "$BASE/api/exams/$E1/generate" -H "Content-Type: application/json" \
+  -d '{"type":"REWRITE","target":"simpler"}' | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+assert len(t['candidates']) >= int('$CUR') + 3, 'rewrite did not append candidates'
+print('rewrite appended candidates:', len(t['candidates']))"
+curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+assert t['text'], 'current text lost after rewrite'
+print('current text preserved after rewrite')"
+
 echo "== part one =="
 curl -s -b "$JAR" -X POST "$BASE/api/exams/$E1/generate" -H "Content-Type: application/json" -d '{"type":"PART_ONE"}' | python3 -c "
 import sys,json
@@ -202,6 +222,38 @@ t=[s for s in d['sections'] if s['type']=='TEXT'][0]
 assert t['text'] == 'Edited passage text for the persistence check.'
 print('edited text persisted')"
 
+echo "== version history (US-024) =="
+REVS=$(curl -s -b "$JAR" "$BASE/api/exams/$E1/revisions" | python3 -c "
+import sys,json
+items = json.load(sys.stdin)['revisions']
+assert len(items) >= 1, 'no auto-captured revisions'
+print(len(items))")
+echo "auto-captured revisions: $REVS"
+CK=$(curl -s -b "$JAR" -X POST "$BASE/api/exams/$E1/revisions" -H "Content-Type: application/json" \
+  -d '{"label":"checkpoint-before-overwrite"}' >/dev/null
+curl -s -b "$JAR" "$BASE/api/exams/$E1/revisions" | python3 -c "
+import sys,json
+items = json.load(sys.stdin)['revisions']
+ck = [r for r in items if r['label'] == 'checkpoint-before-overwrite']
+assert ck, 'checkpoint missing'
+print(ck[0]['id'])")
+TSEC=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+print(t['id'])")
+curl -s -b "$JAR" -X PATCH "$BASE/api/exams/$E1" -H "Content-Type: application/json" \
+  -d "{\"sections\":[{\"id\":\"$TSEC\",\"text\":\"Overwritten by the version test.\"}]}" >/dev/null
+curl -s -b "$JAR" -X POST "$BASE/api/exams/$E1/revisions/restore" -H "Content-Type: application/json" \
+  -d "{\"revisionId\":\"$CK\"}" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+p1=[s for s in d['sections'] if s['type']=='PART_ONE'][0]
+assert t['text'] == 'Edited passage text for the persistence check.', 'restore did not bring back checkpoint text'
+assert len(p1['tasks']) == 4, 'restore lost tasks'
+print('restore brought back checkpoint text and', len(p1['tasks']), 'part one tasks')"
+
 echo "== generate-more-alternatives endpoints =="
 T4=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
 import sys,json
@@ -287,6 +339,51 @@ curl -s -D /tmp/cookie-hdr.txt -o /tmp/cookie-body.json -X POST "$BASE/api/auth/
 grep -i "set-cookie" /tmp/cookie-hdr.txt | head -1 | grep -qi "httponly" && echo "session cookie is httpOnly" || echo "FAILED: cookie not httpOnly"
 rm -f /tmp/cookie-hdr.txt /tmp/cookie-body.json
 
+echo "== admin ops gate (US-030) =="
+CODE=$(curl -s -b "$JAR" -o /tmp/ops1.html -w "%{http_code}" "$BASE/ops")
+rm -f /tmp/ops1.html
+[ "$CODE" = "404" ] && echo "non-admin /ops -> 404" || echo "FAILED: non-admin /ops got $CODE"
+python3 - "$DB_FILE" "$EMAIL" <<'PYEOF'
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1])
+con.execute("UPDATE User SET role='admin' WHERE email=?", (sys.argv[2],))
+con.commit()
+print("promoted smoke user to admin")
+PYEOF
+curl -s -b "$JAR" "$BASE/ops" > /tmp/ops2.html
+grep -q "Operations" /tmp/ops2.html && echo "admin /ops renders Operations" || echo "FAILED: admin /ops missing content"
+grep -q "Generation health" /tmp/ops2.html && echo "admin /ops shows generation ledger" || echo "FAILED: generation ledger missing"
+rm -f /tmp/ops2.html
+
+echo "== password recovery flow =="
+PR=$(curl -s -b "$JAR" -X POST "$BASE/api/auth/forgot-password" -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\"}")
+DEV_URL=$(echo "$PR" | python3 -c "import sys,json;print(json.load(sys.stdin).get('devUrl',''))")
+[ -n "$DEV_URL" ] && echo "reset link generated (dev)" || { echo "FAILED: no devUrl"; exit 1; }
+TOKEN=$(echo "$DEV_URL" | sed -n 's/.*token=\([^&]*\).*/\1/p')
+[ -n "$TOKEN" ] && echo "token extracted" || { echo "FAILED: token missing"; exit 1; }
+CODE=$(curl -s -o /tmp/rp.json -w "%{http_code}" -b "$JAR" -X POST "$BASE/api/auth/reset-password" -H "Content-Type: application/json" \
+  -d "{\"token\":\"$TOKEN\",\"password\":\"newpass456\"}")
+rm -f /tmp/rp.json
+[ "$CODE" = "200" ] && echo "password reset ok" || { echo "FAILED: reset got $CODE"; exit 1; }
+# Old password must fail now, new password must work
+C_OLD=$(curl -s -o /tmp/rp1.json -w "%{http_code}" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"secret123\"}")
+rm -f /tmp/rp1.json
+[ "$C_OLD" = "401" ] && echo "old password rejected after reset" || { echo "FAILED: old password still works ($C_OLD)"; exit 1; }
+C_NEW=$(curl -s -o /tmp/rp2.json -w "%{http_code}" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"newpass456\"}")
+rm -f /tmp/rp2.json
+[ "$C_NEW" = "200" ] && echo "new password works" || { echo "FAILED: new password rejected ($C_NEW)"; exit 1; }
+# Token must be single-use
+CODE=$(curl -s -o /tmp/rp3.json -w "%{http_code}" -b "$JAR" -X POST "$BASE/api/auth/reset-password" -H "Content-Type: application/json" \
+  -d "{\"token\":\"$TOKEN\",\"password\":\"another789\"}")
+rm -f /tmp/rp3.json
+[ "$CODE" = "400" ] && echo "reset token single-use (reuse rejected)" || { echo "FAILED: token reuse allowed ($CODE)"; exit 1; }
+# Password reset invalidates sessions; log back in with the new password.
+curl -s -c "$JAR" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"newpass456\"}" >/dev/null
+
 echo "== archive / restore (US-026) =="
 E6=$(curl -s -b "$JAR" -X POST "$BASE/api/exams" -H "Content-Type: application/json" -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
 curl -s -b "$JAR" -X PATCH "$BASE/api/exams/$E6" -H "Content-Type: application/json" -d '{"status":"ARCHIVED"}' >/dev/null
@@ -366,7 +463,7 @@ print('guide version:', gv)"
 echo "== resume after logout/login (Continue Last Exam path) =="
 curl -s -b "$JAR" -X POST "$BASE/api/auth/logout" >/dev/null
 curl -s -c "$JAR" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"secret123\"}" | python3 -c "import sys,json;print('logged back in as', json.load(sys.stdin)['user']['email'])"
+  -d "{\"email\":\"$EMAIL\",\"password\":\"newpass456\"}" | python3 -c "import sys,json;print('logged back in as', json.load(sys.stdin)['user']['email'])"
 curl -s -b "$JAR" "$BASE/api/exams" | python3 -c "
 import sys,json
 items = json.load(sys.stdin)['exams']

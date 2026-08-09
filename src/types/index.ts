@@ -77,9 +77,10 @@ export interface ExamDto {
 }
 
 export interface GenerationRequest {
-  type: "TEXT" | "PART_ONE" | "TEXT_EXPLORATION" | "WRITING" | "TASK_ALT" | "TOPIC_ALT";
+  type: "TEXT" | "PART_ONE" | "TEXT_EXPLORATION" | "WRITING" | "TASK_ALT" | "TOPIC_ALT" | "REWRITE";
   taskId?: string;
   topicId?: string;
+  target?: "simpler" | "harder";
   mode?: "first" | "regenerate";
 }
 
