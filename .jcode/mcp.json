@@ -7,7 +7,7 @@
         "mcp-remote",
         "--header",
         "Authorization: Bearer ${NEON_API_KEY}",
-        "https://mcp.neon.tech/mcp"
+        "https://mcp.neon.tech/mcp?projectId=purple-star-75098761"
       ],
       "env": {}
     }
