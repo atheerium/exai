@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateConfigInputs, resolveRules, curriculumCatalog, getThemeFor } from "./guide";
+import { GUIDES, getAvailableLanguages, languagesFromGuides, type Guide } from "../data/guides";
 
 const base = {
   level: "secondary",
@@ -58,4 +59,21 @@ test("getThemeFor resolves a unit theme", () => {
   const theme = getThemeFor({ grade: "3as", unit: "u-education" });
   assert.ok(theme.body.length >= 6);
   assert.ok(theme.vocab.length >= 6);
+});
+
+test("language seam is data-driven (PRD 38.1/38.3)", () => {
+  assert.deepEqual(getAvailableLanguages(), ["en"]);
+  // Adding a French guide's data (without code changes to the catalog or UI)
+  // must automatically surface "fr" as an available language.
+  const synthetic: Record<string, Guide> = {
+    ...GUIDES,
+    "fr-3as": { ...GUIDES["3as"], key: "fr-3as", name: "French 3 AS (synthetic)", language: "fr" },
+  };
+  assert.deepEqual(languagesFromGuides(synthetic), ["en", "fr"]);
+});
+
+test("every guide declares a language", () => {
+  for (const g of Object.values(GUIDES)) {
+    assert.ok(typeof g.language === "string" && g.language.length > 0, g.key);
+  }
 });

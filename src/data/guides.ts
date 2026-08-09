@@ -418,6 +418,16 @@ export function getGuide(grade: string): Guide {
   return g;
 }
 
+// PRD 38.1/38.3: available exam languages are derived from the guide data, so
+// adding a new language is a data-authoring task, not a code change.
+export function languagesFromGuides(guides: Record<string, Guide>): string[] {
+  return [...new Set(Object.values(guides).map((g) => g.language))].sort();
+}
+
+export function getAvailableLanguages(): string[] {
+  return languagesFromGuides(GUIDES);
+}
+
 export function getGrade(grade: string): GradeDef {
   const d = GRADES[grade];
   if (!d) throw new Error(`No grade definition for "${grade}"`);
