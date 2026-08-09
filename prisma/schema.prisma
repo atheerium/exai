@@ -1,12 +1,12 @@
 // Exaai data model — conceptual entities from PRD sections 13–15
-// Storage technology: SQLite for the MVP (swap for Postgres when scaling).
+// Storage technology: PostgreSQL via Neon (serverless, pooled connections).
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
