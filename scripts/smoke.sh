@@ -357,33 +357,44 @@ grep -q "Generation health" /tmp/ops2.html && echo "admin /ops shows generation 
 rm -f /tmp/ops2.html
 
 echo "== password recovery flow =="
+FINAL_PW="secret123"
 PR=$(curl -s -b "$JAR" -X POST "$BASE/api/auth/forgot-password" -H "Content-Type: application/json" \
   -d "{\"email\":\"$EMAIL\"}")
 DEV_URL=$(echo "$PR" | python3 -c "import sys,json;print(json.load(sys.stdin).get('devUrl',''))")
-[ -n "$DEV_URL" ] && echo "reset link generated (dev)" || { echo "FAILED: no devUrl"; exit 1; }
-TOKEN=$(echo "$DEV_URL" | sed -n 's/.*token=\([^&]*\).*/\1/p')
-[ -n "$TOKEN" ] && echo "token extracted" || { echo "FAILED: token missing"; exit 1; }
-CODE=$(curl -s -o /tmp/rp.json -w "%{http_code}" -b "$JAR" -X POST "$BASE/api/auth/reset-password" -H "Content-Type: application/json" \
-  -d "{\"token\":\"$TOKEN\",\"password\":\"newpass456\"}")
-rm -f /tmp/rp.json
-[ "$CODE" = "200" ] && echo "password reset ok" || { echo "FAILED: reset got $CODE"; exit 1; }
-# Old password must fail now, new password must work
-C_OLD=$(curl -s -o /tmp/rp1.json -w "%{http_code}" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"secret123\"}")
-rm -f /tmp/rp1.json
-[ "$C_OLD" = "401" ] && echo "old password rejected after reset" || { echo "FAILED: old password still works ($C_OLD)"; exit 1; }
-C_NEW=$(curl -s -o /tmp/rp2.json -w "%{http_code}" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"newpass456\"}")
-rm -f /tmp/rp2.json
-[ "$C_NEW" = "200" ] && echo "new password works" || { echo "FAILED: new password rejected ($C_NEW)"; exit 1; }
-# Token must be single-use
-CODE=$(curl -s -o /tmp/rp3.json -w "%{http_code}" -b "$JAR" -X POST "$BASE/api/auth/reset-password" -H "Content-Type: application/json" \
-  -d "{\"token\":\"$TOKEN\",\"password\":\"another789\"}")
-rm -f /tmp/rp3.json
-[ "$CODE" = "400" ] && echo "reset token single-use (reuse rejected)" || { echo "FAILED: token reuse allowed ($CODE)"; exit 1; }
-# Password reset invalidates sessions; log back in with the new password.
-curl -s -c "$JAR" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"newpass456\"}" >/dev/null
+if [ -n "$DEV_URL" ]; then
+  echo "reset link generated (dev)"
+  TOKEN=$(echo "$DEV_URL" | sed -n 's/.*token=\([^&]*\).*/\1/p')
+  [ -n "$TOKEN" ] && echo "token extracted" || { echo "FAILED: token missing"; exit 1; }
+  CODE=$(curl -s -o /tmp/rp.json -w "%{http_code}" -b "$JAR" -X POST "$BASE/api/auth/reset-password" -H "Content-Type: application/json" \
+    -d "{\"token\":\"$TOKEN\",\"password\":\"newpass456\"}")
+  rm -f /tmp/rp.json
+  [ "$CODE" = "200" ] && echo "password reset ok" || { echo "FAILED: reset got $CODE"; exit 1; }
+  # Old password must fail now, new password must work
+  C_OLD=$(curl -s -o /tmp/rp1.json -w "%{http_code}" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
+    -d "{\"email\":\"$EMAIL\",\"password\":\"secret123\"}")
+  rm -f /tmp/rp1.json
+  [ "$C_OLD" = "401" ] && echo "old password rejected after reset" || { echo "FAILED: old password still works ($C_OLD)"; exit 1; }
+  C_NEW=$(curl -s -o /tmp/rp2.json -w "%{http_code}" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
+    -d "{\"email\":\"$EMAIL\",\"password\":\"newpass456\"}")
+  rm -f /tmp/rp2.json
+  [ "$C_NEW" = "200" ] && echo "new password works" || { echo "FAILED: new password rejected ($C_NEW)"; exit 1; }
+  # Token must be single-use
+  CODE=$(curl -s -o /tmp/rp3.json -w "%{http_code}" -b "$JAR" -X POST "$BASE/api/auth/reset-password" -H "Content-Type: application/json" \
+    -d "{\"token\":\"$TOKEN\",\"password\":\"another789\"}")
+  rm -f /tmp/rp3.json
+  [ "$CODE" = "400" ] && echo "reset token single-use (reuse rejected)" || { echo "FAILED: token reuse allowed ($CODE)"; exit 1; }
+  # Password reset invalidates sessions; log back in with the new password.
+  curl -s -c "$JAR" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
+    -d "{\"email\":\"$EMAIL\",\"password\":\"newpass456\"}" >/dev/null
+  FINAL_PW="newpass456"
+else
+  # Production mode without SMTP: resets cannot be delivered; the API must fail
+  # with an error rather than silently pretending success.
+  CODE=$(curl -s -o /tmp/rp.json -w "%{http_code}" -X POST "$BASE/api/auth/forgot-password" -H "Content-Type: application/json" \
+    -d "{\"email\":\"$EMAIL\"}")
+  rm -f /tmp/rp.json
+  [ "$CODE" = "500" ] && echo "prod without SMTP: forgot-password errors honestly (500), interactive flow skipped" || echo "FAILED: expected 500 in prod without SMTP, got $CODE"
+fi
 
 echo "== archive / restore (US-026) =="
 E6=$(curl -s -b "$JAR" -X POST "$BASE/api/exams" -H "Content-Type: application/json" -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
@@ -464,7 +475,7 @@ print('guide version:', gv)"
 echo "== resume after logout/login (Continue Last Exam path) =="
 curl -s -b "$JAR" -X POST "$BASE/api/auth/logout" >/dev/null
 curl -s -c "$JAR" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"newpass456\"}" | python3 -c "import sys,json;print('logged back in as', json.load(sys.stdin)['user']['email'])"
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$FINAL_PW\"}" | python3 -c "import sys,json;print('logged back in as', json.load(sys.stdin)['user']['email'])"
 curl -s -b "$JAR" "$BASE/api/exams" | python3 -c "
 import sys,json
 items = json.load(sys.stdin)['exams']

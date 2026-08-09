@@ -15,15 +15,21 @@ export async function requestPasswordReset(email: string): Promise<{ ok: true; d
   if (!user) return { ok: true };
   const token = randomBytes(32).toString("hex");
   const tokenHash = hashToken(token);
-  await prisma.passwordResetToken.create({
+  const record = await prisma.passwordResetToken.create({
     data: { userId: user.id, tokenHash, expiresAt: new Date(Date.now() + RESET_TTL_MS) },
   });
-  const sent = await sendPasswordResetEmail({
-    to: user.email,
-    name: user.name,
-    url: resetPasswordUrl(token),
-  });
-  return { ok: true, devUrl: sent.devUrl };
+  try {
+    const sent = await sendPasswordResetEmail({
+      to: user.email,
+      name: user.name,
+      url: resetPasswordUrl(token),
+    });
+    return { ok: true, devUrl: sent.devUrl };
+  } catch (e) {
+    // Delivery failed: never leave a dangling token behind.
+    await prisma.passwordResetToken.delete({ where: { id: record.id } }).catch(() => {});
+    throw e;
+  }
 }
 
 export async function resetPassword(token: string, password: string): Promise<{ ok: true }> {
