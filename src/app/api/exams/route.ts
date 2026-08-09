@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { examToDto } from "@/lib/serialize";
+import { track } from "@/lib/events";
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,6 +11,7 @@ export async function POST(req: NextRequest) {
     const exam = await prisma.exam.create({
       data: { userId: user.id, title: body.title?.trim() || "Untitled exam", status: "NEW" },
     });
+    await track("exam_created", { userId: user.id, examId: exam.id });
     const dto = await examToDto({ ...exam, sections: [], sources: [] });
     return NextResponse.json(dto, { status: 201 });
   } catch (e: any) {

@@ -3,7 +3,8 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { loadExamDto } from "@/lib/serialize";
 import { validateConfigInputs } from "@/lib/guide";
-import { getGrade } from "@/data/guides";
+import { getGrade, getGuide } from "@/data/guides";
+import { track } from "@/lib/events";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -31,6 +32,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       validateConfigInputs(body.config);
       const gradeDef = getGrade(body.config.grade);
       const unit = gradeDef.units.find((u) => u.key === body.config.unit) ?? gradeDef.units[0];
+      const guide = getGuide(body.config.grade);
       const title =
         `English exam — ${gradeDef.label.toUpperCase()} — ${unit?.label ?? ""}`.trim() ||
         "Untitled exam";
@@ -45,6 +47,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             unit: body.config.unit,
             topic: body.config.topic,
             customTopic: !!body.config.customTopic,
+            guideVersion: guide.version,
           },
           create: {
             examId: id,
@@ -55,10 +58,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             unit: body.config.unit,
             topic: body.config.topic,
             customTopic: !!body.config.customTopic,
+            guideVersion: guide.version,
           },
         }),
         prisma.exam.update({ where: { id }, data: { title, status: "ACTIVE" } }),
       ]);
+      await track("parameters_completed", { userId: user.id, examId: id });
     }
 
     if (body.title) {

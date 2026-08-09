@@ -67,6 +67,7 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
     `Unit: ${exam.config?.unit ?? "—"}`,
     `Topic: ${exam.config?.topic ?? "—"}`,
     `Length: ${exam.config?.length ?? 150} words`,
+    exam.config?.guideVersion ? `Guide: ${exam.config.guideVersion}` : null,
   ].filter(Boolean) as string[];
 
   const partOneTasks: ExportTask[] = (p1Sec?.tasks ?? []).map((t) => ({

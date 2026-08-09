@@ -95,6 +95,7 @@ export async function examToDto(exam: any): Promise<ExamDto> {
         unit: exam.config.unit,
         topic: exam.config.topic,
         customTopic: exam.config.customTopic,
+        guideVersion: exam.config.guideVersion ?? null,
       }
     : null;
 

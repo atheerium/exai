@@ -121,6 +121,31 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     }
   }
 
+  async function refreshExam() {
+    try {
+      const res = await fetch(`/api/exams/${exam.id}`);
+      const data = await res.json();
+      if (res.ok) setExam(data);
+    } catch {
+      /* keep current state */
+    }
+  }
+
+  async function saveFavourite(taskId: string) {
+    try {
+      const res = await fetch(`/api/exams/${exam.id}/favourites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast("Saved to favourites", "success");
+    } catch (e: any) {
+      toast(e?.message ?? "Could not save favourite.", "error");
+    }
+  }
+
   async function submitParameters(config: {
     level: string;
     grade: string;
@@ -253,6 +278,8 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
             }}
             onReplace={(taskId, index) => replaceItem("TASK", taskId, index)}
             onMoreAlternatives={(taskId) => generate("TASK_ALT", { taskId })}
+            onSaveFavourite={saveFavourite}
+            onApplied={refreshExam}
           />
         )}
         {stage === "partTwo" && (
@@ -268,6 +295,8 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
             }}
             onReplace={(taskId, index) => replaceItem("TASK", taskId, index)}
             onMoreAlternatives={(taskId) => generate("TASK_ALT", { taskId })}
+            onSaveFavourite={saveFavourite}
+            onApplied={refreshExam}
           />
         )}
         {stage === "writing" && (

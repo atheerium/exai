@@ -4,6 +4,7 @@ import { loadExamDto } from "@/lib/serialize";
 import { assembleDocument } from "@/lib/export/assemble";
 import { renderPdf } from "@/lib/export/pdf";
 import { renderDocx } from "@/lib/export/docx";
+import { track } from "@/lib/events";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     if (format === "pdf") {
       const buffer = await renderPdf(docModel);
+      await track("exam_exported_pdf", { userId: user.id, examId: id });
       return new NextResponse(new Uint8Array(buffer), {
         headers: {
           "Content-Type": "application/pdf",
@@ -27,6 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       });
     }
     const buffer = await renderDocx(docModel);
+    await track("exam_exported_docx", { userId: user.id, examId: id });
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

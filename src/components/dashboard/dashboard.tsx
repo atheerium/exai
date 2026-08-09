@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, FileText, Download, Trash2, Clock, ChevronRight } from "lucide-react";
+import { Plus, FileText, Download, Trash2, Clock, ChevronRight, Star, BookMarked } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,17 @@ import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
 import type { ExamDto } from "@/types";
 
-export function Dashboard({ exams, displayName }: { exams: ExamDto[]; displayName: string }) {
+export function Dashboard({
+  exams,
+  displayName,
+  favouritesCount = 0,
+  customsCount = 0,
+}: {
+  exams: ExamDto[];
+  displayName: string;
+  favouritesCount?: number;
+  customsCount?: number;
+}) {
   const router = useRouter();
   const { t } = useI18n();
   const [creating, setCreating] = React.useState(false);
@@ -82,6 +92,40 @@ export function Dashboard({ exams, displayName }: { exams: ExamDto[]; displayNam
           </Link>
         </Card>
       )}
+
+      {/* Favourites + custom tasks entry */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Link href="/favourites">
+          <Card className="group transition-shadow hover:shadow-md">
+            <CardContent className="flex items-center gap-4 p-5">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                <Star className="h-5 w-5" />
+              </span>
+              <div className="flex-1">
+                <h3 className="font-semibold">{t("nav.favourites")}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {favouritesCount} saved · {customsCount} custom
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/library">
+          <Card className="group transition-shadow hover:shadow-md">
+            <CardContent className="flex items-center gap-4 p-5">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <BookMarked className="h-5 w-5" />
+              </span>
+              <div className="flex-1">
+                <h3 className="font-semibold">{t("nav.library")}</h3>
+                <p className="text-xs text-muted-foreground">{exams.length} exams</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
 
       {/* Empty state or recent exams */}
       {recent.length === 0 ? (

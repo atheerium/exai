@@ -49,16 +49,17 @@ model Exam {
 }
 
 model ExamConfig {
-  id          String @id @default(cuid())
-  examId      String @unique
-  exam        Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
-  level       String // middle | secondary
-  grade       String
-  stream      String?
-  length      Int    @default(150) // words
-  unit        String
-  topic       String
-  customTopic Boolean @default(false)
+  id           String @id @default(cuid())
+  examId       String @unique
+  exam         Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+  level        String // middle | secondary
+  grade        String
+  stream       String?
+  length       Int    @default(150) // words
+  unit         String
+  topic        String
+  customTopic  Boolean @default(false)
+  guideVersion String? // guide version used at generation time (PRD 19.3, 47)
 }
 
 model ExamSection {
@@ -164,4 +165,19 @@ model GuideConfig {
   data      String // JSON rule set
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Core product funnel events (PRD section 28). Lightweight analytics: each row
+// is one user-visible action, so the funnel and failure rates are queryable
+// without a third-party analytics dependency.
+model ProductEvent {
+  id        String   @id @default(cuid())
+  name      String // e.g. signup_completed, exam_created, text_generated
+  userId    String?
+  examId    String?
+  meta      String? // JSON
+  createdAt DateTime @default(now())
+
+  @@index([name, createdAt])
+  @@index([userId, createdAt])
 }

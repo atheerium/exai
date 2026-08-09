@@ -13,6 +13,7 @@ export interface ExamConfigDto {
   unit: string;
   topic: string;
   customTopic: boolean;
+  guideVersion?: string | null;
 }
 
 export interface TaskDto {

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Sparkles, LayoutDashboard, Library, Plus, LogOut, Languages } from "lucide-react";
+import { Sparkles, LayoutDashboard, Library, Plus, LogOut, Languages, Star } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
@@ -37,6 +37,10 @@ export function AppNav({ userName }: { userName: string }) {
             <Link href="/library" className={buttonVariants({ variant: "ghost", size: "sm" })}>
               <Library className="h-4 w-4" />
               {t("nav.library")}
+            </Link>
+            <Link href="/favourites" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              <Star className="h-4 w-4" />
+              {t("nav.favourites")}
             </Link>
           </nav>
         </div>

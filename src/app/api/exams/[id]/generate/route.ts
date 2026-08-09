@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { loadExamDto } from "@/lib/serialize";
 import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, validateCandidate, providerName } from "@/lib/generate";
+import { track } from "@/lib/events";
 import type { GeneratedTask, GeneratedTopic } from "@/types";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -41,6 +42,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const v = validateCandidate("TEXT", { text: candidates[0].text, title: candidates[0].title });
       if (!v.ok) {
         await log("ERROR", v.issues.join("; "));
+        await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
         return NextResponse.json({ error: v.issues.join(" ") }, { status: 422 });
       }
       let section = sectionOf(exam.sections, "TEXT");
@@ -71,11 +73,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         },
       });
       await log("OK");
+      await track("text_generated", { userId: user.id, examId: id });
     } else if (type === "PART_ONE" || type === "TEXT_EXPLORATION") {
       const sets = type === "PART_ONE" ? generatePartOneCandidates(ctx) : generateTextExplorationCandidates(ctx);
       const v = validateCandidate(type, sets[0]);
       if (!v.ok) {
         await log("ERROR", v.issues.join("; "));
+        await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
         return NextResponse.json({ error: v.issues.join(" ") }, { status: 422 });
       }
       let section = sectionOf(exam.sections, type);
@@ -109,11 +113,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         });
       }
       await log("OK");
+      await track(type === "PART_ONE" ? "part_one_generated" : "part_two_generated", { userId: user.id, examId: id });
     } else if (type === "WRITING") {
       const cands = generateWritingCandidates(ctx);
       const v = validateCandidate("WRITING", cands[0]);
       if (!v.ok) {
         await log("ERROR", v.issues.join("; "));
+        await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
         return NextResponse.json({ error: v.issues.join(" ") }, { status: 422 });
       }
       let section = sectionOf(exam.sections, "WRITING");
@@ -154,6 +160,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         },
       });
       await log("OK");
+      await track("writing_generated", { userId: user.id, examId: id });
     } else if (type === "TASK_ALT" && body.taskId) {
       const task = await prisma.task.findFirst({
         where: { id: body.taskId, section: { examId: id } },
@@ -168,6 +175,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const candidates = sets.slice(1).map((s) => s[index]).filter(Boolean);
       await prisma.task.update({ where: { id: task.id }, data: { candidates: JSON.stringify(candidates) } });
       await log("OK");
+      await track("task_replaced", { userId: user.id, examId: id, meta: { kind: "generate_more" } });
     } else if (type === "TOPIC_ALT" && body.topicId) {
       const topic = await prisma.topic.findFirst({ where: { id: body.topicId, section: { examId: id } } });
       if (!topic) return NextResponse.json({ error: "Topic not found." }, { status: 404 });
@@ -175,6 +183,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const sets = (topic.kind === "GUIDED" ? cands.map((c) => c.guided) : cands.map((c) => c.free)).slice(1);
       await prisma.topic.update({ where: { id: topic.id }, data: { candidates: JSON.stringify(sets) } });
       await log("OK");
+      await track("topic_replaced", { userId: user.id, examId: id, meta: { kind: "generate_more" } });
     } else {
       return NextResponse.json({ error: "Unsupported generation type." }, { status: 400 });
     }

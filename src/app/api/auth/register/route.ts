@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { createSession } from "@/lib/auth";
+import { track } from "@/lib/events";
 
 const schema = z.object({
   email: z.string().email(),
@@ -24,6 +25,7 @@ export async function POST(req: NextRequest) {
       data: { email, passwordHash, name: body.name?.trim() || null, language: body.language },
     });
     await createSession(user.id);
+    await track("signup_completed", { userId: user.id });
     return NextResponse.json({ user: { id: user.id, email: user.email, name: user.name } });
   } catch (e: any) {
     if (e?.issues) return NextResponse.json({ error: e.issues[0].message }, { status: 400 });

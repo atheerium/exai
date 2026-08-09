@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw, Info, Eye, EyeOff, Sparkles } from "lucide-react";
+import { RefreshCw, Info, Eye, EyeOff, Sparkles, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
 import { getGuide } from "@/data/guides";
 import { formatMarks } from "@/lib/utils";
@@ -30,6 +31,8 @@ export function TasksStage({
   onEdit,
   onReplace,
   onMoreAlternatives,
+  onSaveFavourite,
+  onApplied,
 }: {
   kind: "PART_ONE" | "TEXT_EXPLORATION";
   exam: ExamDto;
@@ -39,6 +42,8 @@ export function TasksStage({
   onEdit: (patch: any) => void;
   onReplace: (taskId: string, index: number) => void;
   onMoreAlternatives: (taskId: string) => void;
+  onSaveFavourite: (taskId: string) => void;
+  onApplied: () => void;
 }) {
   const { t } = useI18n();
   const guide = exam.config ? getGuide(exam.config.grade) : null;
@@ -124,6 +129,9 @@ export function TasksStage({
                     <span className="text-xs font-semibold text-muted-foreground">
                       {formatMarks(task.marks)} {t("builder.marks")}
                     </span>
+                    <Button variant="ghost" size="sm" onClick={() => onSaveFavourite(task.id)} title="Save as favourite">
+                      <Star className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => setReplacing(task)}>
                     <RefreshCw className="h-3.5 w-3.5" />
@@ -173,6 +181,12 @@ export function TasksStage({
           }}
           onMore={moreAlternatives}
           busy={moreBusy}
+          examId={exam.id}
+          taskId={replacing.id}
+          onApplied={() => {
+            onApplied();
+            setReplacing(null);
+          }}
         />
       )}
     </div>
