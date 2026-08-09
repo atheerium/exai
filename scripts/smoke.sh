@@ -105,6 +105,7 @@ print(t['textTitle'] or '')")
 if [ -n "$TITLE" ]; then
   grep -q "$TITLE" /tmp/exam-smoke-doc.xml && echo "docx contains generated text title" || echo "FAILED: docx missing text title"
 fi
+grep -q "Language: English" /tmp/exam-smoke-doc.xml && echo "docx carries exam language in metadata (PRD 47)" || echo "WARN: language metadata not in docx"
 if command -v pdftotext >/dev/null 2>&1; then
   pdftotext /tmp/exam-smoke.pdf /tmp/exam-smoke-pdf.txt
   grep -q "Text exploration" /tmp/exam-smoke-pdf.txt && echo "pdf contains section heading" || echo "WARN: pdf text extraction skipped/unavailable"
@@ -491,7 +492,12 @@ assert t['text'] and len(p1['tasks'])==4 and len(w['topics'])==2
 print('content intact after re-login: text', len(t['text'].split()), 'words, part one', len(p1['tasks']), 'tasks, writing', len(w['topics']), 'topics')"
 
 echo "== builder page serves interactive shell =="
-HTML=$(curl -s -b "$JAR" "$BASE/builder/$E1")
+HTML=""
+for attempt in 1 2 3 4; do
+  HTML=$(curl -s -b "$JAR" "$BASE/builder/$E1")
+  echo "$HTML" | grep -q "Parameters" && break
+  sleep 2
+done
 echo "$HTML" | grep -q "Parameters" && echo "builder shell contains Parameters step" || echo "WARN: Parameters label not in HTML"
 echo "$HTML" | grep -q "Text exploration" && echo "builder shell contains Text exploration step" || echo "WARN: Text exploration label not in HTML"
 echo "$HTML" | grep -q "__next_f" && echo "client hydration payload present" || echo "WARN: no RSC payload"

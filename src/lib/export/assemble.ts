@@ -67,6 +67,7 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
     `Unit: ${exam.config?.unit ?? "—"}`,
     `Topic: ${exam.config?.topic ?? "—"}`,
     `Length: ${exam.config?.length ?? 150} words`,
+    `Language: ${exam.config?.language === "fr" ? "French" : "English"}`,
     exam.config?.guideVersion ? `Guide: ${exam.config.guideVersion}` : null,
   ].filter(Boolean) as string[];
 
