@@ -35,6 +35,7 @@ export interface WritingRule {
 export interface Guide {
   key: string;
   name: string;
+  language: string; // "en" (PRD 38.1: future "fr", "es" without redesign)
   level: Level;
   grade: string;
   version: string;
@@ -332,6 +333,7 @@ function guide(key: string, name: string, level: Level, grade: string): Guide {
   return {
     key,
     name,
+    language: "en",
     level,
     grade,
     version: "2025.1-draft",

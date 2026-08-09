@@ -63,6 +63,7 @@ model ExamConfig {
   topic        String
   customTopic  Boolean @default(false)
   guideVersion String? // guide version used at generation time (PRD 19.3, 47)
+  language     String   @default("en") // exam language (PRD 38.1)
 }
 
 model ExamSection {
@@ -163,6 +164,7 @@ model GuideConfig {
   key       String   @unique // e.g. "ms4", "3as-lang"
   name      String
   version   String
+  language  String @default("en") // guide language (PRD 38.1)
   sourceRef String? // link to official guide document
   active    Boolean  @default(true)
   data      String // JSON rule set

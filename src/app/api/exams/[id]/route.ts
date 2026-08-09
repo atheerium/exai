@@ -49,6 +49,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             topic: body.config.topic,
             customTopic: !!body.config.customTopic,
             guideVersion: guide.version,
+            language: body.config.language === "fr" ? "fr" : "en",
           },
           create: {
             examId: id,
@@ -60,6 +61,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             topic: body.config.topic,
             customTopic: !!body.config.customTopic,
             guideVersion: guide.version,
+            language: body.config.language === "fr" ? "fr" : "en",
           },
         }),
         prisma.exam.update({ where: { id }, data: { title, status: "ACTIVE" } }),

@@ -296,9 +296,10 @@ echo "== catalog endpoint =="
 curl -s -b "$JAR" "$BASE/api/catalog" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
+assert 'languages' in d and d['languages'] == ['en'], d.get('languages')
 assert 'levels' in d and len(d['levels'].get('middle', [])) >= 1
 assert len(d['guides']) >= 7
-print('catalog levels:', sorted(d['levels'].keys()), '| guides:', len(d['guides']))"
+print('catalog languages:', d['languages'], '| levels:', sorted(d['levels'].keys()), '| guides:', len(d['guides']))"
 
 echo "== auth negatives =="
 CODE=$(curl -s -o /tmp/wrong.json -w "%{http_code}" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \

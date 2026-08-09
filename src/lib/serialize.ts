@@ -96,6 +96,7 @@ export async function examToDto(exam: any): Promise<ExamDto> {
         topic: exam.config.topic,
         customTopic: exam.config.customTopic,
         guideVersion: exam.config.guideVersion ?? null,
+        language: exam.config.language ?? "en",
       }
     : null;
 

@@ -14,6 +14,7 @@ async function main() {
       update: {
         name: g.name,
         version: g.version,
+        language: g.language,
         sourceRef: g.sourceRef,
         active: true,
         data: JSON.stringify({
@@ -28,6 +29,7 @@ async function main() {
         key: g.key,
         name: g.name,
         version: g.version,
+        language: g.language,
         sourceRef: g.sourceRef,
         active: true,
         data: JSON.stringify({

@@ -14,6 +14,7 @@ export interface ExamConfigDto {
   topic: string;
   customTopic: boolean;
   guideVersion?: string | null;
+  language?: string;
 }
 
 export interface TaskDto {
