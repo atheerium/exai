@@ -35,7 +35,7 @@ npm run dev               # http://localhost:3000
 Tests (unit + provider integration against a local stub, no API key needed):
 
 ```bash
-npm test                  # 34 tests: guide rules, generation engine, facade, openai provider, rate limiting
+npm test                  # 35 tests: guide rules, corpus-wide generation, facade, openai provider, rate limiting
 ```
 
 Smoke test (needs a running server):
