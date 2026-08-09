@@ -108,6 +108,50 @@ import sys,json
 d=json.load(sys.stdin)
 print('topic replaced ok')"
 
+echo "== invalid parameters rejected =="
+CODE=$(curl -s -b "$JAR" -o /tmp/inv1.json -w "%{http_code}" -X PATCH "$BASE/api/exams/$E1" -H "Content-Type: application/json" \
+  -d '{"config":{"level":"secondary","grade":"3as","length":999,"unit":"u-education","topic":"X"}}')
+[ "$CODE" = "400" ] && echo "length 999 rejected (400)" || echo "FAILED: length 999 accepted ($CODE)"
+CODE2=$(curl -s -b "$JAR" -o /tmp/inv2.json -w "%{http_code}" -X PATCH "$BASE/api/exams/$E1" -H "Content-Type: application/json" \
+  -d '{"config":{"level":"middle","grade":"3as","length":150,"unit":"u-education","topic":"X"}}')
+[ "$CODE2" = "400" ] && echo "grade/level mismatch rejected (400)" || echo "FAILED: mismatch accepted ($CODE2)"
+rm -f /tmp/inv1.json /tmp/inv2.json
+
+echo "== task independence (one task changes alone) =="
+BEFORE=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+p=[s for s in d['sections'] if s['type']=='PART_ONE'][0]
+print(p['tasks'][0]['prompt'])")
+T3=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+p=[s for s in d['sections'] if s['type']=='PART_ONE'][0]
+print(p['tasks'][2]['id'])")
+curl -s -b "$JAR" -X POST "$BASE/api/exams/$E1/replace" -H "Content-Type: application/json" \
+  -d "{\"kind\":\"TASK\",\"taskId\":\"$T3\",\"index\":0}" >/dev/null
+AFTER=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+p=[s for s in d['sections'] if s['type']=='PART_ONE'][0]
+print(p['tasks'][0]['prompt'])")
+[ "$BEFORE" = "$AFTER" ] && echo "task 0 unchanged after replacing task 2 (independence ok)" || echo "FAILED: task 0 changed"
+
+echo "== edits persist (autosave path) =="
+TSEC=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+print(t['id'])")
+curl -s -b "$JAR" -X PATCH "$BASE/api/exams/$E1" -H "Content-Type: application/json" \
+  -d "{\"sections\":[{\"id\":\"$TSEC\",\"text\":\"Edited passage text for the persistence check.\"}]}" >/dev/null
+curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+assert t['text'] == 'Edited passage text for the persistence check.'
+print('edited text persisted')"
+
 echo "== favourites =="
 T1=$(curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
 import sys,json
@@ -141,7 +185,8 @@ assert p['tasks'][1]['prompt'] == '1. Applied from favourite'
 print('applied ok:', p['tasks'][1]['prompt'])"
 
 echo "== analytics events =="
-python3 - "$PWD/prisma/dev.db" <<'PYEOF'
+DB_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/prisma/dev.db"
+python3 - "$DB_FILE" <<'PYEOF'
 import sqlite3, sys
 db = sys.argv[1]
 con = sqlite3.connect(db)
@@ -159,5 +204,29 @@ d=json.load(sys.stdin)
 gv = d['config']['guideVersion']
 assert gv, 'missing guideVersion'
 print('guide version:', gv)"
+
+echo "== resume after logout/login (Continue Last Exam path) =="
+curl -s -b "$JAR" -X POST "$BASE/api/auth/logout" >/dev/null
+curl -s -c "$JAR" -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"secret123\"}" | python3 -c "import sys,json;print('logged back in as', json.load(sys.stdin)['user']['email'])"
+curl -s -b "$JAR" "$BASE/api/exams" | python3 -c "
+import sys,json
+items = json.load(sys.stdin)['exams']
+assert any(e['id'] == '$E1' for e in items), 'exam missing after login'
+print('exam present in library after re-login')"
+curl -s -b "$JAR" "$BASE/api/exams/$E1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+p1=[s for s in d['sections'] if s['type']=='PART_ONE'][0]
+w=[s for s in d['sections'] if s['type']=='WRITING'][0]
+assert t['text'] and len(p1['tasks'])==4 and len(w['topics'])==2
+print('content intact after re-login: text', len(t['text'].split()), 'words, part one', len(p1['tasks']), 'tasks, writing', len(w['topics']), 'topics')"
+
+echo "== builder page serves interactive shell =="
+HTML=$(curl -s -b "$JAR" "$BASE/builder/$E1")
+echo "$HTML" | grep -q "Parameters" && echo "builder shell contains Parameters step" || echo "WARN: Parameters label not in HTML"
+echo "$HTML" | grep -q "Text exploration" && echo "builder shell contains Text exploration step" || echo "WARN: Text exploration label not in HTML"
+echo "$HTML" | grep -q "__next_f" && echo "client hydration payload present" || echo "WARN: no RSC payload"
 
 echo "SMOKE OK"
