@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { prisma, setRlsContext } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { track } from "@/lib/events";
 
@@ -10,6 +10,7 @@ const schema = z.object({ taskId: z.string().min(1) });
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
+    await setRlsContext(user.id);
     const { id } = await params;
     const exam = await prisma.exam.findFirst({ where: { id, userId: user.id } });
     if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });

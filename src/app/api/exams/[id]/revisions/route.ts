@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, setRlsContext } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { loadExamDto } from "@/lib/serialize";
 import { captureRevision, restoreRevision } from "@/lib/revisions";
@@ -7,6 +7,7 @@ import { captureRevision, restoreRevision } from "@/lib/revisions";
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
+    await setRlsContext(user.id);
     const { id } = await params;
     const exam = await prisma.exam.findFirst({ where: { id, userId: user.id } });
     if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
@@ -27,6 +28,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
+    await setRlsContext(user.id);
     const { id } = await params;
     const exam = await prisma.exam.findFirst({ where: { id, userId: user.id } });
     if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });

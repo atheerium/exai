@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, setRlsContext } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { examToDto } from "@/lib/serialize";
 import { track } from "@/lib/events";
@@ -7,6 +7,7 @@ import { track } from "@/lib/events";
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
+    await setRlsContext(user.id);
     const body = (await req.json().catch(() => ({}))) as { title?: string };
     const exam = await prisma.exam.create({
       data: { userId: user.id, title: body.title?.trim() || "Untitled exam", status: "NEW" },
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   try {
     const user = await requireUser();
+    await setRlsContext(user.id);
     const exams = await prisma.exam.findMany({
       where: { userId: user.id, status: { not: "ARCHIVED" } },
       include: {

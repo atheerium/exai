@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { setRlsContext } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { loadExamDto } from "@/lib/serialize";
 import { assembleDocument } from "@/lib/export/assemble";
@@ -9,6 +10,7 @@ import { track } from "@/lib/events";
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
+    await setRlsContext(user.id);
     const { id } = await params;
     const format = req.nextUrl.searchParams.get("format") || "pdf";
     if (format !== "pdf" && format !== "docx") {

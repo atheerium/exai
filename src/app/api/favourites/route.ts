@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { prisma, setRlsContext } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { track } from "@/lib/events";
 
@@ -16,6 +16,7 @@ const createSchema = z.object({
 export async function GET() {
   try {
     const user = await requireUser();
+    await setRlsContext(user.id);
     const items = await prisma.favouriteTask.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
@@ -32,6 +33,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
+    await setRlsContext(user.id);
     const body = createSchema.parse(await req.json());
     const item = await prisma.favouriteTask.create({
       data: {
