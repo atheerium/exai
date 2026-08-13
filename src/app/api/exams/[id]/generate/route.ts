@@ -79,7 +79,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await captureRevision(id, "Text generated");
     } else if (type === "PART_ONE" || type === "TEXT_EXPLORATION") {
       const sets = type === "PART_ONE" ? await generatePartOneCandidates(ctx) : await generateTextExplorationCandidates(ctx);
-      const v = validateCandidate(type, sets[0]);
+      const guideMarks = type === "PART_ONE" ? ctx.guide.marks.partOne : ctx.guide.marks.textExploration;
+      const v = validateCandidate(type, sets[0], guideMarks);
       if (!v.ok) {
         await log("ERROR", v.issues.join("; "));
         await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
@@ -111,6 +112,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             answer: task.answer ?? null,
             marks: task.marks,
             order: i,
+            family: task.family ?? null,
+            tableData: task.table ? JSON.stringify(task.table) : null,
             candidates: JSON.stringify(candidates),
           },
         });
@@ -176,21 +179,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Generate the reading text first." }, { status: 400 });
       }
       const target = body.target === "harder" ? "harder" : "simpler";
-      const candidates = await generateRewriteCandidates(ctx, {
+      const rewriteResult = await generateRewriteCandidates(ctx, {
         text: current.text,
         title: current.title,
         target,
       });
-      for (const c of candidates) {
-        const v = validateCandidate("TEXT", c);
-        if (!v.ok) {
-          await log("ERROR", v.issues.join("; "));
-          await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
-          return NextResponse.json({ error: v.issues.join(" ") }, { status: 422 });
-        }
+      const rewritten = rewriteResult[0];
+      const v = validateCandidate("TEXT", rewritten);
+      if (!v.ok) {
+        await log("ERROR", v.issues.join("; "));
+        await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
+        return NextResponse.json({ error: v.issues.join(" ") }, { status: 422 });
       }
-      const existing = current.candidates ?? [];
-      current.candidates = [...existing, ...candidates];
+      const previousText = current.text;
+      const previousTitle = current.title;
+      current.text = rewritten.text;
+      current.title = rewritten.title;
+      current.previousText = previousText;
+      current.previousTitle = previousTitle;
       await prisma.examSection.update({
         where: { id: textSection.id },
         data: { content: JSON.stringify(current) },

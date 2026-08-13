@@ -46,7 +46,7 @@ export function TasksStage({
   onApplied: () => void;
 }) {
   const { t } = useI18n();
-  const guide = exam.config ? getGuide(exam.config.grade, exam.config.language ?? "en") : null;
+  const guide = exam.config ? getGuide(exam.config.grade, exam.config.language ?? "en", exam.config.stream ?? undefined) : null;
   const [answers, setAnswers] = React.useState(false);
   const [replacing, setReplacing] = React.useState<TaskDto | null>(null);
   const [moreBusy, setMoreBusy] = React.useState(false);
@@ -140,11 +140,39 @@ export function TasksStage({
                 </div>
 
                 {task.instruction && <p className="mt-3 text-xs font-medium text-muted-foreground">{task.instruction}</p>}
-                <Textarea
-                  value={task.prompt}
-                  onChange={(e) => onEdit({ sections: [{ id: section!.id, tasks: [{ id: task.id, prompt: e.target.value }] }] })}
-                  className="mt-2 min-h-[90px] text-sm"
-                />
+
+                {task.table ? (
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
+                      <thead>
+                        <tr>
+                          {task.table.headers.map((h, hi) => (
+                            <th key={hi} className="border border-gray-300 bg-gray-100 px-3 py-1.5 text-left text-xs font-semibold text-gray-700">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {task.table.rows.map((row, ri) => (
+                          <tr key={ri}>
+                            {row.map((cell, ci) => (
+                              <td key={ci} className="border border-gray-300 px-3 py-1.5 text-sm">
+                                {ci === 0 ? <span className="font-medium">{cell}</span> : cell === "—" ? <span className="text-muted-foreground italic">—</span> : cell}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <Textarea
+                    value={task.prompt}
+                    onChange={(e) => onEdit({ sections: [{ id: section!.id, tasks: [{ id: task.id, prompt: e.target.value }] }] })}
+                    className="mt-2 min-h-[90px] text-sm"
+                  />
+                )}
 
                 {answers && task.answer && (
                   <div className="mt-3 rounded-lg bg-emerald-50 p-3">

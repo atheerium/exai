@@ -12,6 +12,8 @@ function parseTasks(tasks: {
   marks: number;
   order: number;
   manualEdited: boolean;
+  family: string | null;
+  tableData: string | null;
   candidates: string | null;
 }[]): TaskDto[] {
   return tasks
@@ -25,6 +27,8 @@ function parseTasks(tasks: {
       marks: t.marks,
       order: t.order,
       manualEdited: t.manualEdited,
+      family: t.family ?? null,
+      table: t.tableData ? JSON.parse(t.tableData) : null,
       candidates: t.candidates ? JSON.parse(t.candidates) : [],
     }));
 }
@@ -69,6 +73,8 @@ export async function examToDto(exam: any): Promise<ExamDto> {
       order: s.order,
       text: content.text ?? null,
       textTitle: content.title ?? null,
+      previousText: content.previousText ?? null,
+      previousTitle: content.previousTitle ?? null,
       candidates: content.candidates ?? [],
       tasks: parseTasks(s.tasks ?? []),
       topics: parseTopics(s.topics ?? []),

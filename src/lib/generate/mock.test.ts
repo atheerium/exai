@@ -48,11 +48,12 @@ test("textAlternatives returns requested count", () => {
   assert.equal(textAlternatives(ctx(), 3).length, 3);
 });
 
-test("generatePartOne yields 4 tasks totalling 7 marks with prompts and instructions", () => {
+test("generatePartOne yields tasks totalling the guide's partOne marks with prompts and instructions", () => {
   for (const variant of [0, 1, 2]) {
-    const tasks = generatePartOne(ctx(), variant);
-    assert.equal(tasks.length, 4);
-    assert.ok(Math.abs(tasks.reduce((s, t) => s + t.marks, 0) - 7) < 1e-9);
+    const g = ctx();
+    const tasks = generatePartOne(g, variant);
+    assert.equal(tasks.length, g.guide.partOne.length);
+    assert.ok(Math.abs(tasks.reduce((s, t) => s + t.marks, 0) - g.guide.marks.partOne) < 1e-9);
     for (const t of tasks) {
       assert.ok(t.prompt.length > 0);
       assert.ok(t.instruction.length > 0);
@@ -61,26 +62,28 @@ test("generatePartOne yields 4 tasks totalling 7 marks with prompts and instruct
   }
 });
 
-test("generateTextExploration covers all five skills and totals 8 marks", () => {
+test("generateTextExploration covers all five skills and totals the guide's textExploration marks", () => {
   for (const variant of [0, 1, 2]) {
-    const tasks = generateTextExploration(ctx(), variant);
+    const g = ctx();
+    const tasks = generateTextExploration(g, variant);
     assert.equal(tasks.length, 5);
     const skills = new Set(tasks.map((t) => t.skill));
     assert.deepEqual(
       [...skills].sort(),
       ["DISCOURSE", "GRAMMAR", "MORPHOLOGY", "PHONOLOGY", "VOCABULARY"]
     );
-    assert.ok(Math.abs(tasks.reduce((s, t) => s + t.marks, 0) - 8) < 1e-9);
+    assert.ok(Math.abs(tasks.reduce((s, t) => s + t.marks, 0) - g.guide.marks.textExploration) < 1e-9);
   }
 });
 
 test("generateWriting produces guided (with keywords) and free (without) topics", () => {
   for (const variant of [0, 1, 2]) {
-    const { guided, free } = generateWriting(ctx(), variant);
+    const g = ctx();
+    const { guided, free } = generateWriting(g, variant);
     assert.equal(guided.kind, "GUIDED");
     assert.equal(free.kind, "FREE");
-    assert.equal(guided.marks, 5);
-    assert.equal(free.marks, 5);
+    assert.equal(guided.marks, g.guide.writing.marks);
+    assert.equal(free.marks, g.guide.writing.marks);
     assert.ok(guided.keywords && guided.keywords.includes("/"), "guided topic must have slash keywords");
     assert.ok(!free.keywords, "free topic must not carry keywords");
     assert.ok(guided.situation.length > 20);

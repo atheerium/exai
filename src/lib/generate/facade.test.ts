@@ -14,7 +14,7 @@ const input = {
   level: "secondary",
   grade: "3as",
   stream: "Lettres et Langues Étrangères",
-  length: 250,
+  length: 200,
   unit: "u-innovation",
   topic: "Artificial intelligence",
   examId: "exam-1",
@@ -23,7 +23,7 @@ const input = {
 test("buildContext resolves a valid generation context", () => {
   const ctx = buildContext(input);
   assert.equal(ctx.guide.key, "3as");
-  assert.equal(ctx.length, 250);
+  assert.equal(ctx.length, 200);
   assert.equal(ctx.themeKey, "technology");
   assert.ok(ctx.seed.includes("exam-1"));
 });
@@ -38,20 +38,22 @@ test("generateTextCandidates returns a primary plus alternatives", async () => {
   }
 });
 
-test("generatePartOneCandidates yields 3 valid task sets (7 marks each)", async () => {
-  const sets = await generatePartOneCandidates(buildContext(input));
+test("generatePartOneCandidates yields 3 valid task sets", async () => {
+  const ctx = buildContext(input);
+  const sets = await generatePartOneCandidates(ctx);
   assert.equal(sets.length, 3);
   for (const set of sets) {
-    const v = validateCandidate("PART_ONE", set);
+    const v = validateCandidate("PART_ONE", set, ctx.guide.marks.partOne);
     assert.ok(v.ok, v.issues.join("; "));
   }
 });
 
-test("generateTextExplorationCandidates yields 3 valid sets (8 marks each)", async () => {
-  const sets = await generateTextExplorationCandidates(buildContext(input));
+test("generateTextExplorationCandidates yields 3 valid sets", async () => {
+  const ctx = buildContext(input);
+  const sets = await generateTextExplorationCandidates(ctx);
   assert.equal(sets.length, 3);
   for (const set of sets) {
-    const v = validateCandidate("TEXT_EXPLORATION", set);
+    const v = validateCandidate("TEXT_EXPLORATION", set, ctx.guide.marks.textExploration);
     assert.ok(v.ok, v.issues.join("; "));
   }
 });

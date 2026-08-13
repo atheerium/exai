@@ -26,6 +26,8 @@ export interface TaskDto {
   marks: number;
   order: number;
   manualEdited: boolean;
+  family?: string | null;
+  table?: { headers: string[]; rows: string[][] } | null;
   candidates: TaskDto[]; // alternative candidates (flattened JSON)
 }
 
@@ -48,9 +50,11 @@ export interface SectionDto {
   type: SectionType;
   heading?: string | null;
   order: number;
-  text?: string | null; // TEXT section content
+  text?: string | null;
   textTitle?: string | null;
-  candidates: { title: string; text: string }[]; // alternative passages
+  previousText?: string | null;
+  previousTitle?: string | null;
+  candidates: { title: string; text: string }[];
   tasks: TaskDto[];
   topics: TopicDto[];
 }
@@ -97,6 +101,8 @@ export interface GeneratedTask {
   answer?: string;
   marks: number;
   skill?: string;
+  family?: string;
+  table?: { headers: string[]; rows: string[][] };
 }
 
 export interface GeneratedTopic {

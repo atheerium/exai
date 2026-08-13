@@ -30,8 +30,8 @@ test("corpus: every grade x unit generates valid exam content", () => {
       assert.ok(text.text.includes(topic.split(" ")[0].toLowerCase()), `${gradeKey}/${unit.key}: topic not in text`);
 
       const p1 = generatePartOne(ctx, 0);
-      assert.equal(p1.length, 4, `${gradeKey}/${unit.key}: part one task count`);
-      assert.ok(Math.abs(p1.reduce((s, t) => s + t.marks, 0) - 7) < 1e-9, `${gradeKey}/${unit.key}: part one marks`);
+      assert.equal(p1.length, guide.partOne.length, `${gradeKey}/${unit.key}: part one task count`);
+      assert.ok(Math.abs(p1.reduce((s, t) => s + t.marks, 0) - guide.marks.partOne) < 1e-9, `${gradeKey}/${unit.key}: part one marks`);
 
       const p2 = generateTextExploration(ctx, 0);
       assert.equal(p2.length, 5, `${gradeKey}/${unit.key}: text exploration task count`);
@@ -40,7 +40,7 @@ test("corpus: every grade x unit generates valid exam content", () => {
         5,
         `${gradeKey}/${unit.key}: skills ${p2.map((t) => t.skill).join(",")}`
       );
-      assert.ok(Math.abs(p2.reduce((s, t) => s + t.marks, 0) - 8) < 1e-9, `${gradeKey}/${unit.key}: p2 marks`);
+      assert.ok(Math.abs(p2.reduce((s, t) => s + t.marks, 0) - guide.marks.textExploration) < 1e-9, `${gradeKey}/${unit.key}: p2 marks`);
 
       const { guided, free } = generateWriting(ctx, 0);
       assert.ok(guided.keywords?.includes("/"), `${gradeKey}/${unit.key}: guided keywords`);

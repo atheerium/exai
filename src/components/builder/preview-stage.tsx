@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Download, FileText, FileDown } from "lucide-react";
+import { Download, FileText, FileDown, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 import { assembleDocument, type ExportDocument } from "@/lib/export/assemble";
@@ -31,6 +31,10 @@ export function PreviewStage({ exam }: { exam: ExamDto }) {
               {t("builder.exportDocx")}
             </Button>
           </a>
+          <Button variant="outline" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" />
+            Print
+          </Button>
         </div>
       </div>
 

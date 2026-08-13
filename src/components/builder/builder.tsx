@@ -163,13 +163,24 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         return;
       }
       setExam(data);
-      toast(
-        target === "simpler" ? "Simpler versions added to alternatives" : "Harder versions added to alternatives",
-        "success"
-      );
+      toast(target === "simpler" ? "Text simplified" : "Text made harder", "success");
     } finally {
       setGenerating(null);
     }
+  }
+
+  async function undoRewrite() {
+    const textSec = exam.sections.find((s) => s.type === "TEXT");
+    if (!textSec?.previousText) return;
+    await savePatch({
+      sections: [{
+        id: textSec.id,
+        text: textSec.previousText,
+        textTitle: textSec.previousTitle ?? undefined,
+        clearPrevious: true,
+      }],
+    });
+    toast("Previous version restored", "success");
   }
 
   async function submitParameters(config: {
@@ -291,6 +302,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
             onGenerate={() => generate("TEXT")}
             onRewrite={rewrite}
             onReplace={(index) => replaceItem("TEXT", textSec!.id, index)}
+            onUndo={undoRewrite}
           />
         )}
         {stage === "partOne" && (

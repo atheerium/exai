@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw, ChevronLeft, ChevronRight, Check, Info, Sparkles } from "lucide-react";
+import { RefreshCw, ChevronLeft, ChevronRight, Check, Info, Sparkles, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ export function TextStage({
   onGenerate,
   onRewrite,
   onReplace,
+  onUndo,
 }: {
   exam: ExamDto;
   section?: SectionDto;
@@ -28,12 +29,14 @@ export function TextStage({
   onGenerate: () => void;
   onRewrite: (target: "simpler" | "harder") => void;
   onReplace: (index: number) => void;
+  onUndo?: () => void;
 }) {
   const { t } = useI18n();
-  const guide = exam.config ? getGuide(exam.config.grade, exam.config.language ?? "en") : null;
+  const guide = exam.config ? getGuide(exam.config.grade, exam.config.language ?? "en", exam.config.stream ?? undefined) : null;
   const [alt, setAlt] = React.useState(-1);
   const candidates = section?.candidates ?? [];
   const source = exam.sources[0];
+  const previousText = section?.previousText ?? undefined;
 
   if (!exam.config) {
     return (
@@ -175,6 +178,17 @@ export function TextStage({
               <Sparkles className="h-3.5 w-3.5" />
               Make harder
             </Button>
+            {previousText && onUndo && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onUndo}
+                title="Restore the previous version"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+                Undo
+              </Button>
+            )}
             {generating && <span className="text-sm text-muted-foreground">{t("common.generating")}</span>}
           </div>
         </>

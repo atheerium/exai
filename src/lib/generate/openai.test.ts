@@ -7,6 +7,75 @@ import { buildContext, generateTextCandidates, generatePartOneCandidates, genera
 // embeds in its prompt. These let us validate the full provider plumbing
 // (request shape, parsing, schema validation, retry-safe errors) with no key.
 
+function makePartOneTasks() {
+  const sets: any[] = [];
+  for (let s = 0; s < 3; s++) {
+    sets.push({
+      tasks: [
+        { prompt: "1." + (s + 1) + "a Schools will disappear completely.", instruction: "Are the following statements true or false? Write T or F next to the letter.", answer: "False. Schools will still matter.", marks: 1.5, skill: "READING" },
+        { prompt: "2." + (s + 1) + "b Why is education changing?", instruction: "Answer the following questions according to the text.", answer: "Because of new technology and learner responsibility.", marks: 2, skill: "READING" },
+        { prompt: "3." + (s + 1) + "c In which paragraph is it mentioned that technology helps students?", instruction: "In which paragraph is it mentioned that...?", answer: "Paragraph 2", marks: 1.5, skill: "READING" },
+        { prompt: "4." + (s + 1) + "d Who or what do the underlined words refer to?", instruction: "Who or what do the underlined words refer to in the text?", answer: "students and teachers", marks: 1, skill: "READING" },
+        { prompt: "5." + (s + 1) + "e Choose the best title for the text.", instruction: "Give a title to the text / Choose the general idea of the text.", answer: "The future of education", marks: 1, skill: "READING" },
+      ],
+    });
+  }
+  return sets;
+}
+
+function makeTextExplorationTasks() {
+  const sets: any[] = [];
+  for (let s = 0; s < 3; s++) {
+    sets.push({
+      tasks: [
+        { prompt: "1." + (s + 1) + " Match the words with their definitions.", instruction: "Find in the text words or phrases closest in meaning.", answer: "learn - to gain knowledge", marks: 1.5, skill: "VOCABULARY" },
+        { prompt: "2." + (s + 1) + " education -> (adjective)", instruction: "Give the noun/verb/adjective derived from the words.", answer: "educational", marks: 1.5, skill: "MORPHOLOGY" },
+        { prompt: "3." + (s + 1) + " Classify: learned, practised, connected", instruction: "Classify the words by the pronunciation of the final -ed.", answer: "/t/: practised /d/: learned /id/: connected", marks: 1, skill: "PHONOLOGY" },
+        { prompt: "4." + (s + 1) + " Technology helps students learn faster.", instruction: "Rewrite sentence B so that it means the same as sentence A.", answer: "Students learn faster thanks to technology.", marks: 2, skill: "GRAMMAR" },
+        { prompt: "5." + (s + 1) + " Schools will still matter, ___ they will work differently.", instruction: "Fill in the gaps with words from the list given.", answer: "but", marks: 1, skill: "DISCOURSE" },
+      ],
+    });
+  }
+  return sets;
+}
+
+function makeWritingSets() {
+  const sets: any[] = [];
+  for (let s = 0; s < 3; s++) {
+    sets.push({
+      guided: {
+        kind: "GUIDED",
+        title: "Topic 1",
+        situation: "Your school magazine asks you to write about the future of education (variant " + (s + 1) + ").",
+        instruction: "Write a paragraph of about 80-100 words using the notes below.",
+        keywords: "technology/teachers/students",
+        form: "a paragraph",
+        marks: 3,
+      },
+      free: {
+        kind: "FREE",
+        title: "Topic 2",
+        situation: "In a few years, education will change completely (variant " + (s + 1) + "). Do you agree?",
+        instruction: "Write a paragraph of about 80-100 words giving your opinion.",
+        form: "an opinion paragraph",
+        marks: 3,
+      },
+    });
+  }
+  return sets;
+}
+
+function makeRewriteCandidates() {
+  const candidates: any[] = [];
+  for (let i = 0; i < 3; i++) {
+    candidates.push({
+      title: "Learning for life",
+      text: "Education is changing quickly. Teachers use new tools, and students practise at their own pace (rewrite variant " + (i + 1) + "). Schools will still matter, but they will work differently, with more projects and less memorisation. Every learner should have access to good teaching, wherever they live.",
+    });
+  }
+  return candidates;
+}
+
 const CANNED: Record<string, any> = {
   TEXT: {
     candidates: [
@@ -15,54 +84,10 @@ const CANNED: Record<string, any> = {
       { title: "A fairer education", text: "Education should be open to everyone. With digital tools, students in small villages can follow the same lessons as students in big cities. Parents, teachers and students will cooperate to make learning fairer and more useful for every learner." },
     ],
   },
-  PART_ONE: {
-    sets: Array.from({ length: 3 }, (_, s) => ({
-      tasks: [
-        { prompt: `1. ${s + 1}a Why is education changing?`, instruction: "Answer the following questions according to the text.", answer: "Because of new technology and learner responsibility.", marks: 2, skill: "READING" },
-        { prompt: `2. ${s + 1}b Schools will disappear completely.`, instruction: "Say whether the statements are true or false. Justify.", answer: "False. Schools will still matter.", marks: 2, skill: "READING" },
-        { prompt: `3. ${s + 1}c closest in meaning: connected to the internet`, instruction: "Find in the text words closest in meaning.", answer: "online", marks: 1.5, skill: "READING" },
-        { prompt: `4. ${s + 1}d opposite in meaning: useless`, instruction: "Find in the text words opposite in meaning.", answer: "useful", marks: 1.5, skill: "READING" },
-      ],
-    })),
-  },
-  TEXT_EXPLORATION: {
-    sets: Array.from({ length: 3 }, (_, s) => ({
-      tasks: [
-        { prompt: `1. ${s + 1} Match the words with their definitions.`, instruction: "Match each word with its definition.", answer: "learn - to gain knowledge", marks: 2, skill: "VOCABULARY" },
-        { prompt: `2. ${s + 1} education -> (adjective)`, instruction: "Give the noun/verb/adjective derived from the words.", answer: "educational", marks: 1.5, skill: "MORPHOLOGY" },
-        { prompt: `3. ${s + 1} Classify: learned, practised, connected`, instruction: "Classify the words by the pronunciation of the final -ed.", answer: "/t/: practised /d/: learned /id/: connected", marks: 1.5, skill: "PHONOLOGY" },
-        { prompt: `4. ${s + 1} Technology helps students learn faster.`, instruction: "Rewrite the sentence without changing its meaning.", answer: "Students learn faster thanks to technology.", marks: 2, skill: "GRAMMAR" },
-        { prompt: `5. ${s + 1} Schools will still matter, ___ they will work differently.`, instruction: "Fill in the gaps with the correct words.", answer: "but", marks: 1, skill: "DISCOURSE" },
-      ],
-    })),
-  },
-  WRITING: {
-    sets: Array.from({ length: 3 }, (_, s) => ({
-      guided: {
-        kind: "GUIDED",
-        title: "Topic 1",
-        situation: `Your school magazine asks you to write about the future of education (variant ${s + 1}).`,
-        instruction: "Write a paragraph of about 80-100 words using the notes below.",
-        keywords: "technology/teachers/students",
-        form: "a paragraph",
-        marks: 5,
-      },
-      free: {
-        kind: "FREE",
-        title: "Topic 2",
-        situation: `In a few years, education will change completely (variant ${s + 1}). Do you agree?`,
-        instruction: "Write a paragraph of about 80-100 words giving your opinion.",
-        form: "an opinion paragraph",
-        marks: 5,
-      },
-    })),
-  },
-  REWRITE: {
-    candidates: Array.from({ length: 3 }, (_, i) => ({
-      title: "Learning for life",
-      text: `Education is changing quickly. Teachers use new tools, and students practise at their own pace (rewrite variant ${i + 1}). Schools will still matter, but they will work differently, with more projects and less memorisation. Every learner should have access to good teaching, wherever they live.`,
-    })),
-  },
+  PART_ONE: { sets: makePartOneTasks() },
+  TEXT_EXPLORATION: { sets: makeTextExplorationTasks() },
+  WRITING: { sets: makeWritingSets() },
+  REWRITE: { candidates: makeRewriteCandidates() },
 };
 
 let server: http.Server;
@@ -95,7 +120,7 @@ before(async () => {
   port = (server.address() as any).port;
   process.env.AI_PROVIDER = "openai";
   process.env.OPENAI_API_KEY = "test-key";
-  process.env.OPENAI_BASE_URL = `http://127.0.0.1:${port}/v1`;
+  process.env.OPENAI_BASE_URL = "http://127.0.0.1:" + port + "/v1";
   process.env.OPENAI_MODEL = "stub-model";
 });
 
@@ -127,22 +152,22 @@ test("openai provider: text candidates flow through the stub and validate", asyn
   }
 });
 
-test("openai provider: part one sets validate (4 tasks, 7 marks)", async () => {
+test("openai provider: part one sets validate (5 tasks, 7 marks)", async () => {
   const sets = await generatePartOneCandidates(buildContext(input));
   assert.equal(sets.length, 3);
   for (const set of sets) {
-    assert.equal(set.length, 4);
-    const v = validateCandidate("PART_ONE", set);
+    assert.equal(set.length, 5);
+    const v = validateCandidate("PART_ONE", set, buildContext(input).guide.marks.partOne);
     assert.ok(v.ok, v.issues.join("; "));
   }
 });
 
-test("openai provider: text exploration sets validate (5 skills, 8 marks)", async () => {
+test("openai provider: text exploration sets validate (5 skills, 7 marks)", async () => {
   const sets = await generateTextExplorationCandidates(buildContext(input));
   assert.equal(sets.length, 3);
   for (const set of sets) {
     assert.equal(set.length, 5);
-    const v = validateCandidate("TEXT_EXPLORATION", set);
+    const v = validateCandidate("TEXT_EXPLORATION", set, buildContext(input).guide.marks.textExploration);
     assert.ok(v.ok, v.issues.join("; "));
   }
 });
@@ -183,5 +208,5 @@ test("openai provider: missing API key fails with a clear error", async () => {
 });
 
 test("openai provider: all five generation types reached the stub", () => {
-  assert.ok(requests >= 5, `expected >= 5 stub requests, got ${requests}`);
+  assert.ok(requests >= 5, "expected >= 5 stub requests, got " + requests);
 });

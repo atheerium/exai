@@ -33,7 +33,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       validateConfigInputs(body.config);
       const gradeDef = getGrade(body.config.grade);
       const unit = gradeDef.units.find((u) => u.key === body.config.unit) ?? gradeDef.units[0];
-      const guide = getGuide(body.config.grade, body.config.language === "fr" ? "fr" : "en");
+      const guide = getGuide(body.config.grade, body.config.language === "fr" ? "fr" : "en", body.config.stream ?? undefined);
       const title =
         `English exam — ${gradeDef.label.toUpperCase()} — ${unit?.label ?? ""}`.trim() ||
         "Untitled exam";
@@ -88,6 +88,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           const content = section.content ? JSON.parse(section.content) : {};
           if (typeof sec.text === "string") content.text = sec.text;
           if (typeof sec.textTitle === "string") content.title = sec.textTitle;
+          if (sec.clearPrevious) {
+            delete content.previousText;
+            delete content.previousTitle;
+          }
           await prisma.examSection.update({ where: { id: section.id }, data: { content: JSON.stringify(content) } });
         }
         if (Array.isArray(sec.tasks)) {

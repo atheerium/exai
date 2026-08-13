@@ -31,7 +31,7 @@ export function WritingStage({
   onMoreAlternatives: (topicId: string) => void;
 }) {
   const { t } = useI18n();
-  const guide = exam.config ? getGuide(exam.config.grade, exam.config.language ?? "en") : null;
+  const guide = exam.config ? getGuide(exam.config.grade, exam.config.language ?? "en", exam.config.stream ?? undefined) : null;
   const [replacing, setReplacing] = React.useState<TopicDto | null>(null);
   const [moreBusy, setMoreBusy] = React.useState(false);
 

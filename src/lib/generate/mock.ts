@@ -78,39 +78,62 @@ export function generatePartOne(ctx: MockContext, variant = 0): GeneratedTask[] 
 
   for (const rule of rules) {
     if (rule.family === "QUESTIONS") {
-      const qs = rng.take(theme.questions, 2);
+      const max = rule.constraints?.maxQuestions ?? 3;
+      const qs = rng.take(theme.questions, max);
       tasks.push({
         skill: "READING",
+        family: "QUESTIONS",
         prompt: qs.map((q, i) => `${i + 1}. ${q.q}`).join("\n"),
         instruction: rule.instruction,
         answer: qs.map((q, i) => `${i + 1}. ${q.a}`).join("\n"),
         marks: rule.marks,
       });
     } else if (rule.family === "TRUE_FALSE") {
-      const sts = rng.take(theme.trueFalse, 3);
+      const max = rule.constraints?.maxStatements ?? 4;
+      const sts = rng.take(theme.trueFalse, max);
       tasks.push({
         skill: "READING",
+        family: "TRUE_FALSE",
         prompt: sts.map((s, i) => `${i + 1}. ${s.statement}`).join("\n"),
         instruction: rule.instruction,
         answer: sts.map((s, i) => `${i + 1}. ${s.truth ? "True" : "False"}. ${s.justification}`).join("\n"),
         marks: rule.marks,
       });
-    } else if (rule.family === "LEXIS_MEANING") {
-      const pairs = rng.take(theme.lexisMeaning, 3);
+    } else if (rule.family === "PARAGRAPH_ID") {
+      const max = rule.constraints?.maxIdeas ?? 4;
+      const ideas = rng.take([
+        "People learn to cooperate and build trust through friendship.",
+        "Forgiveness is essential for keeping relationships healthy.",
+        "Teachers encourage teamwork because it builds patience.",
+        "Modern technology helps friends stay in touch across distances.",
+      ], max);
       tasks.push({
         skill: "READING",
-        prompt: pairs.map((p, i) => `${i + 1}. ${p.given}: .........`).join("\n"),
+        family: "PARAGRAPH_ID",
+        prompt: `Read the text and match each idea with the paragraph where it is mentioned.\n${ideas.map((idea, i) => `${String.fromCharCode(65 + i)}. ${idea}`).join("\n")}`,
         instruction: rule.instruction,
-        answer: pairs.map((p, i) => `${i + 1}. ${p.answer}`).join("\n"),
+        answer: ideas.map((idea, i) => `${String.fromCharCode(65 + i)}. Paragraph ${rng.int(5) + 1}`).join("\n"),
         marks: rule.marks,
       });
-    } else if (rule.family === "LEXIS_OPPOSITE") {
-      const pairs = rng.take(theme.lexisOpposite, 3);
+    } else if (rule.family === "COHESIVE_MARKERS") {
+      const max = rule.constraints?.maxWords ?? 3;
+      const words = rng.take(theme.vocab.filter((v) => v.inText), max);
       tasks.push({
         skill: "READING",
-        prompt: pairs.map((p, i) => `${i + 1}. ${p.given}: .........`).join("\n"),
+        family: "COHESIVE_MARKERS",
+        prompt: `Who or what do the underlined words refer to in the text?\n${words.map((w, i) => `${i + 1}. "${w.word.charAt(0).toUpperCase() + w.word.slice(1)}" (underlined)`).join("\n")}`,
         instruction: rule.instruction,
-        answer: pairs.map((p, i) => `${i + 1}. ${p.answer}`).join("\n"),
+        answer: words.map((w, i) => `${i + 1}. ${w.word}`).join("\n"),
+        marks: rule.marks,
+      });
+    } else if (rule.family === "TITLE_OR_IDEA") {
+      const titles = rng.shuffle(["The Importance of Friendship", "Building Strong Relationships", "Why Friends Matter", "Connections That Last"]);
+      tasks.push({
+        skill: "READING",
+        family: "TITLE_OR_IDEA",
+        prompt: `Choose the most appropriate title for the text.\nA. ${titles[0]}\nB. ${titles[1]}\nC. ${titles[2]}`,
+        instruction: rule.instruction,
+        answer: `A. ${titles[0]}`,
         marks: rule.marks,
       });
     }
@@ -148,16 +171,22 @@ export function generateTextExploration(ctx: MockContext, variant = 0): Generate
     } else if (skillRule.skill === "MORPHOLOGY") {
       const words = rng.take(theme.vocab, 3);
       const rows = words.map((w) => {
-        const col = w.family.noun ? "noun" : w.family.adjective ? "adjective" : w.family.verb ? "verb" : "adverb";
-        const form = (w.family[col as keyof typeof w.family] ?? w.word) as string;
-        return { base: w.word.replace(/s$/, ""), form, col };
+        const noun = w.family.noun ?? "";
+        const verb = w.family.verb ?? "";
+        const adj = w.family.adjective ?? "";
+        return { base: w.word.replace(/s$/, ""), noun: noun || "—", verb: verb || "—", adj: adj || "—" };
       });
       tasks.push({
         skill: "MORPHOLOGY",
-        prompt: rows.map((r, i) => `${i + 1}. "${r.base}" → (${r.col}) ..........`).join("\n"),
+        family: "WORD_FAMILY",
+        prompt: rows.map((r, i) => `${i + 1}. "${r.base}" → ..........`).join("\n"),
         instruction: skillRule.instruction,
-        answer: rows.map((r, i) => `${i + 1}. ${r.form}`).join("\n"),
+        answer: rows.map((r, i) => `${i + 1}. noun: ${r.noun}, verb: ${r.verb}, adjective: ${r.adj}`).join("\n"),
         marks: skillRule.marks,
+        table: {
+          headers: ["Word", "Noun", "Verb", "Adjective"],
+          rows: rows.map((r) => [r.base, r.noun, r.verb, r.adj]),
+        },
       });
     } else if (skillRule.skill === "PHONOLOGY") {
       const useEd = rng.next() > 0.5;

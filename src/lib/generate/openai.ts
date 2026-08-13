@@ -90,7 +90,7 @@ export async function generatePartOneCandidates(ctx: GenContext): Promise<Genera
       'Return {"sets":[{"tasks":[{"prompt","instruction","answer","marks","skill":"READING"}]}]} with 3 different sets of tasks.',
     families,
   });
-  return parseTaskSets(json, 4, ctx.guide.marks.partOne);
+  return parseTaskSets(json, ctx.guide.partOne.length, ctx.guide.marks.partOne);
 }
 
 export async function generateTextExplorationCandidates(ctx: GenContext): Promise<GeneratedTask[][]> {

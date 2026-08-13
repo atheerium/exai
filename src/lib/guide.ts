@@ -33,7 +33,7 @@ export function resolveRules(params: {
     throw new Error(`Stream "${params.stream}" is not valid for grade ${params.grade}`);
   }
   const language = params.language && params.language !== "en" ? params.language : "en";
-  const guide = getGuide(params.grade, language);
+  const guide = getGuide(params.grade, language, params.stream ?? undefined);
   const unit = gradeDef.units.find((u) => u.key === params.unit) ?? gradeDef.units[0];
   if (!unit) throw new Error("No unit found for this grade");
   const length = params.length ?? guide.defaultLength;

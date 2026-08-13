@@ -91,6 +91,8 @@ model Task {
   marks          Float     @default(1)
   order          Int       @default(0)
   manualEdited   Boolean   @default(false)
+  family         String?   // task family: TRUE_FALSE, QUESTIONS, PARAGRAPH_ID, etc.
+  tableData      String?   @map("table_data") // JSON: {headers: string[], rows: string[][]} for morphology tables
   generationId   String?
   candidates     String? // JSON array of candidate tasks {prompt, answer, marks}
   createdAt      DateTime  @default(now())

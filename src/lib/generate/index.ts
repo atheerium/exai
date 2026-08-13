@@ -94,7 +94,7 @@ export async function generateRewriteCandidates(
   return impl().generateRewriteCandidates(ctx, opts);
 }
 
-export function validateCandidate(type: GenerationRequest["type"], payload: unknown): { ok: boolean; issues: string[] } {
+export function validateCandidate(type: GenerationRequest["type"], payload: unknown, expectedMarks?: number): { ok: boolean; issues: string[] } {
   const issues: string[] = [];
   if (type === "TEXT") {
     const t = payload as GeneratedText;
@@ -105,7 +105,7 @@ export function validateCandidate(type: GenerationRequest["type"], payload: unkn
     const tasks = payload as GeneratedTask[];
     if (!tasks || tasks.length === 0) issues.push("No tasks were generated.");
     const total = tasks.reduce((s, t) => s + t.marks, 0);
-    const expected = type === "PART_ONE" ? 7 : 8;
+    const expected = expectedMarks ?? (type === "PART_ONE" ? 7 : 8);
     if (Math.abs(total - expected) > 0.05) {
       issues.push(`Section marks total ${total} instead of the required ${expected}.`);
     }
