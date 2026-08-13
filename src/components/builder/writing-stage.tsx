@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw, Sparkles, BookOpen } from "lucide-react";
+import { RefreshCw, Sparkles, BookOpen, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,65 @@ import { getGuide } from "@/data/guides";
 import { formatMarks } from "@/lib/utils";
 import type { ExamDto, SectionDto, TopicDto } from "@/types";
 import { ReplacementModal, type AltItem } from "./replacement-modal";
+
+function EditableMarks({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(String(value));
+
+  React.useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  function commit() {
+    setEditing(false);
+    const num = parseFloat(draft);
+    if (!isNaN(num) && num >= 0 && num !== value) {
+      onChange(Math.round(num * 10) / 10);
+    } else {
+      setDraft(String(value));
+    }
+  }
+
+  if (editing) {
+    return (
+      <Input
+        type="number"
+        min="0"
+        step="0.5"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") {
+            setDraft(String(value));
+            setEditing(false);
+          }
+        }}
+        className="h-6 w-16 px-1 py-0 text-xs font-semibold"
+        autoFocus
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+      title="Click to edit marks"
+    >
+      {formatMarks(value)} {value === 1 ? "mark" : "marks"}
+      <Pencil className="h-2.5 w-2.5 opacity-50" />
+    </button>
+  );
+}
 
 export function WritingStage({
   exam,
@@ -129,7 +188,10 @@ function TopicCard({
           </span>
           <Badge variant={guided ? "default" : "outline"}>{guided ? t("builder.guided") : t("builder.free")}</Badge>
           <span className="text-xs font-semibold text-muted-foreground">
-            {formatMarks(topic.marks)} {t("builder.marks")}
+            <EditableMarks
+              value={topic.marks}
+              onChange={(v) => onChange({ marks: v })}
+            />
           </span>
         </div>
         <Button variant="outline" size="sm" onClick={onReplace}>

@@ -121,6 +121,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             if (typeof t.keywords === "string") data.keywords = t.keywords;
             if (typeof t.title === "string") data.title = t.title;
             if (typeof t.form === "string") data.form = t.form;
+            if (typeof t.marks === "number") data.marks = t.marks;
             if (Object.keys(data).length) {
               data.manualEdited = true;
               await prisma.topic.update({ where: { id: topic.id }, data });

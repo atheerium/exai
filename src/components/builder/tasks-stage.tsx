@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw, Info, Eye, EyeOff, Sparkles, Star } from "lucide-react";
+import { RefreshCw, Info, Eye, EyeOff, Sparkles, Star, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
@@ -21,6 +22,69 @@ const SKILL_LABELS: Record<string, string> = {
   GRAMMAR: "Grammar",
   DISCOURSE: "Discourse",
 };
+
+function EditableMarks({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(String(value));
+
+  React.useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  function commit() {
+    setEditing(false);
+    const num = parseFloat(draft);
+    if (!isNaN(num) && num >= 0 && num !== value) {
+      onChange(Math.round(num * 10) / 10);
+    } else {
+      setDraft(String(value));
+    }
+  }
+
+  if (editing) {
+    return (
+      <Input
+        type="number"
+        min="0"
+        step="0.5"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") {
+            setDraft(String(value));
+            setEditing(false);
+          }
+        }}
+        className="h-6 w-16 px-1 py-0 text-xs font-semibold"
+        autoFocus
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (!disabled) setEditing(true);
+      }}
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+      title="Click to edit marks"
+    >
+      {formatMarks(value)} {value === 1 ? "mark" : "marks"}
+      {!disabled && <Pencil className="h-2.5 w-2.5 opacity-50" />}
+    </button>
+  );
+}
 
 export function TasksStage({
   kind,
@@ -127,7 +191,10 @@ export function TasksStage({
                       <Badge variant="outline">{SKILL_LABELS[task.skill]}</Badge>
                     )}
                     <span className="text-xs font-semibold text-muted-foreground">
-                      {formatMarks(task.marks)} {t("builder.marks")}
+                      <EditableMarks
+                        value={task.marks}
+                        onChange={(v) => onEdit({ sections: [{ id: section!.id, tasks: [{ id: task.id, marks: v }] }] })}
+                      />
                     </span>
                     <Button variant="ghost" size="sm" onClick={() => onSaveFavourite(task.id)} title="Save as favourite">
                       <Star className="h-3.5 w-3.5" />
