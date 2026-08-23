@@ -61,9 +61,10 @@ model ExamConfig {
   length       Int    @default(150) // words
   unit         String
   topic        String
-  customTopic  Boolean @default(false)
-  guideVersion String? // guide version used at generation time (PRD 19.3, 47)
-  language     String   @default("en") // exam language (PRD 38.1)
+  customTopic     Boolean @default(false)
+  guideVersion    String? // guide version used at generation time (PRD 19.3, 47)
+  language        String   @default("en") // exam language (PRD 38.1)
+  teacherKeywords String? // free-text keywords to bias AI generation
 }
 
 model ExamSection {

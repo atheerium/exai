@@ -79,15 +79,18 @@ test("generateTextExploration covers all five skills and totals the guide's text
 test("generateWriting produces guided (with keywords) and free (without) topics", () => {
   for (const variant of [0, 1, 2]) {
     const g = ctx();
-    const { guided, free } = generateWriting(g, variant);
+    const result = generateWriting(g, variant);
+    const { guided, free } = result;
     assert.equal(guided.kind, "GUIDED");
-    assert.equal(free.kind, "FREE");
-    assert.equal(guided.marks, g.guide.writing.marks);
-    assert.equal(free.marks, g.guide.writing.marks);
     assert.ok(guided.keywords && guided.keywords.includes("/"), "guided topic must have slash keywords");
-    assert.ok(!free.keywords, "free topic must not carry keywords");
     assert.ok(guided.situation.length > 20);
-    assert.ok(free.situation.length > 20);
+    if (free) {
+      assert.equal(free.kind, "FREE");
+      assert.equal(guided.marks, g.guide.writing.marks);
+      assert.equal(free.marks, g.guide.writing.marks);
+      assert.ok(!free.keywords, "free topic must not carry keywords");
+      assert.ok(free.situation.length > 20);
+    }
   }
 });
 
@@ -130,4 +133,60 @@ test("generation is deterministic for a fixed seed and variant", () => {
   const p1a = generatePartOne(ctx(), 0);
   const p1b = generatePartOne(ctx(), 0);
   assert.deepEqual(p1a, p1b);
+});
+
+test("BEM middle school (4am) generates singleTopic writing with full 6 marks", () => {
+  const bemGuide = getGuide("4am");
+  assert.equal(bemGuide.structure, "bem");
+  const g = ctx({ grade: "4am", guide: bemGuide, seed: "exam-bem:4am:u-family:My family" });
+  const { guided, free } = generateWriting(g, 0);
+  assert.equal(guided.kind, "GUIDED");
+  assert.equal(guided.marks, 6);
+  assert.equal(free, null);
+  assert.ok(guided.keywords && guided.keywords.includes("/"), "BEM guided topic must have slash keywords");
+  assert.ok(guided.situation.length > 20);
+});
+
+test("BEM writing candidates all have free: null", () => {
+  const bemGuide = getGuide("4am");
+  const g = ctx({ grade: "4am", guide: bemGuide, seed: "exam-bem:4am:u-family:My family" });
+  const cands = [generateWriting(g, 0), ...topicAlternatives(g, 2)];
+  assert.equal(cands.length, 3);
+  for (const c of cands) {
+    assert.equal(c.free, null);
+    assert.equal(c.guided.kind, "GUIDED");
+    assert.equal(c.guided.marks, 6);
+  }
+});
+
+test("BEM text exploration heading is 'B. Mastery of Language' and totals 7", () => {
+  const bemGuide = getGuide("4am");
+  assert.equal(bemGuide.textExploration.heading, "B. Mastery of Language");
+  const g = ctx({ grade: "4am", guide: bemGuide, seed: "exam-bem:4am:u-family:My family" });
+  const tasks = generateTextExploration(g, 0);
+  assert.equal(tasks.length, 5);
+  const total = tasks.reduce((s, t) => s + t.marks, 0);
+  assert.ok(Math.abs(total - 7) < 1e-9, `BEM textExploration total should be 7, got ${total}`);
+});
+
+test("BEM partOne rules produce exactly 7 marks", () => {
+  const bemGuide = getGuide("4am");
+  const g = ctx({ grade: "4am", guide: bemGuide, seed: "exam-bem:4am:u-family:My family" });
+  const tasks = generatePartOne(g, 0);
+  const total = tasks.reduce((s, t) => s + t.marks, 0);
+  assert.ok(Math.abs(total - 7) < 1e-9, `BEM partOne total should be 7, got ${total}`);
+});
+
+test("Bac secondary (2as) generates two writing topics (guided + free)", () => {
+  const bacGuide = getGuide("2as");
+  assert.equal(bacGuide.structure, "bac");
+  const g = ctx({ grade: "2as", guide: bacGuide, seed: "exam-bac:2as:u-signs:Fashion" });
+  const result = generateWriting(g, 0);
+  assert.equal(result.guided.kind, "GUIDED");
+  assert.ok(result.free !== null, "Bac should produce a free topic");
+  if (result.free) {
+    assert.equal(result.free.kind, "FREE");
+    assert.equal(result.guided.marks, bacGuide.writing.marks);
+    assert.equal(result.free.marks, bacGuide.writing.marks);
+  }
 });

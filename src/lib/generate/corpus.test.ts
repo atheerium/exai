@@ -44,7 +44,9 @@ test("corpus: every grade x unit generates valid exam content", () => {
 
       const { guided, free } = generateWriting(ctx, 0);
       assert.ok(guided.keywords?.includes("/"), `${gradeKey}/${unit.key}: guided keywords`);
-      assert.equal(free.keywords, undefined, `${gradeKey}/${unit.key}: free keywords`);
+      if (free) {
+        assert.equal(free.keywords, undefined, `${gradeKey}/${unit.key}: free keywords`);
+      }
     }
   }
   assert.ok(combos >= 25, `expected >= 25 grade/unit combos, got ${combos}`);

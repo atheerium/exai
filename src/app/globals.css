@@ -80,4 +80,17 @@
   body {
     background: white;
   }
+  #section-params,
+  #section-text,
+  #section-partOne,
+  #section-partTwo,
+  #section-writing,
+  #section-preview {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+  }
 }

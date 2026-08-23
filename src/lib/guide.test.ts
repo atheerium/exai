@@ -63,8 +63,6 @@ test("getThemeFor resolves a unit theme", () => {
 
 test("language seam is data-driven (PRD 38.1/38.3)", () => {
   assert.deepEqual(getAvailableLanguages(), ["en"]);
-  // Adding a French guide's data (without code changes to the catalog or UI)
-  // must automatically surface "fr" as an available language.
   const synthetic: Record<string, Guide> = {
     ...GUIDES,
     "fr-3as": { ...GUIDES["3as"], key: "fr-3as", name: "French 3 AS (synthetic)", language: "fr" },
@@ -79,10 +77,7 @@ test("every guide declares a language", () => {
 });
 
 test("guide resolution is language-aware (PRD 38.1)", () => {
-  // Without a French guide, fr falls back to the English guide.
   assert.equal(getGuide("3as", "fr").language, "en");
-  // Simulate adding a French guide's data: resolution must prefer it for fr
-  // while en keeps the default — the seam is complete end-to-end.
   (GUIDES as Record<string, Guide>)["fr-3as"] = {
     ...GUIDES["3as"],
     key: "fr-3as",
@@ -98,5 +93,137 @@ test("guide resolution is language-aware (PRD 38.1)", () => {
     assert.equal(r.language, "fr");
   } finally {
     delete (GUIDES as Record<string, Guide>)["fr-3as"];
+  }
+});
+
+test("2AS scientific stream resolves a 4-unit list without Signs of the Time", () => {
+  const c = curriculumCatalog();
+  const as2 = c.secondary.find((g) => g.grade === "2as")!;
+  const sciUnits = as2.units.filter(
+    (u) => !u.streams || u.streams.includes("Sciences Expérimentales")
+  );
+  assert.equal(sciUnits.length, 4);
+  assert.ok(!sciUnits.some((u) => u.key === "u-signs"), "Signs of the Time should not appear for sciences");
+  assert.ok(sciUnits.some((u) => u.key === "u-peace"));
+  assert.ok(sciUnits.some((u) => u.key === "u-waste"));
+  assert.ok(sciUnits.some((u) => u.key === "u-scientist-sc"));
+  assert.ok(sciUnits.some((u) => u.key === "u-island-sc"));
+});
+
+test("2AS literary stream resolves 6-unit list including Signs of the Time", () => {
+  const c = curriculumCatalog();
+  const as2 = c.secondary.find((g) => g.grade === "2as")!;
+  const litUnits = as2.units.filter(
+    (u) => !u.streams || u.streams.includes("Lettres et Langues Étrangères")
+  );
+  assert.equal(litUnits.length, 6);
+  assert.ok(litUnits.some((u) => u.key === "u-signs"));
+  assert.ok(litUnits.some((u) => u.key === "u-fiction"));
+});
+
+test("2AS GE stream resolves 4-unit list with Business Is Business", () => {
+  const c = curriculumCatalog();
+  const as2 = c.secondary.find((g) => g.grade === "2as")!;
+  const geUnits = as2.units.filter(
+    (u) => !u.streams || u.streams.includes("Gestion et Économie")
+  );
+  assert.equal(geUnits.length, 4);
+  assert.ok(geUnits.some((u) => u.key === "u-business"));
+  assert.ok(!geUnits.some((u) => u.key === "u-signs"), "Signs of the Time should not appear for GE");
+});
+
+test("3AS literary stream resolves 4-unit list with Ancient Civilization", () => {
+  const c = curriculumCatalog();
+  const as3 = c.secondary.find((g) => g.grade === "3as")!;
+  const litUnits = as3.units.filter(
+    (u) => !u.streams || u.streams.includes("Lettres et Philosophie")
+  );
+  assert.equal(litUnits.length, 4);
+  assert.ok(litUnits.some((u) => u.key === "u-ancient"));
+  assert.ok(litUnits.some((u) => u.key === "u-ethics"));
+  assert.ok(litUnits.some((u) => u.key === "u-education"));
+  assert.ok(litUnits.some((u) => u.key === "u-feelings-lit"));
+});
+
+test("3AS scientific stream resolves 4-unit list with Astronomy", () => {
+  const c = curriculumCatalog();
+  const as3 = c.secondary.find((g) => g.grade === "3as")!;
+  const sciUnits = as3.units.filter(
+    (u) => !u.streams || u.streams.includes("Sciences Expérimentales")
+  );
+  assert.equal(sciUnits.length, 4);
+  assert.ok(sciUnits.some((u) => u.key === "u-astronomy"));
+  assert.ok(sciUnits.some((u) => u.key === "u-advertising"));
+  assert.ok(sciUnits.some((u) => u.key === "u-feelings-sc"));
+  assert.ok(!sciUnits.some((u) => u.key === "u-ancient"), "Ancient Civilization should not appear for sciences");
+});
+
+test("curriculumCatalog includes streams on units that have them", () => {
+  const c = curriculumCatalog();
+  const as2 = c.secondary.find((g) => g.grade === "2as")!;
+  const signsUnit = as2.units.find((u) => u.key === "u-signs")!;
+  assert.deepEqual(signsUnit.streams, ["Lettres et Philosophie", "Lettres et Langues Étrangères"]);
+  const peaceUnit = as2.units.find((u) => u.key === "u-peace")!;
+  assert.equal(peaceUnit.streams, undefined, "shared units have no streams field");
+});
+
+test("resolveRules throws for invalid stream+unit combination", () => {
+  assert.throws(
+    () => resolveRules({ ...base, grade: "2as", stream: "Sciences Expérimentales", unit: "u-signs" }),
+    /not part of/
+  );
+});
+
+test("resolveRules resolves correct unit for 2AS scientific stream", () => {
+  const r = resolveRules({
+    level: "secondary",
+    grade: "2as",
+    stream: "Sciences Expérimentales",
+    length: 150,
+    unit: "u-peace",
+    topic: "Resolving conflicts",
+  });
+  assert.equal(r.themeKey, "community");
+  assert.equal(r.unitLabel, "Make Peace");
+});
+
+test("1AS units have no streams field (all streams)", () => {
+  const c = curriculumCatalog();
+  const as1 = c.secondary.find((g) => g.grade === "1as")!;
+  for (const u of as1.units) {
+    assert.equal(u.streams, undefined, `unit ${u.key} should have no streams`);
+  }
+  assert.equal(as1.units.length, 5);
+});
+
+test("getGuide('4am').structure === 'bem' and marks are 7/7/6", () => {
+  const g = getGuide("4am");
+  assert.equal(g.structure, "bem");
+  assert.equal(g.marks.partOne, 7);
+  assert.equal(g.marks.textExploration, 7);
+  assert.equal(g.marks.writing, 6);
+  assert.equal(g.marks.partOne + g.marks.textExploration + g.marks.writing, 20);
+});
+
+test("getGuide('1as').structure === 'bac' and total is 20", () => {
+  const g = getGuide("1as");
+  assert.equal(g.structure, "bac");
+  assert.equal(g.marks.partOne + g.marks.textExploration + g.marks.writing, 20);
+});
+
+test("all middle grades have structure 'bem' and singleTopic writing", () => {
+  for (const grade of ["1am", "2am", "3am", "4am"]) {
+    const g = getGuide(grade);
+    assert.equal(g.structure, "bem", `${grade} should be bem`);
+    assert.equal(g.writing.singleTopic, true, `${grade} writing should be singleTopic`);
+    assert.equal(g.textExploration.heading, "B. Mastery of Language", `${grade} textExploration heading`);
+  }
+});
+
+test("all secondary grades have structure 'bac' and no singleTopic", () => {
+  for (const grade of ["1as", "2as", "3as"]) {
+    const g = getGuide(grade);
+    assert.equal(g.structure, "bac", `${grade} should be bac`);
+    assert.notEqual(g.writing.singleTopic, true, `${grade} writing should not be singleTopic`);
   }
 });

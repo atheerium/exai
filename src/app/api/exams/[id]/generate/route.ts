@@ -5,7 +5,16 @@ import { loadExamDto } from "@/lib/serialize";
 import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, generateRewriteCandidates, validateCandidate, providerName } from "@/lib/generate";
 import { track } from "@/lib/events";
 import { captureRevision } from "@/lib/revisions";
+import { getGuide } from "@/data/guides";
 import type { GeneratedTask, GeneratedTopic } from "@/types";
+
+function sectionHeading(grade: string, type: string, language?: string | null, stream?: string | null): string {
+  const guide = getGuide(grade, language ?? "en", stream ?? undefined);
+  if (type === "PART_ONE") return guide.headings?.partOne ?? "A. Reading Comprehension";
+  if (type === "TEXT_EXPLORATION") return guide.headings?.textExploration ?? guide.textExploration.heading;
+  if (type === "WRITING") return guide.headings?.writing ?? "C. Written expression";
+  return "A. Reading Comprehension";
+}
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -32,6 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       topic: exam.config.topic,
       examId: exam.id,
       language: exam.config.language,
+      teacherKeywords: exam.config.teacherKeywords ?? null,
     });
 
     const log = (status: string, error?: string) =>
@@ -51,7 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       let section = sectionOf(exam.sections, "TEXT");
       if (!section) {
         section = await prisma.examSection.create({
-          data: { examId: id, type: "TEXT", heading: "A. Reading Comprehension", order: 1, content: "{}" },
+          data: { examId: id, type: "TEXT", heading: sectionHeading(exam.config.grade, "TEXT", exam.config.language, exam.config.stream), order: 1, content: "{}" },
         });
       } else {
         const old = section.content ? JSON.parse(section.content) : {};
@@ -93,7 +103,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           data: {
             examId: id,
             type,
-            heading: type === "PART_ONE" ? "A. Reading Comprehension" : "B. Text exploration",
+            heading: sectionHeading(exam.config.grade, type, exam.config.language, exam.config.stream),
             order: type === "PART_ONE" ? 2 : 3,
             content: "{}",
           },
@@ -124,7 +134,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await captureRevision(id, type === "PART_ONE" ? "Part One generated" : "Text exploration generated");
     } else if (type === "WRITING") {
       const cands = await generateWritingCandidates(ctx);
-      const v = validateCandidate("WRITING", cands[0]);
+      const singleTopic = !!ctx.guide.writing.singleTopic;
+      const v = validateCandidate("WRITING", cands[0], undefined, singleTopic ? { singleTopic: true } : undefined);
       if (!v.ok) {
         await log("ERROR", v.issues.join("; "));
         await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
@@ -133,12 +144,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       let section = sectionOf(exam.sections, "WRITING");
       if (!section) {
         section = await prisma.examSection.create({
-          data: { examId: id, type: "WRITING", heading: "C. Written expression", order: 4, content: "{}" },
+          data: { examId: id, type: "WRITING", heading: sectionHeading(exam.config.grade, "WRITING", exam.config.language, exam.config.stream), order: 4, content: "{}" },
         });
       }
       await prisma.topic.deleteMany({ where: { sectionId: section.id } });
       const guidedSets = cands.map((c) => c.guided);
-      const freeSets = cands.map((c) => c.free);
       await prisma.topic.create({
         data: {
           sectionId: section.id,
@@ -153,20 +163,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           candidates: JSON.stringify(guidedSets.slice(1)),
         },
       });
-      await prisma.topic.create({
-        data: {
-          sectionId: section.id,
-          kind: "FREE",
-          title: freeSets[0].title,
-          situation: freeSets[0].situation,
-          instruction: freeSets[0].instruction,
-          keywords: null,
-          form: freeSets[0].form,
-          marks: freeSets[0].marks,
-          order: 1,
-          candidates: JSON.stringify(freeSets.slice(1)),
-        },
-      });
+      if (!singleTopic) {
+        const freeSets = cands.map((c) => c.free).filter(Boolean);
+        if (freeSets.length > 0 && freeSets[0]) {
+          await prisma.topic.create({
+            data: {
+              sectionId: section.id,
+              kind: "FREE",
+              title: freeSets[0].title,
+              situation: freeSets[0].situation,
+              instruction: freeSets[0].instruction,
+              keywords: null,
+              form: freeSets[0].form,
+              marks: freeSets[0].marks,
+              order: 1,
+              candidates: JSON.stringify(freeSets.slice(1)),
+            },
+          });
+        }
+      }
       await log("OK");
       await track("writing_generated", { userId: user.id, examId: id });
       await captureRevision(id, "Writing generated");
@@ -224,7 +239,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const topic = await prisma.topic.findFirst({ where: { id: body.topicId, section: { examId: id } } });
       if (!topic) return NextResponse.json({ error: "Topic not found." }, { status: 404 });
       const cands = await generateWritingCandidates(ctx);
-      const sets = (topic.kind === "GUIDED" ? cands.map((c) => c.guided) : cands.map((c) => c.free)).slice(1);
+      const topicSets = topic.kind === "GUIDED"
+        ? cands.map((c) => c.guided)
+        : cands.map((c) => c.free).filter(Boolean);
+      const sets = (topicSets.length > 0 ? topicSets.slice(1) : []);
       await prisma.topic.update({ where: { id: topic.id }, data: { candidates: JSON.stringify(sets) } });
       await log("OK");
       await track("topic_replaced", { userId: user.id, examId: id, meta: { kind: "generate_more" } });

@@ -178,8 +178,10 @@ test("openai provider: writing sets validate (guided keywords, free without)", a
   for (const pair of sets) {
     assert.equal(pair.guided.kind, "GUIDED");
     assert.ok(pair.guided.keywords?.includes("/"));
-    assert.equal(pair.free.kind, "FREE");
-    assert.equal(pair.free.keywords, undefined);
+    if (pair.free) {
+      assert.equal(pair.free.kind, "FREE");
+      assert.equal(pair.free.keywords, undefined);
+    }
     const v = validateCandidate("WRITING", pair);
     assert.ok(v.ok, v.issues.join("; "));
   }

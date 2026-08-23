@@ -108,10 +108,12 @@ export function WritingStage({
     }
   }
 
+  const topicThreshold = guide?.writing.singleTopic ? 1 : 2;
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h2 className="text-xl font-bold tracking-tight">C. Written expression</h2>
+        <h2 className="text-xl font-bold tracking-tight">{guide?.headings?.writing ?? "C. Written expression"}</h2>
         <p className="mt-1 text-sm font-semibold text-emerald-700">
           {guide ? `${formatMarks(guide.marks.writing)} pts` : "05 pts"}
         </p>
@@ -119,7 +121,7 @@ export function WritingStage({
 
       <p className="text-sm text-muted-foreground">{t("builder.writingHelp")}</p>
 
-      {topics.length < 2 ? (
+      {topics.length < topicThreshold ? (
         <div className="rounded-xl border border-dashed py-16 text-center">
           {generating ? (
             <div className="mx-auto max-w-md space-y-3 px-6">
@@ -129,7 +131,7 @@ export function WritingStage({
             </div>
           ) : (
             <>
-              <p className="text-sm text-muted-foreground">Generate the two writing topics to finish the exam.</p>
+              <p className="text-sm text-muted-foreground">{guide?.writing.singleTopic ? "Generate the writing topic to finish the exam." : "Generate the two writing topics to finish the exam."}</p>
               <Button onClick={onGenerate} className="mt-4" size="lg">
                 <Sparkles className="h-4 w-4" />
                 {t("builder.generateWriting")}

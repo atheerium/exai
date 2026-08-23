@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Check, ChevronLeft, ChevronRight, Save } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast";
 import { useI18n, type I18nKey } from "@/lib/i18n";
+import { getGuide } from "@/data/guides";
 import type { ExamDto, SectionDto } from "@/types";
 import { ParametersStage } from "./parameters-stage";
 import { TextStage } from "./text-stage";
@@ -14,9 +15,9 @@ import { WritingStage } from "./writing-stage";
 import { PreviewStage } from "./preview-stage";
 import { VersionsButton, VersionsModal } from "./versions-modal";
 
-export type Stage = "params" | "text" | "partOne" | "partTwo" | "writing" | "preview";
+export type SectionId = "params" | "text" | "partOne" | "partTwo" | "writing" | "preview";
 
-const STEPS: { key: Stage; labelKey: I18nKey }[] = [
+const SECTIONS: { key: SectionId; labelKey: I18nKey }[] = [
   { key: "params", labelKey: "builder.parameters" },
   { key: "text", labelKey: "builder.text" },
   { key: "partOne", labelKey: "builder.partOne" },
@@ -28,11 +29,21 @@ const STEPS: { key: Stage; labelKey: I18nKey }[] = [
 export function Builder({ initialExam }: { initialExam: ExamDto }) {
   const { t } = useI18n();
   const [exam, setExam] = React.useState<ExamDto>(initialExam);
-  const [stage, setStage] = React.useState<Stage>(() => initialStage(initialExam));
   const [generating, setGenerating] = React.useState<string | null>(null);
   const [saveState, setSaveState] = React.useState<"idle" | "saving" | "saved">("idle");
   const [versionsOpen, setVersionsOpen] = React.useState(false);
+  const [activeSection, setActiveSection] = React.useState<SectionId>("params");
+  const [paramsCollapsed, setParamsCollapsed] = React.useState(!!exam.config);
   const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const sectionRefs = React.useRef<Record<SectionId, HTMLElement | null>>({
+    params: null,
+    text: null,
+    partOne: null,
+    partTwo: null,
+    writing: null,
+    preview: null,
+  });
 
   const section = (type: string): SectionDto | undefined => exam.sections.find((s) => s.type === type);
   const textSec = section("TEXT");
@@ -40,13 +51,14 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
   const p2Sec = section("TEXT_EXPLORATION");
   const wSec = section("WRITING");
 
+  const guide = exam.config ? getGuide(exam.config.grade, exam.config.language ?? "en", exam.config.stream ?? undefined) : null;
   const hasConfig = !!exam.config;
   const hasText = !!textSec?.text;
   const hasPartOne = (p1Sec?.tasks?.length ?? 0) > 0;
   const hasPartTwo = (p2Sec?.tasks?.length ?? 0) > 0;
-  const hasWriting = (wSec?.topics?.length ?? 0) >= 2;
+  const hasWriting = (wSec?.topics?.length ?? 0) >= (guide?.writing.singleTopic ? 1 : 2);
 
-  const unlocked: Record<Stage, boolean> = {
+  const unlocked: Record<SectionId, boolean> = {
     params: true,
     text: hasConfig,
     partOne: hasText,
@@ -55,9 +67,45 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     preview: hasWriting,
   };
 
-  const stageIndex = STEPS.findIndex((s) => s.key === stage);
+  // IntersectionObserver for active section tracking
+  React.useEffect(() => {
+    const entries = Object.entries(sectionRefs.current) as [SectionId, HTMLElement | null][];
+    const validEntries = entries.filter(([, el]) => el !== null);
 
-  async function savePatch(patch: any, silent = false) {
+    const observer = new IntersectionObserver(
+      (observerEntries) => {
+        // Find the most visible section
+        let maxRatio = 0;
+        let visibleSection: SectionId = "params";
+        for (const entry of observerEntries) {
+          if (entry.intersectionRatio > maxRatio) {
+            maxRatio = entry.intersectionRatio;
+            const id = Object.keys(sectionRefs.current).find(
+              (k) => sectionRefs.current[k as SectionId] === entry.target
+            ) as SectionId | undefined;
+            if (id) visibleSection = id;
+          }
+        }
+        if (maxRatio > 0) setActiveSection(visibleSection);
+      },
+      { threshold: [0, 0.25, 0.5, 0.75, 1], rootMargin: "-80px 0px -40% 0px" }
+    );
+
+    for (const [, el] of validEntries) {
+      observer.observe(el!);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  function scrollToSection(id: SectionId) {
+    const el = sectionRefs.current[id];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  async function savePatch(patch: Record<string, unknown>, silent = false) {
     setSaveState("saving");
     try {
       const res = await fetch(`/api/exams/${exam.id}`, {
@@ -70,13 +118,13 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
       if (data?.id) setExam(data);
       setSaveState("saved");
       if (!silent) toast("Saved", "success");
-    } catch (e: any) {
+    } catch (e: unknown) {
       setSaveState("idle");
-      toast(e?.message ?? "Could not save.", "error");
+      toast(e instanceof Error ? e.message : "Could not save.", "error");
     }
   }
 
-  function scheduleSave(patch: any) {
+  function scheduleSave(patch: Record<string, unknown>) {
     setSaveState("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => savePatch(patch, true), 700);
@@ -98,10 +146,17 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
       }
       setExam(data);
       toast("Generated", "success");
-      // Advance the workflow (PRD 5.1)
-      if (type === "TEXT") setStage("text");
-      if (type === "PART_ONE") setStage("partOne");
-      if (type === "TEXT_EXPLORATION") setStage("writing");
+      // Scroll to the relevant section after generation
+      const scrollMap: Record<string, SectionId> = {
+        TEXT: "text",
+        PART_ONE: "partOne",
+        TEXT_EXPLORATION: "partTwo",
+        WRITING: "writing",
+      };
+      const target = scrollMap[type];
+      if (target) {
+        requestAnimationFrame(() => scrollToSection(target));
+      }
     } finally {
       setGenerating(null);
     }
@@ -118,8 +173,8 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
       if (!res.ok) throw new Error(data.error);
       setExam(data);
       toast("Replaced", "success");
-    } catch (e: any) {
-      toast(e?.message ?? "Could not replace.", "error");
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : "Could not replace.", "error");
     }
   }
 
@@ -143,8 +198,8 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       toast("Saved to favourites", "success");
-    } catch (e: any) {
-      toast(e?.message ?? "Could not save favourite.", "error");
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : "Could not save favourite.", "error");
     }
   }
 
@@ -191,6 +246,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     unit: string;
     topic: string;
     customTopic: boolean;
+    teacherKeywords?: string | null;
   }) {
     try {
       const res = await fetch(`/api/exams/${exam.id}`, {
@@ -202,41 +258,18 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
       if (!res.ok) throw new Error(data.error);
       setExam(data);
       await generate("TEXT");
-    } catch (e: any) {
-      toast(e?.message ?? "Could not save parameters.", "error");
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : "Could not save parameters.", "error");
     }
   }
 
-  const primaryCta: Record<Stage, { label: string; action: () => void; disabled?: boolean } | null> = {
-    params: null,
-    text: {
-      label: t("builder.generatePartOne"),
-      action: () => generate("PART_ONE"),
-      disabled: !hasText,
-    },
-    partOne: {
-      label: t("builder.generatePartTwo"),
-      action: () => generate("TEXT_EXPLORATION"),
-      disabled: !hasPartOne,
-    },
-    partTwo: {
-      label: t("builder.generateWriting"),
-      action: () => generate("WRITING"),
-      disabled: !hasPartTwo,
-    },
-    writing: { label: t("builder.previewBtn"), action: () => setStage("preview"), disabled: !hasWriting },
-    preview: null,
-  };
-
-  const cta = primaryCta[stage];
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-0">
       {/* Builder top bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="no-print flex flex-wrap items-center justify-between gap-3 pb-4">
         <div className="flex items-center gap-2 text-sm">
           <Link href="/dashboard" className="text-muted-foreground hover:text-foreground">
-            ← {t("nav.dashboard")}
+            &larr; {t("nav.dashboard")}
           </Link>
           <span className="text-muted-foreground">/</span>
           <span className="max-w-[220px] truncate font-medium sm:max-w-xs">{exam.title}</span>
@@ -256,177 +289,301 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         </div>
       </div>
 
-      {/* Stepper */}
-      <nav className="no-print flex gap-1 overflow-x-auto rounded-xl border bg-white p-1.5" aria-label="Exam steps">
-        {STEPS.map((s, i) => {
-          const active = s.key === stage;
+      {/* Sticky section nav */}
+      <nav
+        className="no-print sticky top-0 z-40 flex gap-1 overflow-x-auto rounded-xl border bg-white p-1.5 shadow-sm"
+        aria-label="Exam sections"
+      >
+        {SECTIONS.map((s) => {
+          const isActive = s.key === activeSection;
           const isUnlocked = unlocked[s.key];
+          const isComplete =
+            (s.key === "params" && hasConfig) ||
+            (s.key === "text" && hasText) ||
+            (s.key === "partOne" && hasPartOne) ||
+            (s.key === "partTwo" && hasPartTwo) ||
+            (s.key === "writing" && hasWriting) ||
+            false;
           return (
             <button
               key={s.key}
-              onClick={() => isUnlocked && setStage(s.key)}
+              onClick={() => {
+                if (isUnlocked) scrollToSection(s.key);
+              }}
               disabled={!isUnlocked}
+              aria-label={`${t(s.labelKey)}${isComplete ? " (complete)" : ""}`}
               className={cn(
-                "flex min-w-[92px] flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors",
-                active ? "bg-primary text-primary-foreground shadow" : isUnlocked ? "text-foreground hover:bg-accent" : "cursor-not-allowed text-muted-foreground/50"
+                "flex min-w-[72px] flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
+                isActive ? "bg-primary text-primary-foreground shadow" : isUnlocked ? "text-foreground hover:bg-accent" : "cursor-not-allowed text-muted-foreground/50"
               )}
             >
-              <span
-                className={cn(
-                  "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold",
-                  active ? "bg-white/20" : isUnlocked ? "bg-secondary text-primary" : "bg-muted text-muted-foreground"
-                )}
-              >
-                {i + 1}
-              </span>
-              {t(s.labelKey)}
+              {isComplete ? (
+                <Check className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <span
+                  className={cn(
+                    "flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold",
+                    isActive ? "bg-white/20" : isUnlocked ? "bg-secondary text-primary" : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {SECTIONS.indexOf(s) + 1}
+                </span>
+              )}
+              <span className="truncate">{t(s.labelKey)}</span>
             </button>
           );
         })}
       </nav>
 
-      {/* Stage content */}
-      <div className="rounded-2xl border bg-white p-5 shadow-sm sm:p-8">
-        {stage === "params" && (
-          <ParametersStage exam={exam} onSubmit={submitParameters} />
-        )}
-        {stage === "text" && (
-          <TextStage
+      {/* Sections */}
+      <div className="space-y-6 pt-4">
+        {/* Section: Parameters */}
+        <section
+          id="section-params"
+          ref={(el) => { sectionRefs.current.params = el; }}
+          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+        >
+          <ParametersStage
             exam={exam}
-            section={textSec}
-            generating={generating === "TEXT"}
-            onEdit={(patch) => {
-              scheduleSave(patch);
-              setExam((prev) => applySectionPatch(prev, patch));
-            }}
-            onGenerate={() => generate("TEXT")}
-            onRewrite={rewrite}
-            onReplace={(index) => replaceItem("TEXT", textSec!.id, index)}
-            onUndo={undoRewrite}
+            collapsed={paramsCollapsed && hasConfig}
+            onToggleCollapse={() => setParamsCollapsed((c) => !c)}
+            onSubmit={submitParameters}
           />
-        )}
-        {stage === "partOne" && (
-          <TasksStage
-            kind="PART_ONE"
-            exam={exam}
-            section={p1Sec}
-            generating={generating === "PART_ONE"}
-            onGenerate={() => generate("PART_ONE")}
-            onEdit={(patch) => {
-              scheduleSave(patch);
-              setExam((prev) => applySectionPatch(prev, patch));
-            }}
-            onReplace={(taskId, index) => replaceItem("TASK", taskId, index)}
-            onMoreAlternatives={(taskId) => generate("TASK_ALT", { taskId })}
-            onSaveFavourite={saveFavourite}
-            onApplied={refreshExam}
-          />
-        )}
-        {stage === "partTwo" && (
-          <TasksStage
-            kind="TEXT_EXPLORATION"
-            exam={exam}
-            section={p2Sec}
-            generating={generating === "TEXT_EXPLORATION"}
-            onGenerate={() => generate("TEXT_EXPLORATION")}
-            onEdit={(patch) => {
-              scheduleSave(patch);
-              setExam((prev) => applySectionPatch(prev, patch));
-            }}
-            onReplace={(taskId, index) => replaceItem("TASK", taskId, index)}
-            onMoreAlternatives={(taskId) => generate("TASK_ALT", { taskId })}
-            onSaveFavourite={saveFavourite}
-            onApplied={refreshExam}
-          />
-        )}
-        {stage === "writing" && (
-          <WritingStage
-            exam={exam}
-            section={wSec}
-            generating={generating === "WRITING"}
-            onGenerate={() => generate("WRITING")}
-            onEdit={(patch) => {
-              scheduleSave(patch);
-              setExam((prev) => applySectionPatch(prev, patch));
-            }}
-            onReplace={(topicId, index) => replaceItem("TOPIC", topicId, index)}
-            onMoreAlternatives={(topicId) => generate("TOPIC_ALT", { topicId })}
-          />
-        )}
-        {stage === "preview" && <PreviewStage exam={exam} />}
+        </section>
+
+        {/* Section: A. Reading Comprehension */}
+        <section
+          id="section-text"
+          ref={(el) => { sectionRefs.current.text = el; }}
+          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+        >
+          {!unlocked.text ? (
+            <EmptySection
+              title="A. Reading Comprehension"
+              label={t("builder.generateText")}
+              prereq={!hasConfig}
+              prereqMsg={t("builder.prereqMissing")}
+              onGenerate={() => {
+                scrollToSection("params");
+              }}
+            />
+          ) : (
+            <TextStage
+              exam={exam}
+              section={textSec}
+              generating={generating === "TEXT"}
+              onEdit={(patch) => {
+                scheduleSave(patch);
+                setExam((prev) => applySectionPatch(prev, patch));
+              }}
+              onGenerate={() => generate("TEXT")}
+              onRewrite={rewrite}
+              onReplace={(index) => replaceItem("TEXT", textSec!.id, index)}
+              onUndo={undoRewrite}
+            />
+          )}
+        </section>
+
+        {/* Section: Part One (reading comprehension tasks) */}
+        <section
+          id="section-partOne"
+          ref={(el) => { sectionRefs.current.partOne = el; }}
+          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+        >
+          {!unlocked.partOne ? (
+            <EmptySection
+              title="A. Reading Comprehension"
+              label={t("builder.generatePartOne")}
+              prereq={!hasText}
+              prereqMsg={t("builder.prereqMissing")}
+              onGenerate={() => {
+                if (hasText) generate("PART_ONE");
+                else scrollToSection("text");
+              }}
+            />
+          ) : (
+            <TasksStage
+              kind="PART_ONE"
+              exam={exam}
+              section={p1Sec}
+              generating={generating === "PART_ONE"}
+              onGenerate={() => generate("PART_ONE")}
+              onEdit={(patch) => {
+                scheduleSave(patch);
+                setExam((prev) => applySectionPatch(prev, patch));
+              }}
+              onReplace={(taskId, index) => replaceItem("TASK", taskId, index)}
+              onMoreAlternatives={(taskId) => generate("TASK_ALT", { taskId })}
+              onSaveFavourite={saveFavourite}
+              onApplied={refreshExam}
+            />
+          )}
+        </section>
+
+        {/* Section: B. Text Exploration */}
+        <section
+          id="section-partTwo"
+          ref={(el) => { sectionRefs.current.partTwo = el; }}
+          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+        >
+          {!unlocked.partTwo ? (
+            <EmptySection
+              title={guide?.headings?.textExploration ?? "B. Text exploration"}
+              label={t("builder.generatePartTwo")}
+              prereq={!hasPartOne}
+              prereqMsg={t("builder.prereqMissing")}
+              onGenerate={() => {
+                if (hasPartOne) generate("TEXT_EXPLORATION");
+                else scrollToSection("partOne");
+              }}
+            />
+          ) : (
+            <TasksStage
+              kind="TEXT_EXPLORATION"
+              exam={exam}
+              section={p2Sec}
+              generating={generating === "TEXT_EXPLORATION"}
+              onGenerate={() => generate("TEXT_EXPLORATION")}
+              onEdit={(patch) => {
+                scheduleSave(patch);
+                setExam((prev) => applySectionPatch(prev, patch));
+              }}
+              onReplace={(taskId, index) => replaceItem("TASK", taskId, index)}
+              onMoreAlternatives={(taskId) => generate("TASK_ALT", { taskId })}
+              onSaveFavourite={saveFavourite}
+              onApplied={refreshExam}
+            />
+          )}
+        </section>
+
+        {/* Section: C. Written Expression */}
+        <section
+          id="section-writing"
+          ref={(el) => { sectionRefs.current.writing = el; }}
+          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+        >
+          {!unlocked.writing ? (
+            <EmptySection
+              title={guide?.headings?.writing ?? "C. Written expression"}
+              label={t("builder.generateWriting")}
+              prereq={!hasPartTwo}
+              prereqMsg={t("builder.prereqMissing")}
+              onGenerate={() => {
+                if (hasPartTwo) generate("WRITING");
+                else scrollToSection("partTwo");
+              }}
+            />
+          ) : (
+            <WritingStage
+              exam={exam}
+              section={wSec}
+              generating={generating === "WRITING"}
+              onGenerate={() => generate("WRITING")}
+              onEdit={(patch) => {
+                scheduleSave(patch);
+                setExam((prev) => applySectionPatch(prev, patch));
+              }}
+              onReplace={(topicId, index) => replaceItem("TOPIC", topicId, index)}
+              onMoreAlternatives={(topicId) => generate("TOPIC_ALT", { topicId })}
+            />
+          )}
+        </section>
+
+        {/* Section: Preview & Export */}
+        <section
+          id="section-preview"
+          ref={(el) => { sectionRefs.current.preview = el; }}
+          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+        >
+          {!unlocked.preview ? (
+            <EmptySection
+              title={t("builder.previewInline")}
+              label={t("builder.previewInline")}
+              prereq={!hasWriting}
+              prereqMsg={t("builder.prereqMissing")}
+              onGenerate={() => {
+                if (hasWriting) scrollToSection("preview");
+                else scrollToSection("writing");
+              }}
+            />
+          ) : (
+            <PreviewStage exam={exam} />
+          )}
+        </section>
       </div>
 
-      {/* Bottom navigation */}
+      {/* VersionsModal */}
       <VersionsModal
         open={versionsOpen}
         onClose={() => setVersionsOpen(false)}
         examId={exam.id}
         onRestored={refreshExam}
       />
-      <div className="no-print flex items-center justify-between gap-3">
-        <button
-          onClick={() => stageIndex > 0 && setStage(STEPS[stageIndex - 1].key)}
-          disabled={stageIndex === 0}
-          className="inline-flex items-center gap-1 rounded-md border px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent disabled:opacity-40"
-        >
-          <ChevronLeft className="h-4 w-4" /> {t("builder.back")}
-        </button>
-        {cta ? (
+    </div>
+  );
+}
+
+/* Empty section placeholder shown when prerequisites aren't met */
+function EmptySection({
+  title,
+  label,
+  prereq,
+  prereqMsg,
+  onGenerate,
+}: {
+  title: string;
+  label: string;
+  prereq: boolean;
+  prereqMsg: string;
+  onGenerate: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold tracking-tight text-foreground">{title}</h2>
+      <div className="rounded-xl border border-dashed py-12 text-center">
+        <p className="text-sm text-muted-foreground">
+          {prereq ? prereqMsg : label}
+        </p>
+        {!prereq && (
           <button
-            onClick={cta.action}
-            disabled={cta.disabled || !!generating}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90 disabled:opacity-40"
+            onClick={onGenerate}
+            className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90"
           >
-            {generating ? t("common.generating") : cta.label}
+            {label}
           </button>
-        ) : stageIndex < STEPS.length - 1 ? (
-          <button
-            onClick={() => setStage(STEPS[stageIndex + 1].key)}
-            disabled={!unlocked[STEPS[stageIndex + 1].key]}
-            className="inline-flex items-center gap-1 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-40"
-          >
-            {t("builder.next")} <ChevronRight className="h-4 w-4" />
-          </button>
-        ) : (
-          <span />
         )}
       </div>
     </div>
   );
 }
 
-function initialStage(exam: ExamDto): Stage {
-  const section = (type: string) => exam.sections.find((s) => s.type === type);
-  if (!exam.config) return "params";
-  if (!section("TEXT")?.text) return "text";
-  if ((section("PART_ONE")?.tasks?.length ?? 0) === 0) return "partOne";
-  if ((section("TEXT_EXPLORATION")?.tasks?.length ?? 0) === 0) return "partTwo";
-  if ((section("WRITING")?.topics?.length ?? 0) < 2) return "writing";
-  return "preview";
-}
-
 // Apply a section patch to local DTO state (mirrors the API patch contract).
-function applySectionPatch(exam: ExamDto, patch: any): ExamDto {
+function applySectionPatch(exam: ExamDto, patch: Record<string, unknown>): ExamDto {
   const next = structuredClone(exam);
-  for (const sec of patch.sections ?? []) {
+  const patchSections = patch.sections as Array<Record<string, unknown>> | undefined;
+  for (const sec of patchSections ?? []) {
     const target = next.sections.find((s) => s.id === sec.id);
     if (!target) continue;
     if (typeof sec.text === "string") target.text = sec.text;
     if (typeof sec.textTitle === "string") target.textTitle = sec.textTitle;
-    for (const t of sec.tasks ?? []) {
+    const patchTasks = sec.tasks as Array<Record<string, unknown>> | undefined;
+    for (const t of patchTasks ?? []) {
       const task = target.tasks.find((x) => x.id === t.id);
       if (!task) continue;
       if (typeof t.prompt === "string") task.prompt = t.prompt;
       if (typeof t.instruction === "string") task.instruction = t.instruction;
       if (typeof t.answer === "string") task.answer = t.answer;
+      if (typeof t.marks === "number") task.marks = t.marks;
     }
-    for (const t of sec.topics ?? []) {
+    const patchTopics = sec.topics as Array<Record<string, unknown>> | undefined;
+    for (const t of patchTopics ?? []) {
       const topic = target.topics.find((x) => x.id === t.id);
       if (!topic) continue;
       if (typeof t.situation === "string") topic.situation = t.situation;
       if (typeof t.instruction === "string") topic.instruction = t.instruction;
       if (typeof t.keywords === "string") topic.keywords = t.keywords;
       if (typeof t.title === "string") topic.title = t.title;
+      if (typeof t.marks === "number") topic.marks = t.marks;
     }
   }
   return next;

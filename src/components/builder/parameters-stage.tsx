@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Sparkles, Info } from "lucide-react";
+import { Sparkles, Info, ChevronDown, ChevronUp, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,16 +17,20 @@ interface Catalog {
       grade: string;
       label: string;
       streams: string[] | null;
-      units: { key: string; label: string; topics: string[] }[];
+      units: { key: string; label: string; topics: string[]; streams?: string[] }[];
     }[]
   >;
 }
 
 export function ParametersStage({
   exam,
+  collapsed,
+  onToggleCollapse,
   onSubmit,
 }: {
   exam: ExamDto;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
   onSubmit: (config: {
     level: string;
     grade: string;
@@ -35,6 +39,7 @@ export function ParametersStage({
     unit: string;
     topic: string;
     customTopic: boolean;
+    teacherKeywords?: string | null;
   }) => Promise<void>;
 }) {
   const { t } = useI18n();
@@ -46,6 +51,7 @@ export function ParametersStage({
   const [unit, setUnit] = React.useState(exam.config?.unit ?? "");
   const [topic, setTopic] = React.useState(exam.config?.topic ?? "");
   const [customTopic, setCustomTopic] = React.useState(exam.config?.customTopic ?? false);
+  const [teacherKeywords, setTeacherKeywords] = React.useState(exam.config?.teacherKeywords ?? "");
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
@@ -58,7 +64,8 @@ export function ParametersStage({
   const grades = level ? catalog?.levels[level] ?? [] : [];
   const gradeDef = grades.find((g) => g.grade === grade);
   const streams = gradeDef?.streams ?? [];
-  const units = gradeDef?.units ?? [];
+  const allUnits = gradeDef?.units ?? [];
+  const units = allUnits.filter((u) => !u.streams || !stream || u.streams.includes(stream));
   const unitDef = units.find((u) => u.key === unit);
   const topics = unitDef?.topics ?? [];
 
@@ -100,20 +107,49 @@ export function ParametersStage({
         unit,
         topic: customTopic ? topic : topic,
         customTopic,
+        teacherKeywords: teacherKeywords?.trim() ? teacherKeywords.trim() : null,
       });
     } finally {
       setBusy(false);
     }
   }
 
+  // Collapsed summary view
+  if (collapsed && exam.config) {
+    const config = exam.config;
+    const streamLabel = config.stream ? ` · ${config.stream}` : "";
+    return (
+      <div className="flex items-center justify-between gap-4">
+        <div className="space-y-0.5">
+          <h2 className="text-lg font-bold tracking-tight">{t("builder.parameters")}</h2>
+          <p className="text-sm text-muted-foreground">
+            {config.grade}{streamLabel} · {config.unit} · {config.topic} · {config.length} {t("builder.words")}
+            {config.teacherKeywords ? ` · "${config.teacherKeywords}"` : ""}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onToggleCollapse}>
+          <Pencil className="h-3.5 w-3.5" />
+          {t("builder.editParameters")}
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h2 className="text-xl font-bold tracking-tight">{t("builder.parameters")}</h2>
-        <p className="mt-1 flex items-start gap-1.5 text-sm text-muted-foreground">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" />
-          {t("builder.parametersHelp")}
-        </p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight">{t("builder.parameters")}</h2>
+          <p className="mt-1 flex items-start gap-1.5 text-sm text-muted-foreground">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            {t("builder.parametersHelp")}
+          </p>
+        </div>
+        {collapsed === false && exam.config && (
+          <Button variant="ghost" size="sm" onClick={onToggleCollapse} className="shrink-0">
+            <ChevronUp className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       <form onSubmit={submit} className="grid gap-5 sm:grid-cols-2">
@@ -205,6 +241,17 @@ export function ParametersStage({
               ))}
             </Select>
           )}
+        </div>
+
+        {/* Teacher keywords */}
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label>{t("builder.keywordsLabel")}</Label>
+          <Input
+            value={teacherKeywords}
+            onChange={(e) => setTeacherKeywords(e.target.value)}
+            placeholder={t("builder.keywordsPlaceholder")}
+          />
+          <p className="text-xs text-muted-foreground">{t("builder.keywordsHelp")}</p>
         </div>
 
         <div className="sm:col-span-2">

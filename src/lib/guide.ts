@@ -34,8 +34,15 @@ export function resolveRules(params: {
   }
   const language = params.language && params.language !== "en" ? params.language : "en";
   const guide = getGuide(params.grade, language, params.stream ?? undefined);
-  const unit = gradeDef.units.find((u) => u.key === params.unit) ?? gradeDef.units[0];
+  const unit = gradeDef.units.find(
+    (u) => u.key === params.unit && (!u.streams || !params.stream || u.streams.includes(params.stream))
+  ) ?? gradeDef.units.find(
+    (u) => !u.streams || !params.stream || u.streams.includes(params.stream)
+  ) ?? gradeDef.units[0];
   if (!unit) throw new Error("No unit found for this grade");
+  if (params.unit && unit.key !== params.unit) {
+    throw new Error(`Unit "${params.unit}" is not part of the ${params.stream ?? "all streams"} stream for grade ${params.grade}`);
+  }
   const length = params.length ?? guide.defaultLength;
   if (!guide.lengthOptions.includes(length)) {
     throw new Error(`Length ${length} is not allowed by the guide for grade ${params.grade}`);
@@ -64,29 +71,30 @@ export function validateConfigInputs(params: {
   if (!params.level || !params.grade || !params.unit || !params.topic) {
     throw new Error("Missing required parameters");
   }
-  if (params.length && ![150, 250].includes(params.length)) {
-    throw new Error("Length must be 150 or 250 words");
-  }
   resolveRules(params);
   return true;
 }
 
-export function getThemeFor(params: { grade: string; unit: string }) {
+export function getThemeFor(params: { grade: string; unit: string; stream?: string }) {
   const gradeDef = getGrade(params.grade);
-  const unit = gradeDef.units.find((u) => u.key === params.unit) ?? gradeDef.units[0];
+  const unit = gradeDef.units.find(
+    (u) => u.key === params.unit && (!u.streams || !params.stream || u.streams.includes(params.stream))
+  ) ?? gradeDef.units.find(
+    (u) => !u.streams || !params.stream || u.streams.includes(params.stream)
+  ) ?? gradeDef.units[0];
   return getTheme(unit.theme);
 }
 
 export function curriculumCatalog() {
   const levels = Object.keys(GRADES)
     .map((k) => GRADES[k])
-    .reduce<Record<string, { grade: string; label: string; streams: string[] | null; units: { key: string; label: string; topics: string[] }[] }[]>>(
+    .reduce<Record<string, { grade: string; label: string; streams: string[] | null; units: { key: string; label: string; topics: string[]; streams?: string[] }[] }[]>>(
       (acc, g) => {
         (acc[g.level] ??= []).push({
           grade: g.grade,
           label: g.label,
           streams: g.streams,
-          units: g.units.map((u) => ({ key: u.key, label: u.label, topics: u.topics })),
+          units: g.units.map((u) => ({ key: u.key, label: u.label, topics: u.topics, ...(u.streams ? { streams: u.streams } : {}) })),
         });
         return acc;
       },

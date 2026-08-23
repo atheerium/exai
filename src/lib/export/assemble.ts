@@ -92,13 +92,17 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
     marks: formatMarks(t.marks),
   }));
 
+  const partOneHeading = guide?.headings?.partOne ?? "A. Reading Comprehension";
+  const textExplorationHeading = guide?.headings?.textExploration ?? guide?.textExploration.heading ?? "B. Text exploration";
+  const writingHeading = guide?.headings?.writing ?? "C. Written expression";
+
   return {
     title: exam.title || "English Exam",
     subtitle: exam.config ? `English Examination — ${exam.config.grade.toUpperCase()}` : "English Examination",
     meta,
     sections: [
       {
-        heading: "A. Reading Comprehension",
+        heading: partOneHeading,
         marksLabel: `${marks("partOne")} pts`,
         text: textSec?.text
           ? { title: textSec.textTitle ?? undefined, body: textSec.text }
@@ -108,13 +112,13 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
         topics: [],
       },
       {
-        heading: "B. Text exploration",
+        heading: textExplorationHeading,
         marksLabel: `${marks("textExploration")} pts`,
         tasks: p2Tasks,
         topics: [],
       },
       {
-        heading: "C. Written expression",
+        heading: writingHeading,
         marksLabel: `${marks("writing")} pts`,
         tasks: [],
         topics,

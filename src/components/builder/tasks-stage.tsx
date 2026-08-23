@@ -120,8 +120,8 @@ export function TasksStage({
 
   const heading =
     kind === "PART_ONE"
-      ? { title: "A. Reading Comprehension", marks: guide ? `${formatMarks(guide.marks.partOne)} pts` : "" }
-      : { title: "B. Text exploration", marks: guide ? `${formatMarks(guide.marks.textExploration)} pts` : "08 pts" };
+      ? { title: guide?.headings?.partOne ?? "A. Reading Comprehension", marks: guide ? `${formatMarks(guide.marks.partOne)} pts` : "" }
+      : { title: guide?.headings?.textExploration ?? guide?.textExploration.heading ?? "B. Text exploration", marks: guide ? `${formatMarks(guide.marks.textExploration)} pts` : "08 pts" };
 
   const emptyLabel =
     kind === "PART_ONE" ? t("builder.generatePartOne") : t("builder.generatePartTwo");

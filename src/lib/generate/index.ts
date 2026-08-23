@@ -2,14 +2,18 @@
 //
 // The UI/API layer talks to this facade. Providers are pluggable: the default
 // "mock" provider is deterministic and needs no credentials; set
-// AI_PROVIDER=openai to route through a real model (see openai.ts). Validation
-// happens before candidates are presented to the teacher (structural, numeric,
-// curriculum).
+// AI_PROVIDER=openai to route through OpenAI, AI_PROVIDER=groq for Groq
+// (see openai.ts / groq.ts). Validation happens before candidates are
+// presented to the teacher (structural, numeric, curriculum).
+//
+// Teacher keywords (optional): when provided via the ExamConfig, they bias
+// generation toward specific themes or vocabulary.
 
 import { resolveRules } from "@/lib/guide";
 import type { GenerationRequest } from "@/types";
 import * as mock from "./mock";
 import * as openai from "./openai";
+import * as groq from "./groq";
 import type { GeneratedTask, GeneratedText, GeneratedTopic } from "@/types";
 
 export type { GeneratedTask, GeneratedText, GeneratedTopic };
@@ -24,6 +28,7 @@ export interface GenContext {
   seed: string;
   stream?: string | null;
   language: string;
+  teacherKeywords?: string | null;
 }
 
 export function buildContext(input: {
@@ -35,6 +40,7 @@ export function buildContext(input: {
   topic: string;
   examId: string;
   language?: string;
+  teacherKeywords?: string | null;
 }): GenContext {
   const rules = resolveRules({
     level: input.level,
@@ -55,6 +61,7 @@ export function buildContext(input: {
     seed: `${input.examId}:${rules.grade}:${input.unit}:${input.topic}`,
     stream: rules.stream,
     language: rules.language,
+    teacherKeywords: input.teacherKeywords ?? null,
   };
 }
 
@@ -63,7 +70,10 @@ export function providerName(): string {
 }
 
 function impl() {
-  return providerName() === "openai" ? openai : mock;
+  const p = providerName();
+  if (p === "openai") return openai;
+  if (p === "groq") return groq;
+  return mock;
 }
 
 // Each generation returns candidates (a primary + N alternatives). The caller
@@ -83,7 +93,7 @@ export async function generateTextExplorationCandidates(ctx: GenContext): Promis
 
 export async function generateWritingCandidates(
   ctx: GenContext
-): Promise<{ guided: GeneratedTopic; free: GeneratedTopic }[]> {
+): Promise<{ guided: GeneratedTopic; free: GeneratedTopic | null }[]> {
   return impl().generateWritingCandidates(ctx);
 }
 
@@ -94,7 +104,7 @@ export async function generateRewriteCandidates(
   return impl().generateRewriteCandidates(ctx, opts);
 }
 
-export function validateCandidate(type: GenerationRequest["type"], payload: unknown, expectedMarks?: number): { ok: boolean; issues: string[] } {
+export function validateCandidate(type: GenerationRequest["type"], payload: unknown, expectedMarks?: number, opts?: { singleTopic?: boolean }): { ok: boolean; issues: string[] } {
   const issues: string[] = [];
   if (type === "TEXT") {
     const t = payload as GeneratedText;
@@ -112,7 +122,11 @@ export function validateCandidate(type: GenerationRequest["type"], payload: unkn
   }
   if (type === "WRITING") {
     const w = payload as { guided: GeneratedTopic; free: GeneratedTopic };
-    if (!w.guided || !w.free) issues.push("Both writing topics are required.");
+    if (opts?.singleTopic) {
+      if (!w.guided) issues.push("The writing topic is required.");
+    } else {
+      if (!w.guided || !w.free) issues.push("Both writing topics are required.");
+    }
   }
   return { ok: issues.length === 0, issues };
 }

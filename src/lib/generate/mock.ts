@@ -6,7 +6,7 @@
 // the environment to route through a real model (see index.ts).
 
 import { getTheme, type Theme } from "@/data/themes";
-import type { Guide } from "@/data/guides";
+import type { Guide, PartOneRule, SkillRule } from "@/data/guides";
 import { countWords, Seeded } from "./rng";
 import type { GeneratedTask, GeneratedText, GeneratedTopic } from "@/types";
 
@@ -18,6 +18,7 @@ export interface MockContext {
   guide: Guide;
   themeKey: string;
   seed: string;
+  teacherKeywords?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,19 @@ export function generateText(ctx: MockContext, variant = 0): GeneratedText {
     sentences.splice(insertAt, 0, ...detail);
   }
   sentences.push(...rng.take(theme.conclusion, 2));
+
+  // When teacherKeywords are provided, weave keyword-derived sentences into the passage.
+  if (ctx.teacherKeywords && ctx.teacherKeywords.trim()) {
+    const keywords = ctx.teacherKeywords.split(/[,;/]/).map((k) => k.trim()).filter(Boolean);
+    if (keywords.length > 0) {
+      const keywordSentences = keywords.map(
+        (kw) => `One important aspect is ${kw.toLowerCase()}, which plays a key role in daily life.`
+      );
+      // Insert keyword sentences after the lead sentences, mixed into the body
+      const insertPos = 2 + Math.min(3, Math.floor(body.length / 2));
+      sentences.splice(insertPos, 0, ...rng.take(keywordSentences, Math.min(keywords.length, 2)));
+    }
+  }
 
   let text = sentences.map((s) => s.replace(/\{topic\}/g, topic.toLowerCase())).join(" ");
   // Pad with an extra body sentence if below target length.
@@ -77,29 +91,132 @@ export function generatePartOne(ctx: MockContext, variant = 0): GeneratedTask[] 
   const tasks: GeneratedTask[] = [];
 
   for (const rule of rules) {
-    if (rule.family === "QUESTIONS") {
+    if (variant === 0) {
+      // Primary set: use today's families exactly
+      tasks.push(generatePartOnePrimary(rule, theme, rng));
+    } else {
+      // Alternatives: use genuinely different task types with same marks
+      tasks.push(generatePartOneAlternate(rule, theme, rng, variant));
+    }
+  }
+  return tasks;
+}
+
+function generatePartOnePrimary(rule: PartOneRule, theme: ReturnType<typeof getTheme>, rng: Seeded): GeneratedTask {
+  if (rule.family === "QUESTIONS") {
+    const max = rule.constraints?.maxQuestions ?? 3;
+    const qs = rng.take(theme.questions, max);
+    return {
+      skill: "READING",
+      family: "QUESTIONS",
+      prompt: qs.map((q, i) => `${i + 1}. ${q.q}`).join("\n"),
+      instruction: rule.instruction,
+      answer: qs.map((q, i) => `${i + 1}. ${q.a}`).join("\n"),
+      marks: rule.marks,
+    };
+  } else if (rule.family === "TRUE_FALSE") {
+    const max = rule.constraints?.maxStatements ?? 4;
+    const sts = rng.take(theme.trueFalse, max);
+    return {
+      skill: "READING",
+      family: "TRUE_FALSE",
+      prompt: sts.map((s, i) => `${i + 1}. ${s.statement}`).join("\n"),
+      instruction: rule.instruction,
+      answer: sts.map((s, i) => `${i + 1}. ${s.truth ? "True" : "False"}. ${s.justification}`).join("\n"),
+      marks: rule.marks,
+    };
+  } else if (rule.family === "PARAGRAPH_ID") {
+    const max = rule.constraints?.maxIdeas ?? 4;
+    const ideas = rng.take([
+      "People learn to cooperate and build trust through friendship.",
+      "Forgiveness is essential for keeping relationships healthy.",
+      "Teachers encourage teamwork because it builds patience.",
+      "Modern technology helps friends stay in touch across distances.",
+    ], max);
+    return {
+      skill: "READING",
+      family: "PARAGRAPH_ID",
+      prompt: `Read the text and match each idea with the paragraph where it is mentioned.\n${ideas.map((idea, i) => `${String.fromCharCode(65 + i)}. ${idea}`).join("\n")}`,
+      instruction: rule.instruction,
+      answer: ideas.map((idea, i) => `${String.fromCharCode(65 + i)}. Paragraph ${rng.int(5) + 1}`).join("\n"),
+      marks: rule.marks,
+    };
+  } else if (rule.family === "COHESIVE_MARKERS") {
+    const max = rule.constraints?.maxWords ?? 3;
+    const words = rng.take(theme.vocab.filter((v) => v.inText), max);
+    return {
+      skill: "READING",
+      family: "COHESIVE_MARKERS",
+      prompt: `Who or what do the underlined words refer to in the text?\n${words.map((w, i) => `${i + 1}. "${w.word.charAt(0).toUpperCase() + w.word.slice(1)}" (underlined)`).join("\n")}`,
+      instruction: rule.instruction,
+      answer: words.map((w, i) => `${i + 1}. ${w.word}`).join("\n"),
+      marks: rule.marks,
+    };
+  } else {
+    const titles = rng.shuffle(["The Importance of Friendship", "Building Strong Relationships", "Why Friends Matter", "Connections That Last"]);
+    return {
+      skill: "READING",
+      family: "TITLE_OR_IDEA",
+      prompt: `Choose the most appropriate title for the text.\nA. ${titles[0]}\nB. ${titles[1]}\nC. ${titles[2]}`,
+      instruction: rule.instruction,
+      answer: `A. ${titles[0]}`,
+      marks: rule.marks,
+    };
+  }
+}
+
+function generatePartOneAlternate(rule: PartOneRule, theme: ReturnType<typeof getTheme>, rng: Seeded, variant: number): GeneratedTask {
+  const altType = variant % 2; // alternates between two alternate types
+
+  if (rule.family === "TRUE_FALSE") {
+    // Alternate: YES_NO_NOT_GIVEN — same marks, different format
+    const max = rule.constraints?.maxStatements ?? 4;
+    const sts = rng.take(theme.trueFalse, max);
+    return {
+      skill: "READING",
+      family: "YES_NO_NOT_GIVEN",
+      prompt: sts.map((s, i) => `${i + 1}. ${s.statement}`).join("\n"),
+      instruction: "Are the following statements True, False, or Not Given according to the text? Write T, F, or NG next to each statement.",
+      answer: sts.map((s, i) => `${i + 1}. ${s.truth ? "True" : "False"}. ${s.justification}`).join("\n"),
+      marks: rule.marks,
+    };
+  } else if (rule.family === "QUESTIONS") {
+    if (altType === 0) {
+      // Alternate 1: MCQ — multiple choice A/B/C
       const max = rule.constraints?.maxQuestions ?? 3;
       const qs = rng.take(theme.questions, max);
-      tasks.push({
+      const distractors = ["This information is not mentioned in the text.", "The text states the opposite.", "This is only partially correct."];
+      return {
         skill: "READING",
-        family: "QUESTIONS",
-        prompt: qs.map((q, i) => `${i + 1}. ${q.q}`).join("\n"),
-        instruction: rule.instruction,
+        family: "MCQ",
+        prompt: qs.map((q, i) => {
+          const options = rng.shuffle([q.a, ...rng.take(distractors, 2)]);
+          return `${i + 1}. ${q.q}\n   A. ${options[0]}\n   B. ${options[1]}\n   C. ${options[2]}`;
+        }).join("\n"),
+        instruction: "Choose the correct answer (A, B, or C) for each question.",
+        answer: qs.map((q, i) => `${i + 1}. A`).join("\n"),
+        marks: rule.marks,
+      };
+    } else {
+      // Alternate 2: FILL_CHART — complete a table
+      const max = rule.constraints?.maxQuestions ?? 3;
+      const qs = rng.take(theme.questions, max);
+      return {
+        skill: "READING",
+        family: "FILL_CHART",
+        prompt: "Complete the table below based on the text.\n" + qs.map((q, i) => `${i + 1}. ${q.q} → ..........`).join("\n"),
+        instruction: "Fill in the chart with information from the text.",
         answer: qs.map((q, i) => `${i + 1}. ${q.a}`).join("\n"),
         marks: rule.marks,
-      });
-    } else if (rule.family === "TRUE_FALSE") {
-      const max = rule.constraints?.maxStatements ?? 4;
-      const sts = rng.take(theme.trueFalse, max);
-      tasks.push({
-        skill: "READING",
-        family: "TRUE_FALSE",
-        prompt: sts.map((s, i) => `${i + 1}. ${s.statement}`).join("\n"),
-        instruction: rule.instruction,
-        answer: sts.map((s, i) => `${i + 1}. ${s.truth ? "True" : "False"}. ${s.justification}`).join("\n"),
-        marks: rule.marks,
-      });
-    } else if (rule.family === "PARAGRAPH_ID") {
+        table: {
+          headers: ["Question", "Answer"],
+          rows: qs.map((q) => [q.q, "..."]),
+        },
+      };
+    }
+  } else if (rule.family === "PARAGRAPH_ID") {
+    if (altType === 0) {
+      // Alternate 1: MATCHING — match statements to paragraphs
       const max = rule.constraints?.maxIdeas ?? 4;
       const ideas = rng.take([
         "People learn to cooperate and build trust through friendship.",
@@ -107,38 +224,61 @@ export function generatePartOne(ctx: MockContext, variant = 0): GeneratedTask[] 
         "Teachers encourage teamwork because it builds patience.",
         "Modern technology helps friends stay in touch across distances.",
       ], max);
-      tasks.push({
+      const paragraphs = ["A. Paragraph 1", "B. Paragraph 2", "C. Paragraph 3", "D. Paragraph 4", "E. Paragraph 5"];
+      const shuffled = rng.shuffle(paragraphs);
+      return {
         skill: "READING",
-        family: "PARAGRAPH_ID",
-        prompt: `Read the text and match each idea with the paragraph where it is mentioned.\n${ideas.map((idea, i) => `${String.fromCharCode(65 + i)}. ${idea}`).join("\n")}`,
-        instruction: rule.instruction,
-        answer: ideas.map((idea, i) => `${String.fromCharCode(65 + i)}. Paragraph ${rng.int(5) + 1}`).join("\n"),
+        family: "MATCHING",
+        prompt: `Match each statement with the correct paragraph.\nStatements:\n${ideas.map((idea, i) => `${i + 1}. ${idea}`).join("\n")}\n\nParagraphs:\n${shuffled.join("\n")}`,
+        instruction: "Match each statement (1-" + ideas.length + ") with the correct paragraph (A-E).",
+        answer: ideas.map((idea, i) => `${i + 1}. ${shuffled[rng.int(shuffled.length)]}`).join("\n"),
         marks: rule.marks,
-      });
-    } else if (rule.family === "COHESIVE_MARKERS") {
-      const max = rule.constraints?.maxWords ?? 3;
-      const words = rng.take(theme.vocab.filter((v) => v.inText), max);
-      tasks.push({
+      };
+    } else {
+      // Alternate 2: ORDERING — put events/ideas in logical order
+      const max = rule.constraints?.maxIdeas ?? 4;
+      const ideas = rng.take([
+        "People learn to cooperate and build trust through friendship.",
+        "Forgiveness is essential for keeping relationships healthy.",
+        "Teachers encourage teamwork because it builds patience.",
+        "Modern technology helps friends stay in touch across distances.",
+      ], max);
+      return {
         skill: "READING",
-        family: "COHESIVE_MARKERS",
-        prompt: `Who or what do the underlined words refer to in the text?\n${words.map((w, i) => `${i + 1}. "${w.word.charAt(0).toUpperCase() + w.word.slice(1)}" (underlined)`).join("\n")}`,
-        instruction: rule.instruction,
-        answer: words.map((w, i) => `${i + 1}. ${w.word}`).join("\n"),
+        family: "ORDERING",
+        prompt: `Put the following ideas in the order they appear in the text.\n${rng.shuffle(ideas).map((idea, i) => `${String.fromCharCode(65 + i)}. ${idea}`).join("\n")}`,
+        instruction: "Number the ideas (1-" + ideas.length + ") in the order they appear in the text.",
+        answer: ideas.map((idea, i) => `${i + 1}. ${idea}`).join("\n"),
         marks: rule.marks,
-      });
-    } else if (rule.family === "TITLE_OR_IDEA") {
-      const titles = rng.shuffle(["The Importance of Friendship", "Building Strong Relationships", "Why Friends Matter", "Connections That Last"]);
-      tasks.push({
-        skill: "READING",
-        family: "TITLE_OR_IDEA",
-        prompt: `Choose the most appropriate title for the text.\nA. ${titles[0]}\nB. ${titles[1]}\nC. ${titles[2]}`,
-        instruction: rule.instruction,
-        answer: `A. ${titles[0]}`,
-        marks: rule.marks,
-      });
+      };
     }
+  } else if (rule.family === "COHESIVE_MARKERS") {
+    // Alternate: FILL_CHART — who/what do words refer to, presented as a chart
+    const max = rule.constraints?.maxWords ?? 3;
+    const words = rng.take(theme.vocab.filter((v) => v.inText), max);
+    return {
+      skill: "READING",
+      family: "FILL_CHART",
+      prompt: `Complete the table showing what each underlined word refers to.\n${words.map((w, i) => `${i + 1}. "${w.word.charAt(0).toUpperCase() + w.word.slice(1)}" → ..........`).join("\n")}`,
+      instruction: "Fill in the chart to show who or what each underlined word refers to.",
+      answer: words.map((w, i) => `${i + 1}. ${w.word}`).join("\n"),
+      marks: rule.marks,
+      table: {
+        headers: ["Word", "Refers to"],
+        rows: words.map((w) => [w.word, "..."]),
+      },
+    };
+  } else {
+    // TITLE_OR_IDEA alternate: ORDERING — put paragraphs in logical order
+    return {
+      skill: "READING",
+      family: "ORDERING",
+      prompt: "Put the following paragraph summaries in the order they appear in the text.\nA. The introduction presents the topic.\nB. Examples and details support the main idea.\nC. The conclusion summarises the key points.",
+      instruction: "Number the summaries (1-3) in the correct order.",
+      answer: "1. A, 2. B, 3. C",
+      marks: rule.marks,
+    };
   }
-  return tasks;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,100 +292,251 @@ export function generateTextExploration(ctx: MockContext, variant = 0): Generate
   const tasks: GeneratedTask[] = [];
 
   for (const skillRule of skills) {
-    if (skillRule.skill === "VOCABULARY") {
-      const words = rng.take(theme.vocab.filter((v) => v.inText), 4);
-      tasks.push({
-        skill: "VOCABULARY",
-        prompt: words
-          .map((w, i) => {
-            const target = w.word.replace(/s$/, "");
-            return `${i + 1}. ${target.charAt(0).toUpperCase() + target.slice(1)} → ..........`;
-          })
-          .join("\n"),
-        instruction: `Match each word with its definition. Choose from: ${words
-          .map((w) => wordDef(theme, w.word))
-          .join(", ")}.`,
-        answer: words.map((w, i) => `${i + 1}. ${w.word} = ${wordDef(theme, w.word)}`).join("\n"),
-        marks: skillRule.marks,
-      });
-    } else if (skillRule.skill === "MORPHOLOGY") {
-      const words = rng.take(theme.vocab, 3);
-      const rows = words.map((w) => {
-        const noun = w.family.noun ?? "";
-        const verb = w.family.verb ?? "";
-        const adj = w.family.adjective ?? "";
-        return { base: w.word.replace(/s$/, ""), noun: noun || "—", verb: verb || "—", adj: adj || "—" };
-      });
-      tasks.push({
-        skill: "MORPHOLOGY",
-        family: "WORD_FAMILY",
-        prompt: rows.map((r, i) => `${i + 1}. "${r.base}" → ..........`).join("\n"),
-        instruction: skillRule.instruction,
-        answer: rows.map((r, i) => `${i + 1}. noun: ${r.noun}, verb: ${r.verb}, adjective: ${r.adj}`).join("\n"),
-        marks: skillRule.marks,
-        table: {
-          headers: ["Word", "Noun", "Verb", "Adjective"],
-          rows: rows.map((r) => [r.base, r.noun, r.verb, r.adj]),
-        },
-      });
-    } else if (skillRule.skill === "PHONOLOGY") {
-      const useEd = rng.next() > 0.5;
-      if (useEd) {
-        const words = rng.take(theme.vocab.filter((v) => v.finalEd), 5);
-        const groups = ["/t/", "/d/", "/ɪd/"] as const;
-        const map: Record<string, string> = { t: "/t/", d: "/d/", id: "/ɪd/" };
-        tasks.push({
-          skill: "PHONOLOGY",
-          prompt: `Classify the following words according to the pronunciation of the final "-ed".\n${words
-            .map((w) => w.edWord ?? w.word)
-            .join(" — ")}\n${groups.join(" | ")}`,
-          instruction: skillRule.instruction,
-          answer: groups
-            .map((g) => `${g}: ${words.filter((w) => map[w.finalEd!] === g).map((w) => w.edWord ?? w.word).join(", ")}`)
-            .filter((s) => !s.endsWith(": "))
-            .join("\n"),
-          marks: skillRule.marks,
-        });
-      } else {
-        const words = rng.take(theme.vocab.filter((v) => v.word.endsWith("s") || v.word.endsWith("z")), 4).map((v) => v.word);
-        const list = words.length >= 4 ? words : theme.vocab.slice(0, 4).map((v) => v.word);
-        const groups = ["/s/", "/z/", "/ɪz/"] as const;
-        const map: Record<string, string> = { s: "/s/", z: "/z/", iz: "/ɪz/" };
-        const classified = theme.vocab
-          .filter((v) => list.includes(v.word))
-          .map((v) => ({ word: v.word, pron: map[v.finalS] }));
-        tasks.push({
-          skill: "PHONOLOGY",
-          prompt: `Classify the following words according to the pronunciation of the final "-s".\n${list.join(" — ")}\n${groups.join(" | ")}`,
-          instruction: skillRule.instruction,
-          answer: groups
-            .map((g) => `${g}: ${classified.filter((c) => c.pron === g).map((c) => c.word).join(", ")}`)
-            .filter((s) => !s.endsWith(": "))
-            .join("\n"),
-          marks: skillRule.marks,
-        });
-      }
-    } else if (skillRule.skill === "GRAMMAR") {
-      const exs = rng.take(theme.grammar, 2);
-      tasks.push({
-        skill: "GRAMMAR",
-        prompt: exs.map((e, i) => `${i + 1}. ${e.sentence}`).join("\n"),
-        instruction: skillRule.instruction,
-        answer: exs.map((e, i) => `${i + 1}. ${e.rewritten} (${e.note})`).join("\n"),
-        marks: skillRule.marks,
-      });
-    } else if (skillRule.skill === "DISCOURSE") {
-      const d = theme.discourse;
-      tasks.push({
-        skill: "DISCOURSE",
-        prompt: d.text,
-        instruction: skillRule.instruction,
-        answer: d.options.filter((o) => d.answers.includes(o)).join(", "),
-        marks: skillRule.marks,
-      });
+    if (variant === 0) {
+      tasks.push(generateTextExplorationPrimary(skillRule, theme, rng));
+    } else {
+      tasks.push(generateTextExplorationAlternate(skillRule, theme, rng, variant));
     }
   }
   return tasks;
+}
+
+function generateTextExplorationPrimary(skillRule: SkillRule, theme: ReturnType<typeof getTheme>, rng: Seeded): GeneratedTask {
+  if (skillRule.skill === "VOCABULARY") {
+    const words = rng.take(theme.vocab.filter((v) => v.inText), 4);
+    return {
+      skill: "VOCABULARY",
+      prompt: words
+        .map((w, i) => {
+          const target = w.word.replace(/s$/, "");
+          return `${i + 1}. ${target.charAt(0).toUpperCase() + target.slice(1)} → ..........`;
+        })
+        .join("\n"),
+      instruction: `Match each word with its definition. Choose from: ${words
+        .map((w) => wordDef(theme, w.word))
+        .join(", ")}.`,
+      answer: words.map((w, i) => `${i + 1}. ${w.word} = ${wordDef(theme, w.word)}`).join("\n"),
+      marks: skillRule.marks,
+    };
+  } else if (skillRule.skill === "MORPHOLOGY") {
+    const words = rng.take(theme.vocab, 3);
+    const rows = words.map((w) => {
+      const noun = w.family.noun ?? "";
+      const verb = w.family.verb ?? "";
+      const adj = w.family.adjective ?? "";
+      return { base: w.word.replace(/s$/, ""), noun: noun || "—", verb: verb || "—", adj: adj || "—" };
+    });
+    return {
+      skill: "MORPHOLOGY",
+      family: "WORD_FAMILY",
+      prompt: rows.map((r, i) => `${i + 1}. "${r.base}" → ..........`).join("\n"),
+      instruction: skillRule.instruction,
+      answer: rows.map((r, i) => `${i + 1}. noun: ${r.noun}, verb: ${r.verb}, adjective: ${r.adj}`).join("\n"),
+      marks: skillRule.marks,
+      table: {
+        headers: ["Word", "Noun", "Verb", "Adjective"],
+        rows: rows.map((r) => [r.base, r.noun, r.verb, r.adj]),
+      },
+    };
+  } else if (skillRule.skill === "PHONOLOGY") {
+    const useEd = rng.next() > 0.5;
+    if (useEd) {
+      const words = rng.take(theme.vocab.filter((v) => v.finalEd), 5);
+      const groups = ["/t/", "/d/", "/ɪd/"] as const;
+      const map: Record<string, string> = { t: "/t/", d: "/d/", id: "/ɪd/" };
+      return {
+        skill: "PHONOLOGY",
+        prompt: `Classify the following words according to the pronunciation of the final "-ed".\n${words
+          .map((w) => w.edWord ?? w.word)
+          .join(" — ")}\n${groups.join(" | ")}`,
+        instruction: skillRule.instruction,
+        answer: groups
+          .map((g) => `${g}: ${words.filter((w) => map[w.finalEd!] === g).map((w) => w.edWord ?? w.word).join(", ")}`)
+          .filter((s) => !s.endsWith(": "))
+          .join("\n"),
+        marks: skillRule.marks,
+      };
+    } else {
+      const words = rng.take(theme.vocab.filter((v) => v.word.endsWith("s") || v.word.endsWith("z")), 4).map((v) => v.word);
+      const list = words.length >= 4 ? words : theme.vocab.slice(0, 4).map((v) => v.word);
+      const groups = ["/s/", "/z/", "/ɪz/"] as const;
+      const map: Record<string, string> = { s: "/s/", z: "/z/", iz: "/ɪz/" };
+      const classified = theme.vocab
+        .filter((v) => list.includes(v.word))
+        .map((v) => ({ word: v.word, pron: map[v.finalS] }));
+      return {
+        skill: "PHONOLOGY",
+        prompt: `Classify the following words according to the pronunciation of the final "-s".\n${list.join(" — ")}\n${groups.join(" | ")}`,
+        instruction: skillRule.instruction,
+        answer: groups
+          .map((g) => `${g}: ${classified.filter((c) => c.pron === g).map((c) => c.word).join(", ")}`)
+          .filter((s) => !s.endsWith(": "))
+          .join("\n"),
+        marks: skillRule.marks,
+      };
+    }
+  } else if (skillRule.skill === "GRAMMAR") {
+    const exs = rng.take(theme.grammar, 2);
+    return {
+      skill: "GRAMMAR",
+      prompt: exs.map((e, i) => `${i + 1}. ${e.sentence}`).join("\n"),
+      instruction: skillRule.instruction,
+      answer: exs.map((e, i) => `${i + 1}. ${e.rewritten} (${e.note})`).join("\n"),
+      marks: skillRule.marks,
+    };
+  } else {
+    const d = theme.discourse;
+    return {
+      skill: "DISCOURSE",
+      prompt: d.text,
+      instruction: skillRule.instruction,
+      answer: d.options.filter((o) => d.answers.includes(o)).join(", "),
+      marks: skillRule.marks,
+    };
+  }
+}
+
+function generateTextExplorationAlternate(skillRule: SkillRule, theme: ReturnType<typeof getTheme>, rng: Seeded, variant: number): GeneratedTask {
+  const altType = variant % 2;
+
+  if (skillRule.skill === "VOCABULARY") {
+    if (altType === 0) {
+      // SYNONYM_MATCH — find synonyms from a list
+      const words = rng.take(theme.vocab.filter((v) => v.inText), 4);
+      const allWords = theme.vocab.map((v) => v.word);
+      const distractors = rng.take(allWords.filter((w) => !words.some((ww) => ww.word === w)), 3);
+      return {
+        skill: "VOCABULARY",
+        family: "SYNONYM_MATCH",
+        prompt: words
+          .map((w, i) => `${i + 1}. ${w.word.charAt(0).toUpperCase() + w.word.slice(1)} → ..........`)
+          .join("\n"),
+        instruction: `Find the synonym for each word. Choose from: ${rng.shuffle([...words.map((w) => w.word), ...distractors]).join(", ")}.`,
+        answer: words.map((w, i) => `${i + 1}. ${w.word}`).join("\n"),
+        marks: skillRule.marks,
+      };
+    } else {
+      // DEFINITION_GAP — fill in the definition
+      const words = rng.take(theme.vocab.filter((v) => v.inText), 4);
+      return {
+        skill: "VOCABULARY",
+        family: "DEFINITION_GAP",
+        prompt: words
+          .map((w, i) => `${i + 1}. "${w.word}" means ".........."`)
+          .join("\n"),
+        instruction: "Complete each definition with the correct word from the text.",
+        answer: words.map((w, i) => `${i + 1}. ${w.word} = ${wordDef(theme, w.word)}`).join("\n"),
+        marks: skillRule.marks,
+      };
+    }
+  } else if (skillRule.skill === "MORPHOLOGY") {
+    if (altType === 0) {
+      // PREFIX_SUFFIX — add prefix or suffix
+      const words = rng.take(theme.vocab, 3);
+      return {
+        skill: "MORPHOLOGY",
+        family: "PREFIX_SUFFIX",
+        prompt: words
+          .map((w, i) => `${i + 1}. "${w.word.replace(/s$/, "")}" → add a prefix or suffix to form a new word`)
+          .join("\n"),
+        instruction: "Add a suitable prefix or suffix to each word to form a new word.",
+        answer: words.map((w, i) => {
+          const noun = w.family.noun ?? "";
+          return `${i + 1}. ${w.word.replace(/s$/, "")} → ${noun || w.word}`;
+        }).join("\n"),
+        marks: skillRule.marks,
+      };
+    } else {
+      // WORD_BUILDING — build words from roots
+      const words = rng.take(theme.vocab, 3);
+      return {
+        skill: "MORPHOLOGY",
+        family: "WORD_BUILDING",
+        prompt: words
+          .map((w, i) => `${i + 1}. Build a word using: "${w.family.verb ?? w.family.noun ?? w.word}" + appropriate affix`)
+          .join("\n"),
+        instruction: "Build a new word from each root by adding a prefix or suffix.",
+        answer: words.map((w, i) => {
+          const adj = w.family.adjective ?? "";
+          return `${i + 1}. ${w.word.replace(/s$/, "")} → ${adj || w.word}`;
+        }).join("\n"),
+        marks: skillRule.marks,
+      };
+    }
+  } else if (skillRule.skill === "PHONOLOGY") {
+    if (altType === 0) {
+      // STRESS_PATTERN — identify stressed syllables
+      const words = rng.take(theme.vocab.filter((v) => v.inText), 4);
+      return {
+        skill: "PHONOLOGY",
+        family: "STRESS_PATTERN",
+        prompt: `Where is the stress in each word?\n${words.map((w) => w.word).join(" — ")}`,
+        instruction: "Mark the stressed syllable in each word with an uppercase letter.",
+        answer: words.map((w) => `${w.word}: ${w.word.charAt(0).toUpperCase()}${w.word.slice(1)}`).join("\n"),
+        marks: skillRule.marks,
+      };
+    } else {
+      // SILENT_LETTER — identify silent letters
+      const words = rng.take(theme.vocab.filter((v) => v.inText), 4);
+      return {
+        skill: "PHONOLOGY",
+        family: "SILENT_LETTER",
+        prompt: `Which letters are silent in these words?\n${words.map((w) => w.word).join(" — ")}`,
+        instruction: "Identify the silent letter(s) in each word.",
+        answer: words.map((w) => `${w.word}: no silent letters`).join("\n"),
+        marks: skillRule.marks,
+      };
+    }
+  } else if (skillRule.skill === "GRAMMAR") {
+    if (altType === 0) {
+      // CHOOSE_CORRECT_FORM — choose between two forms
+      const exs = rng.take(theme.grammar, 2);
+      return {
+        skill: "GRAMMAR",
+        family: "CHOOSE_CORRECT_FORM",
+        prompt: exs.map((e, i) => `${i + 1}. ${e.sentence}\n   A. ${e.rewritten}\n   B. ${e.sentence}`).join("\n"),
+        instruction: "Choose the correct form (A or B) that means the same as sentence A.",
+        answer: exs.map((e, i) => `${i + 1}. A`).join("\n"),
+        marks: skillRule.marks,
+      };
+    } else {
+      // CORRECT_THE_MISTAKE — find and correct the error
+      const exs = rng.take(theme.grammar, 2);
+      return {
+        skill: "GRAMMAR",
+        family: "CORRECT_THE_MISTAKE",
+        prompt: exs.map((e, i) => `${i + 1}. ${e.sentence.replace(/\./g, " (containing a mistake).")}`).join("\n"),
+        instruction: "Find and correct the grammatical mistake in each sentence.",
+        answer: exs.map((e, i) => `${i + 1}. ${e.rewritten}`).join("\n"),
+        marks: skillRule.marks,
+      };
+    }
+  } else {
+    if (altType === 0) {
+      // JUMBLED_SENTENCES — put sentences in order
+      const d = theme.discourse;
+      const sentences = d.text.split(/[.!?]+\s+/).filter(Boolean);
+      return {
+        skill: "DISCOURSE",
+        family: "JUMBLED_SENTENCES",
+        prompt: `Put these sentences in the correct order to make a coherent text.\n${rng.shuffle(sentences).map((s, i) => `${String.fromCharCode(65 + i)}. ${s.trim()}`).join("\n")}`,
+        instruction: "Number the sentences (1-" + sentences.length + ") in the correct order.",
+        answer: sentences.map((s, i) => `${i + 1}. ${s.trim()}`).join("\n"),
+        marks: skillRule.marks,
+      };
+    } else {
+      // COHESIVE_LINKERS — choose the correct linker
+      const d = theme.discourse;
+      return {
+        skill: "DISCOURSE",
+        family: "COHESIVE_LINKERS",
+        prompt: d.text,
+        instruction: "Choose the correct cohesive linker for each gap from the list: " + d.options.join(", "),
+        answer: d.options.filter((o) => d.answers.includes(o)).join(", "),
+        marks: skillRule.marks,
+      };
+    }
+  }
 }
 
 function wordDef(theme: Theme, word: string): string {
@@ -262,7 +553,7 @@ function wordDef(theme: Theme, word: string): string {
 // Written expression — guided + free topics
 // ---------------------------------------------------------------------------
 
-export function generateWriting(ctx: MockContext, variant = 0): { guided: GeneratedTopic; free: GeneratedTopic } {
+export function generateWriting(ctx: MockContext, variant = 0): { guided: GeneratedTopic; free: GeneratedTopic | null } {
   const theme = getTheme(ctx.themeKey);
   const rng = new Seeded(ctx.seed + `:w:${variant}`);
   const w = ctx.guide.writing;
@@ -275,10 +566,28 @@ export function generateWriting(ctx: MockContext, variant = 0): { guided: Genera
     .slice(0, 3);
   const keywords = (keyVocab.length >= 3 ? keyVocab : ["importance", "habits", "future"]).join("/");
 
+  if (w.singleTopic) {
+    const instructionText = w.instruction ?? "Write a text of about 80\u2013120 words in response to the following situation.";
+    const guided: GeneratedTopic = {
+      kind: "GUIDED",
+      title: "Topic 1",
+      situation: ctx.teacherKeywords && ctx.teacherKeywords.trim()
+        ? `Your school magazine is preparing a special issue about ${topic}. You have been asked to write about ${ctx.teacherKeywords.split(/[,;/]/).map((k) => k.trim()).filter(Boolean).join(" and ")}, explaining why ${topic} matters for young people.`
+        : `Your school magazine is preparing a special issue about ${topic}. You have been asked to write a text explaining why ${topic} matters for young people.`,
+      instruction: instructionText,
+      keywords,
+      form,
+      marks: w.marks,
+    };
+    return { guided, free: null };
+  }
+
   const guided: GeneratedTopic = {
     kind: "GUIDED",
     title: "Topic 1",
-    situation: `Your school magazine is preparing a special issue about ${topic}. You have been asked to write ${form} explaining why ${topic} matters for young people.`,
+    situation: ctx.teacherKeywords && ctx.teacherKeywords.trim()
+      ? `Your school magazine is preparing a special issue about ${topic}. You have been asked to write ${form} about ${ctx.teacherKeywords.split(/[,;/]/).map((k) => k.trim()).filter(Boolean).join(" and ")}, explaining why ${topic} matters for young people.`
+      : `Your school magazine is preparing a special issue about ${topic}. You have been asked to write ${form} explaining why ${topic} matters for young people.`,
     instruction: w.guidedInstruction.replace("on the following topic, using the notes given.", "about the situation above, using the following notes."),
     keywords,
     form,
@@ -311,8 +620,8 @@ export function taskAlternatives(ctx: MockContext, kind: "PART_ONE" | "TEXT_EXPL
   return sets;
 }
 
-export function topicAlternatives(ctx: MockContext, count = 3): { guided: GeneratedTopic; free: GeneratedTopic }[] {
-  const out: { guided: GeneratedTopic; free: GeneratedTopic }[] = [];
+export function topicAlternatives(ctx: MockContext, count = 3): { guided: GeneratedTopic; free: GeneratedTopic | null }[] {
+  const out: { guided: GeneratedTopic; free: GeneratedTopic | null }[] = [];
   for (let v = 1; v <= count; v++) {
     out.push(generateWriting(ctx, v));
   }
@@ -335,7 +644,7 @@ export function generateTextExplorationCandidates(ctx: MockContext): GeneratedTa
   return [generateTextExploration(ctx, 0), ...taskAlternatives(ctx, "TEXT_EXPLORATION", 2)];
 }
 
-export function generateWritingCandidates(ctx: MockContext): { guided: GeneratedTopic; free: GeneratedTopic }[] {
+export function generateWritingCandidates(ctx: MockContext): { guided: GeneratedTopic; free: GeneratedTopic | null }[] {
   return [generateWriting(ctx, 0), ...topicAlternatives(ctx, 2)];
 }
 

@@ -13,6 +13,7 @@ export interface ExamConfigDto {
   unit: string;
   topic: string;
   customTopic: boolean;
+  teacherKeywords?: string | null;
   guideVersion?: string | null;
   language?: string;
 }
