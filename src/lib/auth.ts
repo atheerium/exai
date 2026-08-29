@@ -9,7 +9,7 @@ export function getSessionCookieName() {
   return SESSION_COOKIE;
 }
 
-export async function createSession(userId: string) {
+export async function createSession(userId: string): Promise<void> {
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + TTL_DAYS * 24 * 60 * 60 * 1000);
   await prisma.session.create({ data: { token, userId, expiresAt } });
@@ -22,7 +22,7 @@ export async function createSession(userId: string) {
   });
 }
 
-export async function getCurrentUser() {
+export async function getCurrentUser(): Promise<{ id: string; email: string; name: string | null; language: string; role: string } | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -38,7 +38,7 @@ export async function getCurrentUser() {
   return session.user;
 }
 
-export async function requireUser() {
+export async function requireUser(): Promise<{ id: string; email: string; name: string | null; language: string; role: string }> {
   const user = await getCurrentUser();
   if (!user) throw new Error("UNAUTHORIZED");
   return user;
@@ -56,13 +56,13 @@ export function isAdmin(user: { email: string; role: string }): boolean {
   return adminEmails.includes(user.email.toLowerCase());
 }
 
-export async function requireAdmin() {
+export async function requireAdmin(): Promise<{ id: string; email: string; name: string | null; language: string; role: string }> {
   const user = await requireUser();
   if (!isAdmin(user)) throw new Error("FORBIDDEN");
   return user;
 }
 
-export async function destroySession() {
+export async function destroySession(): Promise<void> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (token) {

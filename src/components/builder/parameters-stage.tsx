@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
 import type { ExamDto } from "@/types";
+import { getGuide } from "@/data/guides";
 
 interface Catalog {
   levels: Record<
@@ -40,6 +41,7 @@ export function ParametersStage({
     topic: string;
     customTopic: boolean;
     teacherKeywords?: string | null;
+    difficulty: string | null;
   }) => Promise<void>;
 }) {
   const { t } = useI18n();
@@ -48,6 +50,7 @@ export function ParametersStage({
   const [grade, setGrade] = React.useState(exam.config?.grade ?? "");
   const [stream, setStream] = React.useState(exam.config?.stream ?? "");
   const [length, setLength] = React.useState<number>(exam.config?.length ?? 150);
+  const [difficulty, setDifficulty] = React.useState(exam.config?.difficulty ?? "Standard");
   const [unit, setUnit] = React.useState(exam.config?.unit ?? "");
   const [topic, setTopic] = React.useState(exam.config?.topic ?? "");
   const [customTopic, setCustomTopic] = React.useState(exam.config?.customTopic ?? false);
@@ -108,6 +111,7 @@ export function ParametersStage({
         topic: customTopic ? topic : topic,
         customTopic,
         teacherKeywords: teacherKeywords?.trim() ? teacherKeywords.trim() : null,
+        difficulty: difficulty ?? "Standard",
       });
     } finally {
       setBusy(false);
@@ -194,8 +198,34 @@ export function ParametersStage({
         <div className="space-y-1.5">
           <Label>{t("builder.length")}</Label>
           <Select value={String(length)} onChange={(e) => setLength(Number(e.target.value))} disabled={!grade}>
-            <option value="150">150 {t("builder.words")}</option>
-            <option value="250">250 {t("builder.words")}</option>
+            {grade ? (() => {
+              const guide = getGuide(grade);
+              // lengthOptions are upper bounds; pair consecutive values into ranges.
+              // e.g. [120, 150] → "120–150 words"; [120, 150, 200] → "120–150" + "150–200"
+              const options = guide.lengthOptions.slice(1).map((upper, i) => {
+                const lower = guide.lengthOptions[i];
+                return (
+                  <option key={upper} value={upper}>
+                    {lower}–{upper} {t("builder.words")}
+                  </option>
+                );
+              });
+              return options;
+            })() : (
+              <>
+                <option value="150">150 {t("builder.words")}</option>
+                <option value="200">200 {t("builder.words")}</option>
+              </>
+            )}
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>{t("builder.difficulty")}</Label>
+          <Select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} disabled={!grade}>
+            <option value="Standard">{t("builder.standard")}</option>
+            <option value="Harder">{t("builder.harder")}</option>
+            <option value="Simpler">{t("builder.simpler")}</option>
           </Select>
         </div>
 

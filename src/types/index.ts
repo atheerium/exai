@@ -14,6 +14,7 @@ export interface ExamConfigDto {
   topic: string;
   customTopic: boolean;
   teacherKeywords?: string | null;
+  difficulty?: string | null;
   guideVersion?: string | null;
   language?: string;
 }

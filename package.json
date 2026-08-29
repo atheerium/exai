@@ -9,7 +9,7 @@
     "vercel-build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --import tsx --test src/lib/guide.test.ts src/lib/rate-limit.test.ts src/lib/generate/mock.test.ts src/lib/generate/facade.test.ts src/lib/generate/openai.test.ts src/lib/generate/corpus.test.ts src/lib/generate/groq.test.ts",
+    "test": "node --import tsx --test src/lib/guide.test.ts src/lib/rate-limit.test.ts src/lib/generate/mock.test.ts src/lib/generate/facade.test.ts src/lib/generate/openai.test.ts src/lib/generate/corpus.test.ts src/lib/generate/groq.test.ts src/lib/password-reset.test.ts src/lib/serialize.test.ts src/lib/utils.test.ts src/lib/auth.test.ts",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
     "postinstall": "prisma generate"

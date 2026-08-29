@@ -3,6 +3,32 @@
 import { prisma } from "@/lib/db";
 import type { ExamDto, SectionDto, SourceDto, TaskDto, TopicDto, ExamConfigDto } from "@/types";
 
+/** Schema for the JSON stored in ExamSection.content */
+interface SectionContent {
+  text?: string | null;
+  title?: string | null;
+  previousText?: string | null;
+  previousTitle?: string | null;
+  candidates?: unknown[];
+}
+
+/**
+ * Safely parse JSON string, returning defaultValue on parse error.
+ * Prevents crashes from corrupted data in the database.
+ */
+function safeParse<T>(json: string | null | undefined, defaultValue: T): T {
+  if (!json) return defaultValue;
+  try {
+    return JSON.parse(json);
+  } catch {
+    // Log in development, but don't expose error details in production
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Failed to parse JSON:", json.substring(0, 100) + (json.length > 100 ? "..." : ""));
+    }
+    return defaultValue;
+  }
+}
+
 function parseTasks(tasks: {
   id: string;
   skill: string | null;
@@ -28,8 +54,8 @@ function parseTasks(tasks: {
       order: t.order,
       manualEdited: t.manualEdited,
       family: t.family ?? null,
-      table: t.tableData ? JSON.parse(t.tableData) : null,
-      candidates: t.candidates ? JSON.parse(t.candidates) : [],
+      table: safeParse(t.tableData, null),
+      candidates: safeParse(t.candidates, []),
     }));
 }
 
@@ -59,13 +85,13 @@ function parseTopics(topics: {
       marks: t.marks,
       order: t.order,
       manualEdited: t.manualEdited,
-      candidates: t.candidates ? JSON.parse(t.candidates) : [],
+      candidates: safeParse(t.candidates, []),
     }));
 }
 
 export async function examToDto(exam: any): Promise<ExamDto> {
   const sections: SectionDto[] = (exam.sections ?? []).map((s: any) => {
-    const content = s.content ? JSON.parse(s.content) : {};
+    const content = safeParse<SectionContent>(s.content, {});
     return {
       id: s.id,
       type: s.type,

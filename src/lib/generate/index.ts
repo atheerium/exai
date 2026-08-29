@@ -29,6 +29,7 @@ export interface GenContext {
   stream?: string | null;
   language: string;
   teacherKeywords?: string | null;
+  difficulty?: string | null;
 }
 
 export function buildContext(input: {
@@ -41,6 +42,7 @@ export function buildContext(input: {
   examId: string;
   language?: string;
   teacherKeywords?: string | null;
+  difficulty?: string | null;
 }): GenContext {
   const rules = resolveRules({
     level: input.level,
@@ -62,6 +64,7 @@ export function buildContext(input: {
     stream: rules.stream,
     language: rules.language,
     teacherKeywords: input.teacherKeywords ?? null,
+    difficulty: input.difficulty ?? null,
   };
 }
 

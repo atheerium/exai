@@ -227,3 +227,107 @@ test("all secondary grades have structure 'bac' and no singleTopic", () => {
     assert.notEqual(g.writing.singleTopic, true, `${grade} writing should not be singleTopic`);
   }
 });
+
+test("validateConfigInputs rejects invalid length type", () => {
+  // String numbers are NOT coerced to numbers in resolveRules (strict check)
+  assert.throws(() => validateConfigInputs({ ...base, length: "150" as unknown as number }), /not allowed/);
+  // null/undefined fall back to guide.defaultLength (150 for 3as) - not "Missing required"
+  assert.equal(validateConfigInputs({ ...base, length: null as unknown as number }), true);
+  assert.equal(validateConfigInputs({ ...base, length: undefined }), true);
+});
+
+test("validateConfigInputs rejects unknown grade", () => {
+  assert.throws(() => validateConfigInputs({ ...base, grade: "unknown" }), /No grade definition/);
+});
+
+test("validateConfigInputs rejects unknown level", () => {
+  assert.throws(() => validateConfigInputs({ ...base, level: "primary" }), /does not belong/);
+});
+
+test("validateConfigInputs rejects unknown stream for grade", () => {
+  assert.throws(() => validateConfigInputs({ ...base, grade: "1as", stream: "Invalid Stream" }), /not valid/);
+});
+
+test("resolveRules rejects invalid unit for grade", () => {
+  assert.throws(
+    () => resolveRules({ ...base, grade: "3as", unit: "invalid-unit" }),
+    /not part of/
+  );
+});
+
+test("resolveRules handles middle school grades correctly", () => {
+  const r = resolveRules({
+    level: "middle",
+    grade: "4am",
+    stream: null,
+    length: 150,
+    unit: "u-family",
+    topic: "My family",
+  });
+  assert.equal(r.guide.key, "4am");
+  assert.equal(r.guide.structure, "bem");
+  assert.equal(r.guide.marks.partOne + r.guide.marks.textExploration + r.guide.marks.writing, 20);
+  assert.equal(r.guide.writing.singleTopic, true);
+});
+
+test("resolveRules handles French language parameter", () => {
+  const r = resolveRules({
+    level: "secondary",
+    grade: "3as",
+    stream: "Lettres et Langues Étrangères",
+    length: 150,
+    unit: "u-education",
+    topic: "The future of education",
+    language: "fr",
+  });
+  assert.equal(r.language, "fr");
+});
+
+test("getThemeFor handles all middle school units", () => {
+  const c = curriculumCatalog();
+  const grade4am = c.middle.find(g => g.grade === "4am")!;
+  for (const unit of grade4am.units) {
+    const theme = getThemeFor({ grade: "4am", unit: unit.key });
+    assert.ok(theme.body.length >= 1);
+    assert.ok(theme.vocab.length >= 1);
+  }
+});
+
+test("curriculumCatalog unit topics are non-empty", () => {
+  const c = curriculumCatalog();
+  for (const level of ["middle", "secondary"]) {
+    for (const grade of c[level]) {
+      for (const unit of grade.units) {
+        assert.ok(unit.topics.length > 0, `Unit ${unit.key} should have topics`);
+        assert.ok(unit.label.length > 0, `Unit ${unit.key} should have label`);
+        assert.ok(unit.key.length > 0, `Unit ${unit.key} should have key`);
+      }
+    }
+  }
+});
+
+test("all guides have valid marks that sum to 20", () => {
+  for (const guide of Object.values(GUIDES)) {
+    const total = guide.marks.partOne + guide.marks.textExploration + guide.marks.writing;
+    assert.equal(total, 20, `Guide ${guide.key} marks sum to ${total}, expected 20`);
+  }
+});
+
+test("all guides have positive marks for each section", () => {
+  for (const guide of Object.values(GUIDES)) {
+    assert.ok(guide.marks.partOne > 0, `Guide ${guide.key} partOne should be positive`);
+    assert.ok(guide.marks.textExploration > 0, `Guide ${guide.key} textExploration should be positive`);
+    assert.ok(guide.marks.writing > 0, `Guide ${guide.key} writing should be positive`);
+  }
+});
+
+test("validateConfigInputs handles customTopic flag", () => {
+  const config = { ...base, customTopic: true, topic: "Custom topic" };
+  assert.equal(validateConfigInputs(config), true);
+});
+
+test("getGuide returns correct grade definition", () => {
+  const g = getGuide("2as", "en", "Sciences Expérimentales");
+  assert.equal(g.grade, "2as");
+  assert.equal(g.level, "secondary");
+});
