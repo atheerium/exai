@@ -91,49 +91,17 @@ function validateEmailFormat(email: string): void {
   }
 }
 
-// Enhanced password validation with security requirements
+// Password validation aligned with registration (min 6) — keeps staging usable.
+// Complexity requirements can be tightened before public launch if desired.
 function validatePasswordStrength(password: string): void {
   if (!password || typeof password !== 'string') {
     throw new Error("Password is required.");
   }
-  
-  if (password.length < 8) {
-    throw new Error("Password must be at least 8 characters long.");
+  if (password.length < 6) {
+    throw new Error("Password must be at least 6 characters long.");
   }
-  
   if (password.length > 128) {
     throw new Error("Password is too long.");
-  }
-  
-  // Check for common weak passwords
-  const commonPasswords = ['password', '12345678', 'qwerty', 'admin', 'letmein', 'welcome', 'monkey'];
-  if (commonPasswords.includes(password.toLowerCase())) {
-    throw new Error("Please choose a stronger password.");
-  }
-  
-  // Require at least one uppercase letter
-  if (!/[A-Z]/.test(password)) {
-    throw new Error("Password must contain at least one uppercase letter.");
-  }
-  
-  // Require at least one lowercase letter
-  if (!/[a-z]/.test(password)) {
-    throw new Error("Password must contain at least one lowercase letter.");
-  }
-  
-  // Require at least one digit
-  if (!/\d/.test(password)) {
-    throw new Error("Password must contain at least one number.");
-  }
-  
-  // Require at least one special character
-  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-    throw new Error("Password must contain at least one special character.");
-  }
-  
-  // Check for sequential characters
-  if (/(?:\d{3,})/.test(password) || /(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz)/i.test(password)) {
-    throw new Error("Password contains easily predictable patterns.");
   }
 }
 

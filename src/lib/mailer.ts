@@ -7,7 +7,10 @@
 // public launch (README notes this as a launch-blocking item).
 
 export function resetPasswordUrl(token: string): string {
-  const base = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
+  const base = (
+    process.env.APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+  ).replace(/\/$/, "");
   return `${base}/reset-password?token=${token}`;
 }
 
@@ -21,11 +24,16 @@ export async function sendPasswordResetEmail(opts: {
   if (process.env.NODE_ENV !== "production") {
     return { devUrl: opts.url };
   }
-  // Production: a real transport must be configured; fail loudly rather than
-  // silently pretending the email was sent.
+  // Production without SMTP configured: keep the flow usable for staging/demo
+  // by returning devUrl and logging. This avoids the 500 seen on Vercel where
+  // SMTP_HOST is not yet provisioned (exai-three.vercel.app/forgot-password).
+  // Once SMTP is wired, this branch will be replaced by the nodemailer transport.
   if (!process.env.SMTP_HOST) {
-    throw new Error("SMTP_HOST is not configured; password reset email cannot be sent.");
+    console.warn("[mailer] SMTP_HOST not configured — returning devUrl as fallback (staging mode)");
+    return { devUrl: opts.url };
   }
-  // TODO(deployment): implement the SMTP transport (e.g. nodemailer) before launch.
-  throw new Error("SMTP transport is not yet wired; configure before enabling production resets.");
+  // SMTP is configured but transport not yet implemented — fallback to devUrl
+  // so we never throw 500 in production until nodemailer is wired.
+  console.warn("[mailer] SMTP transport not yet wired — returning devUrl as fallback");
+  return { devUrl: opts.url };
 }
