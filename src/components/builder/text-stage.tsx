@@ -35,7 +35,9 @@ export function TextStage({
   const guide = exam.config ? getGuide(exam.config.grade, exam.config.language ?? "en", exam.config.stream ?? undefined) : null;
   const [alt, setAlt] = React.useState(-1);
   const candidates = section?.candidates ?? [];
-  const source = exam.sources[0];
+  const sources = exam.sources ?? [];
+  const selectedSourceIndex = section?.sourceIndex ?? 0;
+  const source = sources[selectedSourceIndex] ?? sources[0];
   const previousText = section?.previousText ?? undefined;
 
   if (!exam.config) {
@@ -60,6 +62,26 @@ export function TextStage({
           <p className="max-w-xs text-right text-xs text-muted-foreground">{source.adaptationNote}</p>
         )}
       </div>
+
+      {sources.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-sm font-medium text-muted-foreground">Source</label>
+          <select
+            value={selectedSourceIndex}
+            onChange={(e) =>
+              onEdit({ sections: [{ id: section!.id, sourceIndex: Number(e.target.value) }] })
+            }
+            className="rounded-md border bg-white px-2 py-1 text-sm"
+          >
+            {sources.map((s, i) => (
+              <option key={i} value={i}>
+                {s.title}
+                {s.author ? ` — ${s.author}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <p className="text-sm text-muted-foreground">{t("builder.textStageHelp")}</p>
 
@@ -94,7 +116,7 @@ export function TextStage({
             <Textarea
               value={section.text ?? ""}
               onChange={(e) => onEdit({ sections: [{ id: section.id, text: e.target.value }] })}
-              className="min-h-[280px] text-[15px] leading-relaxed"
+              className="min-h-[280px] max-h-[420px] overflow-y-auto whitespace-pre-wrap text-[15px] leading-relaxed"
               spellCheck
             />
             <p className="text-right text-xs text-muted-foreground">
@@ -109,7 +131,7 @@ export function TextStage({
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold">{t("builder.alternatives")}</span>
                   <span className="text-xs text-muted-foreground">
-                    {alt >= 0 ? `${alt + 1} / ${candidates.length}` : ""}
+                    {alt >= 0 ? `${alt + 1} / ${candidates.length}` : `${candidates.length} available`}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -140,15 +162,20 @@ export function TextStage({
                 </div>
               </div>
               {alt >= 0 && (
-                <div className="mt-3 rounded-lg border bg-white p-4">
+                <div className="mt-3 min-h-[280px] max-h-[420px] overflow-y-auto rounded-lg border bg-white p-4">
                   <p className="text-sm font-semibold">{candidates[alt].title}</p>
-                  <p className="mt-1 line-clamp-5 text-sm text-muted-foreground">{candidates[alt].text}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-[15px] leading-relaxed text-foreground">{candidates[alt].text}</p>
+                  <p className="mt-2 text-right text-xs text-muted-foreground">
+                    {candidates[alt].text.trim().split(/\s+/).filter(Boolean).length} {t("builder.words")}
+                  </p>
                 </div>
               )}
               {alt < 0 && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Browse candidate texts with the arrows. Your current text is always kept until you select one.
-                </p>
+                <div className="mt-3 flex min-h-[280px] items-center justify-center rounded-lg border border-dashed bg-white p-4">
+                  <p className="text-center text-xs text-muted-foreground">
+                    Browse candidate texts with the arrows. Your current text is always kept until you select one.
+                  </p>
+                </div>
               )}
             </div>
           )}

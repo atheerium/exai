@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ export default function RegisterPage() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [showPassword, setShowPassword] = React.useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,7 +71,12 @@ export default function RegisterPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">{t("auth.password")}</Label>
-              <Input id="password" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+              <div className="flex items-center gap-2">
+                <Input id="password" type={showPassword ? "text" : "password"} autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+                <button type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((p) => !p)} className="p-1 rounded hover:bg-primary/10">
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               <p className="text-xs text-muted-foreground">{t("auth.passwordHint")}</p>
             </div>
             <Button type="submit" className="w-full" disabled={busy}>

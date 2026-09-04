@@ -14,9 +14,9 @@ import type { GenerationRequest } from "@/types";
 import * as mock from "./mock";
 import * as openai from "./openai";
 import * as groq from "./groq";
-import type { GeneratedTask, GeneratedText, GeneratedTopic } from "@/types";
+import type { GeneratedSource, GeneratedTask, GeneratedText, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 
-export type { GeneratedTask, GeneratedText, GeneratedTopic };
+export type { GeneratedSource, GeneratedTask, GeneratedText, GeneratedTextCandidate, GeneratedTopic };
 
 export interface GenContext {
   grade: string;
@@ -82,7 +82,7 @@ function impl() {
 // Each generation returns candidates (a primary + N alternatives). The caller
 // persists candidates so the replacement panel can offer them (PRD 15.3).
 
-export async function generateTextCandidates(ctx: GenContext): Promise<{ title: string; text: string }[]> {
+export async function generateTextCandidates(ctx: GenContext): Promise<GeneratedTextCandidate[]> {
   return impl().generateTextCandidates(ctx);
 }
 
@@ -103,16 +103,35 @@ export async function generateWritingCandidates(
 export async function generateRewriteCandidates(
   ctx: GenContext,
   opts: { text: string; title?: string; target: "simpler" | "harder" }
-): Promise<{ title: string; text: string }[]> {
+): Promise<GeneratedTextCandidate[]> {
   return impl().generateRewriteCandidates(ctx, opts);
 }
 
-export function validateCandidate(type: GenerationRequest["type"], payload: unknown, expectedMarks?: number, opts?: { singleTopic?: boolean }): { ok: boolean; issues: string[] } {
+function countItems(task: GeneratedTask): number {
+  if (task.table && task.table.rows.length > 0) return task.table.rows.length;
+  const prompt = (task.prompt ?? "").trim();
+  if (!prompt) return 0;
+  const lines = prompt.split("\n").map((l) => l.trim()).filter(Boolean);
+  // If prompt contains numbered lines (e.g. "1. ..."), count those; else count lines
+  const numbered = lines.filter((l) => /^\d+[\.\)]/.test(l) || /^[A-Z][\.\)]/.test(l) || /^- /.test(l));
+  return numbered.length > 0 ? numbered.length : lines.length;
+}
+
+export function validateCandidate(
+  type: GenerationRequest["type"],
+  payload: unknown,
+  expectedMarks?: number,
+  opts?: { singleTopic?: boolean; guide?: ReturnType<typeof resolveRules>["guide"] | null }
+): { ok: boolean; issues: string[] } {
   const issues: string[] = [];
   if (type === "TEXT") {
     const t = payload as GeneratedText;
     if (!t.text || t.text.trim().length < 50) issues.push("Generated text is too short.");
     if (!t.title) issues.push("Generated text has no title.");
+    // paragraphs: at least one blank line separation expected
+    if (t.text && !t.text.includes("\n\n") && t.text.split("\n").length < 2) {
+      // soft check: we do not fail here, but mock/provider already produce paragraphs via PARAGRAPH_NOTE
+    }
   }
   if (type === "PART_ONE" || type === "TEXT_EXPLORATION") {
     const tasks = payload as GeneratedTask[];
@@ -121,6 +140,34 @@ export function validateCandidate(type: GenerationRequest["type"], payload: unkn
     const expected = expectedMarks ?? (type === "PART_ONE" ? 7 : 8);
     if (Math.abs(total - expected) > 0.05) {
       issues.push(`Section marks total ${total} instead of the required ${expected}.`);
+    }
+    // Exact wording + counts + tables from guide (Second Review: redesign AI-facing rules)
+    const guide = opts?.guide ?? null;
+    if (guide && tasks && tasks.length) {
+      const rules = type === "PART_ONE" ? guide.partOne : guide.textExploration.skills;
+      if (rules.length === tasks.length) {
+        for (let i = 0; i < rules.length; i++) {
+          const rule: any = rules[i];
+          const task = tasks[i];
+          // exactWording: primary tasks whose family matches the prescribed family must use exact wording verbatim
+          if (rule.exactWording && task.family === rule.family && task.instruction !== rule.exactWording) {
+            issues.push(`Task ${i + 1} instruction must use exact wording: "${rule.exactWording}"`);
+          }
+          // tableRequired
+          if (rule.tableRequired && (!task.table || task.table.headers.length === 0 || task.table.rows.length === 0)) {
+            issues.push(`Task ${i + 1} requires a table but none was provided.`);
+          }
+          // itemCount where prescribed (Part One)
+          if (rule.itemCount != null) {
+            const actual = countItems(task);
+            if (actual !== rule.itemCount) {
+              issues.push(`Task ${i + 1} has ${actual} items (expected ${rule.itemCount}).`);
+            }
+          }
+          // placeholder hooks for future teacher inputs (no behavior change until supplied)
+          // rule.taskSpecificRules / rule.teacherStandardRules are intentionally empty until teacher supplies values
+        }
+      }
     }
   }
   if (type === "WRITING") {

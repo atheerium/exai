@@ -53,6 +53,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             guideVersion: guide.version,
             language: body.config.language === "fr" ? "fr" : "en",
             teacherKeywords: body.config.teacherKeywords ?? null,
+            difficulty: body.config.difficulty ?? null,
           },
           create: {
             examId: id,
@@ -66,6 +67,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             guideVersion: guide.version,
             language: body.config.language === "fr" ? "fr" : "en",
             teacherKeywords: body.config.teacherKeywords ?? null,
+            difficulty: body.config.difficulty ?? null,
           },
         }),
         prisma.exam.update({ where: { id }, data: { title, status: "ACTIVE" } }),
@@ -88,10 +90,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         if (!sec.id) continue;
         const section = await prisma.examSection.findFirst({ where: { id: sec.id, examId: id } });
         if (!section) continue;
-        if (typeof sec.text === "string" || typeof sec.textTitle === "string") {
+        if (typeof sec.text === "string" || typeof sec.textTitle === "string" || "sourceIndex" in sec) {
           const content = section.content ? JSON.parse(section.content) : {};
           if (typeof sec.text === "string") content.text = sec.text;
           if (typeof sec.textTitle === "string") content.title = sec.textTitle;
+          if ("sourceIndex" in sec) {
+            content.sourceIndex = sec.sourceIndex === null ? null : Number(sec.sourceIndex);
+          }
           if (sec.clearPrevious) {
             delete content.previousText;
             delete content.previousTitle;

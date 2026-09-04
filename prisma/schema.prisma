@@ -65,6 +65,7 @@ model ExamConfig {
   guideVersion    String? // guide version used at generation time (PRD 19.3, 47)
   language        String   @default("en") // exam language (PRD 38.1)
   teacherKeywords String? // free-text keywords to bias AI generation
+  difficulty      String? // Standard | Harder | Simpler — vocabulary + grammar complexity
 }
 
 model ExamSection {

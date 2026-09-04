@@ -80,6 +80,32 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                       </p>
                       {task.instruction && <p className="mt-0.5 text-sm text-muted-foreground">{task.instruction}</p>}
                       <p className="mt-1.5 whitespace-pre-line text-[15px] leading-relaxed">{task.prompt}</p>
+                      {task.table && task.table.headers.length > 0 && (
+                        <div className="mt-3 overflow-x-auto">
+                          <table className="w-full border-collapse border text-sm">
+                            <thead>
+                              <tr className="bg-muted">
+                                {task.table.headers.map((h, hi) => (
+                                  <th key={hi} className="border px-3 py-2 text-left font-semibold">
+                                    {h}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {task.table.rows.map((row, ri) => (
+                                <tr key={ri} className={ri % 2 === 0 ? "bg-white" : "bg-muted/30"}>
+                                  {row.map((cell, ci) => (
+                                    <td key={ci} className="border px-3 py-2">
+                                      {cell}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

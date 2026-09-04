@@ -15,6 +15,7 @@ export interface ExportTask {
   instruction: string;
   prompt: string;
   marks: string;
+  table?: { headers: string[]; rows: string[][] } | null;
 }
 
 export interface ExportTopic {
@@ -52,7 +53,8 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
   const p2Sec = section("TEXT_EXPLORATION");
   const wSec = section("WRITING");
 
-  const source = exam.sources[0];
+  const sourceIndex = textSec?.sourceIndex ?? 0;
+  const source = exam.sources[sourceIndex] ?? exam.sources[0];
   const sourceNote = source
     ? `${source.title ?? "Source"}${source.adaptationNote ? ` — ${source.adaptationNote}` : ""}`
     : null;
@@ -75,12 +77,14 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
     instruction: t.instruction ?? "",
     prompt: t.prompt,
     marks: formatMarks(t.marks),
+    table: t.table ?? null,
   }));
 
   const p2Tasks: ExportTask[] = (p2Sec?.tasks ?? []).map((t) => ({
     instruction: t.instruction ?? "",
     prompt: t.prompt,
     marks: formatMarks(t.marks),
+    table: t.table ?? null,
   }));
 
   const topics: ExportTopic[] = (wSec?.topics ?? []).map((t) => ({

@@ -1,8 +1,8 @@
-import { Document, Packer, Paragraph, TextRun } from "docx";
+import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle } from "docx";
 import type { ExportDocument } from "./assemble";
 
 export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
-  const children: Paragraph[] = [];
+  const children: (Paragraph | Table)[] = [];
 
   const p = (text: string, opts: { size?: number; bold?: boolean; color?: string; align?: "left" | "center" } = {}) =>
     new Paragraph({
@@ -37,6 +37,34 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
       children.push(p(`Task ${i + 1}  (${task.marks} pts)`, { size: 9.5, bold: true }));
       if (task.instruction) children.push(p(task.instruction, { size: 9, color: "374151" }));
       children.push(p(task.prompt, { size: 9.5 }));
+      if (task.table && task.table.headers.length > 0) {
+        const borders = {
+          top: { style: BorderStyle.SINGLE, size: 1, color: "D1D5DB" },
+          bottom: { style: BorderStyle.SINGLE, size: 1, color: "D1D5DB" },
+          left: { style: BorderStyle.SINGLE, size: 1, color: "D1D5DB" },
+          right: { style: BorderStyle.SINGLE, size: 1, color: "D1D5DB" },
+          insideH: { style: BorderStyle.SINGLE, size: 1, color: "D1D5DB" },
+          insideV: { style: BorderStyle.SINGLE, size: 1, color: "D1D5DB" },
+        };
+        const headerRow = new TableRow({
+          children: task.table.headers.map(
+            (h) =>
+              new TableCell({
+                borders,
+                shading: { fill: "F3F4F6" },
+                children: [p(h, { size: 8.5, bold: true })],
+              })
+          ),
+        });
+        const dataRows = task.table.rows.map(
+          (row) =>
+            new TableRow({
+              children: row.map((cell) => new TableCell({ borders, children: [p(cell ?? "", { size: 8.5 })] })),
+            })
+        );
+        const table = new Table({ rows: [headerRow, ...dataRows], width: { size: 100, type: WidthType.PERCENTAGE }, borders });
+        children.push(table);
+      }
     });
 
     section.topics.forEach((topic, i) => {

@@ -15,12 +15,19 @@ export interface SkillRule {
   family: string; // task family identifier
   marks: number;
   instruction: string;
+  tableRequired?: boolean;
 }
 
 export interface PartOneRule {
   family: string;
   marks: number;
   instruction: string;
+  exactWording?: string;
+  tableRequired?: boolean;
+  itemCount?: number;
+  streamVariants?: Record<string, Partial<PartOneRule>>;
+  taskSpecificRules?: string[];
+  teacherStandardRules?: string[];
   constraints?: {
     maxStatements?: number;
     maxQuestions?: number;
@@ -915,41 +922,56 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
       family: "TRUE_FALSE",
       marks: 1.5,
       instruction: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
+      exactWording: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
+      tableRequired: true,
+      itemCount: 4,
       constraints: { maxStatements: 4 },
     },
     {
       family: "QUESTIONS",
       marks: 2,
       instruction: "Answer the following questions according to the text.",
+      exactWording: "Answer the following questions according to the text.",
+      tableRequired: false,
+      itemCount: 4,
       constraints: { maxQuestions: 4, includeInference: true },
     },
     {
       family: "PARAGRAPH_ID",
       marks: 1.5,
       instruction: "In which paragraph is it mentioned that...?",
+      exactWording: "In which paragraph is it mentioned that...?",
+      tableRequired: true,
+      itemCount: 4,
       constraints: { maxIdeas: 4 },
     },
     {
       family: "COHESIVE_MARKERS",
       marks: 1,
       instruction: "Who or what do the underlined words refer to in the text?",
+      exactWording: "Who or what do the underlined words refer to in the text?",
+      tableRequired: true,
+      itemCount: 4,
       constraints: { maxWords: 4 },
     },
     {
       family: "TITLE_OR_IDEA",
       marks: 1,
       instruction: "Give a title to the text / Choose the general idea of the text.",
+      exactWording: "Give a title to the text / Choose the general idea of the text.",
+      tableRequired: false,
+      itemCount: 1,
     },
   ];
 
   const bemTextExploration = {
     total: 7,
     skills: [
-      { skill: "VOCABULARY", family: "MEANING", marks: 1.5, instruction: "Find in the text words or phrases that are closest in meaning to the following." },
-      { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words." },
-      { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed')." },
-      { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A." },
-      { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given." },
+      { skill: "VOCABULARY", family: "MEANING", marks: 1.5, instruction: "Find in the text words or phrases that are closest in meaning to the following.", tableRequired: true },
+      { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
+      { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: false },
+      { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
+      { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: true },
     ],
   };
 
@@ -959,30 +981,45 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
         family: "TRUE_FALSE",
         marks: 1.5,
         instruction: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
+        exactWording: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
+        tableRequired: true,
+        itemCount: 4,
         constraints: { maxStatements: 4 },
       },
       {
         family: "QUESTIONS",
         marks: 2,
         instruction: "Answer the following questions according to the text.",
+        exactWording: "Answer the following questions according to the text.",
+        tableRequired: false,
+        itemCount: 4,
         constraints: { maxQuestions: 4, includeInference: true },
       },
       {
         family: "PARAGRAPH_ID",
         marks: 1.5,
         instruction: "In which paragraph is it mentioned that...?",
+        exactWording: "In which paragraph is it mentioned that...?",
+        tableRequired: true,
+        itemCount: 4,
         constraints: { maxIdeas: 4 },
       },
       {
         family: "COHESIVE_MARKERS",
         marks: 1,
         instruction: "Who or what do the underlined words refer to in the text?",
+        exactWording: "Who or what do the underlined words refer to in the text?",
+        tableRequired: true,
+        itemCount: 4,
         constraints: { maxWords: 4 },
       },
       {
         family: "TITLE_OR_IDEA",
         marks: 1,
         instruction: "Give a title to the text / Choose the general idea of the text.",
+        exactWording: "Give a title to the text / Choose the general idea of the text.",
+        tableRequired: false,
+        itemCount: 1,
       },
     ],
     literature_philosophy: [
@@ -990,24 +1027,36 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
         family: "TRUE_FALSE",
         marks: 2,
         instruction: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
+        exactWording: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
+        tableRequired: true,
+        itemCount: 4,
         constraints: { maxStatements: 4 },
       },
       {
         family: "QUESTIONS",
         marks: 2,
         instruction: "Answer the following questions according to the text.",
+        exactWording: "Answer the following questions according to the text.",
+        tableRequired: false,
+        itemCount: 3,
         constraints: { maxQuestions: 3 },
       },
       {
         family: "PARAGRAPH_ID",
         marks: 1.5,
         instruction: "In which paragraph is it mentioned that...?",
+        exactWording: "In which paragraph is it mentioned that...?",
+        tableRequired: true,
+        itemCount: 4,
         constraints: { maxIdeas: 4 },
       },
       {
         family: "COHESIVE_MARKERS",
         marks: 1.5,
         instruction: "Who or what do the underlined words refer to in the text?",
+        exactWording: "Who or what do the underlined words refer to in the text?",
+        tableRequired: true,
+        itemCount: 3,
         constraints: { maxWords: 3 },
       },
     ],
@@ -1016,58 +1065,70 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
         family: "TRUE_FALSE",
         marks: 2,
         instruction: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
+        exactWording: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
+        tableRequired: true,
+        itemCount: 4,
         constraints: { maxStatements: 4 },
       },
       {
         family: "QUESTIONS",
         marks: 2,
         instruction: "Answer the following questions according to the text.",
+        exactWording: "Answer the following questions according to the text.",
+        tableRequired: false,
+        itemCount: 3,
         constraints: { maxQuestions: 3 },
       },
       {
         family: "PARAGRAPH_ID",
         marks: 2,
         instruction: "In which paragraph is it mentioned that...?",
+        exactWording: "In which paragraph is it mentioned that...?",
+        tableRequired: true,
+        itemCount: 4,
         constraints: { maxIdeas: 4 },
       },
       {
         family: "COHESIVE_MARKERS",
         marks: 2,
         instruction: "Who or what do the underlined words refer to in the text?",
+        exactWording: "Who or what do the underlined words refer to in the text?",
+        tableRequired: true,
+        itemCount: 3,
         constraints: { maxWords: 3 },
       },
     ],
   };
 
-  const textExplorationMarks: Record<StreamCategory, { total: number; skills: { skill: string; family: string; marks: number; instruction: string }[] }> = {
+  const textExplorationMarks: Record<StreamCategory, { total: number; skills: SkillRule[] }> = {
     foreign_languages: {
       total: 7,
       skills: [
-        { skill: "VOCABULARY", family: "MEANING", marks: 1.5, instruction: "Find in the text words or phrases that are closest in meaning to the following." },
-        { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words." },
-        { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed')." },
-        { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A." },
-        { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given." },
+        { skill: "VOCABULARY", family: "MEANING", marks: 1.5, instruction: "Find in the text words or phrases that are closest in meaning to the following.", tableRequired: true },
+        { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
+        { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: false },
+        { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
+        { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: true },
       ],
     },
     literature_philosophy: {
       total: 8,
       skills: [
-        { skill: "VOCABULARY", family: "MEANING", marks: 2, instruction: "Find in the text words or phrases that are closest in meaning to the following." },
-        { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words." },
-        { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1.5, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed')." },
-        { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A." },
-        { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given." },
+        { skill: "VOCABULARY", family: "MEANING", marks: 2, instruction: "Find in the text words or phrases that are closest in meaning to the following.", tableRequired: true },
+        { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
+        { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1.5, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: false },
+        { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
+        { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: true },
       ],
     },
     sciences: {
       total: 7,
       skills: [
-        { skill: "VOCABULARY", family: "MEANING", marks: 1.5, instruction: "Find in the text words or phrases that are closest in meaning to the following." },
-        { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words." },
-        { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed')." },
-        { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A." },
-        { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given." },
+        { skill: "VOCABULARY", family: "MEANING", marks: 1.5, instruction: "Find in the text words or phrases that are closest in meaning to the following.", tableRequired: true },
+        { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
+        { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: false },
+        { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
+        { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: true },
       ],
     },
   };

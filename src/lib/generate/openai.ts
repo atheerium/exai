@@ -8,9 +8,19 @@
 //   OPENAI_MODEL=gpt-4o-mini          (optional)
 //   OPENAI_BASE_URL=https://.../v1   (optional; OpenAI-compatible endpoint)
 
-import type { GeneratedTopic } from "@/types";
+import type { GeneratedTextCandidate, GeneratedTopic } from "@/types";
 import type { GenContext } from "./index";
-import { chat, basePrompt, parseTaskSets, keywordNote, type ProviderConfig } from "./provider";
+import {
+  chat,
+  basePrompt,
+  parseTaskSets,
+  keywordNote,
+  difficultyNote,
+  parseSource,
+  PARAGRAPH_NOTE,
+  SOURCE_NOTE,
+  type ProviderConfig,
+} from "./provider";
 
 function config(): ProviderConfig {
   return {
@@ -21,33 +31,42 @@ function config(): ProviderConfig {
   };
 }
 
-export async function generateTextCandidates(ctx: GenContext): Promise<{ title: string; text: string }[]> {
+export async function generateTextCandidates(ctx: GenContext): Promise<GeneratedTextCandidate[]> {
   const json = await chat(config(), {
     ...basePrompt(ctx),
     kind: "TEXT",
     request:
       'Write an original, level-appropriate reading passage of about ' + ctx.length +
-      ' words on the topic.' + keywordNote(ctx) +
-      ' Return exactly {"candidates":[{"title":"...","text":"..."}]} with 3 different candidates.',
+      ' words on the topic.' + keywordNote(ctx) + difficultyNote(ctx) + PARAGRAPH_NOTE + SOURCE_NOTE +
+      ' Return exactly {"candidates":[{"title":"...","text":"...","source":{"title":"...","author":"...","publication":"...","url":"...","adaptationNote":"..."}}]} with 3 different candidates.',
   });
   const candidates = Array.isArray(json?.candidates) ? json.candidates : null;
   if (!candidates || candidates.length < 3) throw new Error("AI output missing text candidates.");
   return candidates
     .slice(0, 3)
-    .map((c: any) => ({ title: String(c?.title ?? ""), text: String(c?.text ?? "") }));
+    .map((c: any) => ({ title: String(c?.title ?? ""), text: String(c?.text ?? ""), source: parseSource(c?.source) }));
 }
 
 export async function generatePartOneCandidates(ctx: GenContext) {
-  const families = ctx.guide.partOne.map((f) => ({ family: f.family, marks: f.marks, instruction: f.instruction }));
+  const families = ctx.guide.partOne.map((f) => ({
+    family: f.family,
+    marks: f.marks,
+    instruction: f.exactWording ?? f.instruction,
+    exactWording: f.exactWording,
+    tableRequired: f.tableRequired,
+    itemCount: f.itemCount,
+    constraints: f.constraints,
+  }));
   const json = await chat(config(), {
     ...basePrompt(ctx),
     kind: "PART_ONE",
     marksTotal: ctx.guide.marks.partOne,
     request:
-      'Generate reading-comprehension tasks on the passage topic with EXACTLY the families, marks and instructions below. ' +
+      'Generate reading-comprehension tasks on the passage topic with EXACTLY the families, marks, instructions, item counts, and table requirements below. ' +
       'Set 0 must use exactly these families. Sets 1 and 2 must use DIFFERENT task types for the same skills/marks ' +
       '(e.g. MCQ instead of open questions, YES/NO/Not-Given instead of True/False, matching instead of paragraph ID, ordering instead of title choice). ' +
-      'Return {"sets":[{"tasks":[{"prompt","instruction","answer","marks","skill":"READING","family":"..."}]}]} with 3 different sets of tasks.',
+      'For tasks with tableRequired=true, include a "table" field with headers and rows. ' +
+      'Return {"sets":[{"tasks":[{"prompt","instruction","answer","marks","skill":"READING","family":"...","table":{"headers":[],"rows":[[]]}}]}]} with 3 different sets of tasks.',
     families,
   });
   return parseTaskSets(json, ctx.guide.partOne.length, ctx.guide.marks.partOne);
@@ -58,16 +77,19 @@ export async function generateTextExplorationCandidates(ctx: GenContext) {
     skill: s.skill,
     marks: s.marks,
     instruction: s.instruction,
+    tableRequired: s.tableRequired,
   }));
   const json = await chat(config(), {
     ...basePrompt(ctx),
     kind: "TEXT_EXPLORATION",
     marksTotal: ctx.guide.marks.textExploration,
     request:
-      'Generate the five language tasks (vocabulary, morphology, phonology, grammar, discourse) with EXACTLY the skills, marks and instructions below. ' +
+      'Generate the five language tasks (vocabulary, morphology, phonology, grammar, discourse) with EXACTLY the skills, marks, instructions, and table requirements below. ' +
+      'Tasks may draw from the broader theme/content of the unit, not strictly constrained to the passage verbatim, while staying appropriate to level, skill and Ministry requirements. ' +
       'Set 0 must use the standard families. Sets 1 and 2 must use DIFFERENT task types for the same skills/marks ' +
       '(e.g. synonym match instead of meaning, prefix/suffix instead of word family, stress pattern instead of sound class, choose correct form instead of rewrite, jumbled sentences instead of gap fill). ' +
-      'Return {"sets":[{"tasks":[{"prompt","instruction","answer","marks","skill","family":"..."}]}]} with 3 different sets of tasks.',
+      'For tasks with tableRequired=true, include a "table" field with headers and rows. ' +
+      'Return {"sets":[{"tasks":[{"prompt","instruction","answer","marks","skill","family":"...","table":{"headers":[],"rows":[[]]}}]}]} with 3 different sets of tasks.',
     skills,
   });
   return parseTaskSets(json, 5, ctx.guide.marks.textExploration);
@@ -76,7 +98,7 @@ export async function generateTextExplorationCandidates(ctx: GenContext) {
 export async function generateRewriteCandidates(
   ctx: GenContext,
   opts: { text: string; title?: string; target: "simpler" | "harder" }
-): Promise<{ title: string; text: string }[]> {
+): Promise<GeneratedTextCandidate[]> {
   const direction =
     opts.target === "simpler"
       ? "Rewrite the passage to be SIMPLER: shorter sentences, fewer subordinate clauses, plainer vocabulary, same meaning and content."
@@ -86,7 +108,7 @@ export async function generateRewriteCandidates(
     kind: "REWRITE",
     target: opts.target,
     request:
-      direction +
+      direction + PARAGRAPH_NOTE +
       ' Keep the same title and topic. Return exactly {"candidates":[{"title":"...","text":"..."}]} with 3 different rewritten versions of about the same length.',
   });
   const candidates = Array.isArray(json?.candidates) ? json.candidates : null;

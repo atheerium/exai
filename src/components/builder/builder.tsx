@@ -145,7 +145,11 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         return;
       }
       setExam(data);
-      toast("Generated", "success");
+      if (type === "TEXT" && textSec?.text) {
+        toast("New versions added to the alternatives box", "success");
+      } else {
+        toast("Generated", "success");
+      }
       // Scroll to the relevant section after generation
       const scrollMap: Record<string, SectionId> = {
         TEXT: "text",
@@ -247,6 +251,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     topic: string;
     customTopic: boolean;
     teacherKeywords?: string | null;
+    difficulty?: string | null;
   }) {
     try {
       const res = await fetch(`/api/exams/${exam.id}`, {
@@ -566,6 +571,9 @@ function applySectionPatch(exam: ExamDto, patch: Record<string, unknown>): ExamD
     if (!target) continue;
     if (typeof sec.text === "string") target.text = sec.text;
     if (typeof sec.textTitle === "string") target.textTitle = sec.textTitle;
+    if ("sourceIndex" in sec) {
+      target.sourceIndex = sec.sourceIndex === null ? null : Number(sec.sourceIndex);
+    }
     const patchTasks = sec.tasks as Array<Record<string, unknown>> | undefined;
     for (const t of patchTasks ?? []) {
       const task = target.tasks.find((x) => x.id === t.id);

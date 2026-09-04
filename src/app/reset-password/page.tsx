@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Sparkles, CheckCircle2 } from "lucide-react";
+import { Sparkles, CheckCircle2, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,8 @@ function ResetForm() {
   const [confirm, setConfirm] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [showConfirm, setShowConfirm] = React.useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -101,11 +103,21 @@ function ResetForm() {
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="password">New password</Label>
-              <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+              <div className="flex items-center gap-2">
+                <Input id="password" type={showPassword ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} />
+                <button type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((p) => !p)} className="p-1 rounded hover:bg-primary/10">
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="confirm">Confirm password</Label>
-              <Input id="confirm" type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+              <div className="flex items-center gap-2">
+                <Input id="confirm" type={showConfirm ? "text" : "password"} required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+                <button type="button" aria-label={showConfirm ? "Hide password" : "Show password"} onClick={() => setShowConfirm((p) => !p)} className="p-1 rounded hover:bg-primary/10">
+                  {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             <Button type="submit" className="w-full" disabled={busy}>
               {busy ? "Saving…" : "Set new password"}

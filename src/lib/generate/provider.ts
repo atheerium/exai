@@ -4,7 +4,7 @@
 // and default base URL differ. This module centralises the chat helper,
 // prompt builder, and response parser so each provider file stays thin.
 
-import type { GeneratedTask } from "@/types";
+import type { GeneratedSource, GeneratedTask } from "@/types";
 import type { GenContext } from "./index";
 
 const SYSTEM = [
@@ -63,7 +63,34 @@ export function basePrompt(ctx: GenContext): Record<string, unknown> {
     guideVersion: ctx.guide.version,
   };
   if (ctx.teacherKeywords) base.teacherKeywords = ctx.teacherKeywords;
+  if (ctx.difficulty) base.difficulty = ctx.difficulty;
   return base;
+}
+
+export const PARAGRAPH_NOTE =
+  " Write the passage as 3-5 coherent paragraphs separated by blank lines (\\n\\n).";
+
+export const SOURCE_NOTE =
+  ' A source citation is obligatory: include a "source" object with title, author, publication, url and adaptationNote for every candidate. If the passage is fully original, say so in adaptationNote and leave url null.';
+
+export function difficultyNote(ctx: GenContext): string {
+  if (!ctx.difficulty) return "";
+  return ` Target difficulty: ${ctx.difficulty}. Adjust vocabulary difficulty and grammar-structure complexity accordingly, while staying appropriate for the grade.`;
+}
+
+export function parseSource(raw: any): GeneratedSource | null {
+  if (!raw || typeof raw !== "object") return null;
+  const title = raw.title ? String(raw.title) : "";
+  const adaptationNote = raw.adaptationNote ? String(raw.adaptationNote) : "";
+  if (!title && !adaptationNote) return null;
+  return {
+    title: title || "Source",
+    author: raw.author ? String(raw.author) : null,
+    publication: raw.publication ? String(raw.publication) : null,
+    url: raw.url ? String(raw.url) : null,
+    adaptationNote: adaptationNote || "Adapted for classroom use.",
+    isExternal: !!(raw.url || raw.publication || raw.author),
+  };
 }
 
 export function parseTaskSets(json: any, count: number, marksTotal: number): GeneratedTask[][] {
@@ -81,6 +108,9 @@ export function parseTaskSets(json: any, count: number, marksTotal: number): Gen
       marks: Number(t?.marks ?? 0),
       skill: t?.skill ? String(t.skill) : undefined,
       family: t?.family ? String(t.family) : undefined,
+      table: t?.table && typeof t.table === "object" && Array.isArray(t.table.headers) && Array.isArray(t.table.rows)
+        ? { headers: t.table.headers.map((h: any) => String(h)), rows: t.table.rows.map((r: any) => Array.isArray(r) ? r.map((c: any) => String(c)) : [String(r)]) }
+        : undefined,
     }));
   });
 }

@@ -67,11 +67,13 @@ export const THEMES: Record<string, Theme> = {
       { q: "According to the text, what makes a good friend?", a: "Honesty, kindness and readiness to listen." },
       { q: "How does forgiveness help a friendship?", a: "It keeps the relationship healthy and strong." },
       { q: "Why do teachers encourage cooperation?", a: "Because teamwork teaches patience and trust." },
+      { q: "How does modern communication help friends?", a: "It helps friends stay connected even when they live far away." },
     ],
     trueFalse: [
       { statement: "Good friends never listen to each other.", truth: false, justification: "The text says a good friend is ready to listen." },
       { statement: "Respecting differences helps classmates work together.", truth: true, justification: "The text says it helps classmates avoid useless conflicts." },
       { statement: "Screens can replace face-to-face conversation.", truth: false, justification: "The text says screens can never replace genuine conversation." },
+      { statement: "Teamwork teaches patience and trust.", truth: true, justification: "The text says teachers encourage cooperation because teamwork teaches patience and trust." },
     ],
     vocab: [
       { word: "honest", family: { noun: "honesty", adjective: "honest", adverb: "honestly" }, finalS: "z", inText: true },
@@ -137,11 +139,13 @@ export const THEMES: Record<string, Theme> = {
       { q: "What do children learn by helping with daily tasks?", a: "Discipline and confidence." },
       { q: "What do grandparents often pass down?", a: "Traditions, stories and recipes." },
       { q: "Why do regular meals together matter?", a: "They give the family a quiet moment to talk about the day." },
+      { q: "How does sharing housework fairly help children?", a: "It teaches boys and girls the same life skills." },
     ],
     trueFalse: [
       { statement: "Children never learn discipline by helping at home.", truth: false, justification: "The text says helping with daily tasks teaches discipline." },
       { statement: "Grandparents pass down traditions and recipes.", truth: true, justification: "The text says they pass down traditions, stories and recipes." },
       { statement: "Communication solves most family problems.", truth: true, justification: "The text says communication solves most problems." },
+      { statement: "Regular meals give families time to talk about the day.", truth: true, justification: "The text says regular meals together give families a quiet moment to talk." },
     ],
     vocab: [
       { word: "responsibilities", family: { noun: "responsibility", adjective: "responsible" }, finalS: "z", inText: true },
@@ -207,11 +211,13 @@ export const THEMES: Record<string, Theme> = {
       { q: "Why is asking questions in class a positive sign?", a: "Because it shows curiosity, not weakness." },
       { q: "What do group projects teach students?", a: "Planning, sharing ideas and respecting deadlines." },
       { q: "When is revision more effective?", a: "When it is done regularly rather than the night before an exam." },
+      { q: "How do short breaks help during long study sessions?", a: "They improve concentration." },
     ],
     trueFalse: [
       { statement: "Studying everything the night before is the best strategy.", truth: false, justification: "The text says regular revision is more effective." },
       { statement: "Reading for pleasure improves vocabulary.", truth: true, justification: "The text says pupils improve their vocabulary without noticing it." },
       { statement: "School clubs only waste time.", truth: false, justification: "The text says clubs develop talents such as leadership and creativity." },
+      { statement: "Asking questions in class shows curiosity.", truth: true, justification: "The text says asking questions is a sign of curiosity, not weakness." },
     ],
     vocab: [
       { word: "organise", family: { noun: "organisation", verb: "organise", adjective: "organised" }, finalS: "z", inText: true },
@@ -277,11 +283,13 @@ export const THEMES: Record<string, Theme> = {
       { q: "How do trees help our health?", a: "They absorb pollution and give us fresh air." },
       { q: "Why are plastic bags dangerous for nature?", a: "They take hundreds of years to disappear." },
       { q: "What does choosing a reusable bottle do?", a: "It is a simple ecological act that reduces waste." },
+      { q: "How does recycling help reduce landfill waste?", a: "Families that recycle reduce the amount of rubbish sent to landfill." },
     ],
     trueFalse: [
       { statement: "Recycling increases the rubbish sent to landfill.", truth: false, justification: "The text says recycling reduces the amount of rubbish." },
       { statement: "Trees give us fresh air.", truth: true, justification: "The text says trees absorb pollution and give fresh air." },
       { statement: "Public transport produces less pollution per person.", truth: true, justification: "The text says it produces less pollution per person." },
+      { statement: "Plastic bags disappear quickly in nature.", truth: false, justification: "The text says plastic bags take hundreds of years to disappear." },
     ],
     vocab: [
       { word: "recycles", family: { noun: "recycling", verb: "recycle", adjective: "recyclable" }, finalS: "z", inText: true },
@@ -347,11 +355,13 @@ export const THEMES: Record<string, Theme> = {
       { q: "Why do volunteers clean public spaces?", a: "They give their time without expecting payment." },
       { q: "What do charity events collect?", a: "Food and clothes for families facing difficult situations." },
       { q: "How do community meetings help residents?", a: "They give residents the chance to propose ideas and solve problems." },
+      { q: "What does donating blood do?", a: "It is a quiet act of solidarity that saves lives every day." },
     ],
     trueFalse: [
       { statement: "Volunteers expect a salary for their work.", truth: false, justification: "The text says they give their time without expecting payment." },
       { statement: "Charity events collect food and clothes.", truth: true, justification: "The text says they collect food and clothes for families in difficulty." },
       { statement: "A smile in the street reduces isolation.", truth: true, justification: "The text says it reduces isolation and builds trust." },
+      { statement: "Community meetings help residents solve problems.", truth: true, justification: "The text says meetings give residents the chance to propose ideas and solve problems." },
     ],
     vocab: [
       { word: "volunteers", family: { noun: "volunteering", verb: "volunteer" }, finalS: "z", inText: true },
@@ -417,11 +427,13 @@ export const THEMES: Record<string, Theme> = {
       { q: "What does a balanced diet provide?", a: "The energy the body needs to grow and concentrate." },
       { q: "How does sport help people?", a: "It keeps the heart strong and helps manage stress." },
       { q: "Why is sleep important?", a: "It improves memory and mood." },
+      { q: "How does drinking water help?", a: "It prevents headaches and keeps the skin healthy." },
     ],
     trueFalse: [
       { statement: "Eating fast food every day improves health.", truth: false, justification: "The text says reducing sugar and fast food lowers the risk of disease." },
       { statement: "Sleep improves memory and mood.", truth: true, justification: "The text says sleeping well improves memory and mood." },
       { statement: "Doctors recommend thirty minutes of activity daily.", truth: true, justification: "The text recommends at least thirty minutes of physical activity every day." },
+      { statement: "Drinking water prevents headaches.", truth: true, justification: "The text says drinking enough water prevents headaches." },
     ],
     vocab: [
       { word: "balanced", family: { noun: "balance", verb: "balance", adjective: "balanced" }, finalS: "z", finalEd: "t", edWord: "balanced", inText: true },
@@ -487,11 +499,13 @@ export const THEMES: Record<string, Theme> = {
       { q: "How do online lessons help remote students?", a: "They allow them to follow qualified teachers." },
       { q: "What do renewable energy technologies do?", a: "They convert sunlight and wind into clean electricity." },
       { q: "Why is coding described as valuable?", a: "It has become a valuable skill for young people." },
+      { q: "How does artificial intelligence help doctors?", a: "It helps them analyse medical images more quickly." },
     ],
     trueFalse: [
       { statement: "Technology never requires responsibility.", truth: false, justification: "The text says technology also requires responsibility." },
       { statement: "Social networks connect families across continents.", truth: true, justification: "The text says they connect families across continents in seconds." },
       { statement: "Machines now perform dangerous tasks instead of humans.", truth: true, justification: "The text says engineers design machines that perform dangerous tasks." },
+      { statement: "Online lessons help remote students access qualified teachers.", truth: true, justification: "The text says online lessons allow students in remote villages to follow qualified teachers." },
     ],
     vocab: [
       { word: "transformed", family: { noun: "transformation", verb: "transform", adjective: "transformative" }, finalS: "z", finalEd: "d", edWord: "transformed", inText: true },
@@ -557,11 +571,13 @@ export const THEMES: Record<string, Theme> = {
       { q: "What do museums display?", a: "Objects that tell the daily stories of people who lived long ago." },
       { q: "How do archaeologists help us?", a: "They study ruins to understand how ancient cities were organised." },
       { q: "Why are local languages precious?", a: "They carry expressions that cannot be translated exactly." },
+      { q: "How do festivals help preserve culture?", a: "They celebrate history, faith and the changing seasons." },
     ],
     trueFalse: [
       { statement: "Culture is only about modern technology.", truth: false, justification: "The text says culture is language, art, food and stories." },
       { statement: "Festivals celebrate history and faith.", truth: true, justification: "The text says festivals celebrate history, faith and the seasons." },
       { statement: "Oral stories carry wisdom.", truth: true, justification: "The text says oral stories carry wisdom that books sometimes lose." },
+      { statement: "Museums display objects from daily life long ago.", truth: true, justification: "The text says museums display objects that tell daily stories of people who lived long ago." },
     ],
     vocab: [
       { word: "preserve", family: { noun: "preservation", verb: "preserve", adjective: "preserved" }, finalS: "z", inText: true },
@@ -627,11 +643,13 @@ export const THEMES: Record<string, Theme> = {
       { q: "Who usually passes down traditional recipes?", a: "Grandmothers pass them to their grandchildren." },
       { q: "Why do seasonal products matter?", a: "They taste better and support local farmers and markets." },
       { q: "How does a family meal help?", a: "It invites people to slow down and talk about their day." },
+      { q: "What do fresh ingredients contain compared to processed ones?", a: "Fewer additives and less salt." },
     ],
     trueFalse: [
       { statement: "Seasonal products support local farmers.", truth: true, justification: "The text says they support local farmers and markets." },
       { statement: "Fresh ingredients contain more additives.", truth: false, justification: "The text says fresh ingredients contain fewer additives." },
       { statement: "Festival dishes reconnect families with ancestors.", truth: true, justification: "The text says festival dishes reconnect families with ancestors." },
+      { statement: "Cooking together teaches patience and sharing.", truth: true, justification: "The text says cooking together teaches patience, organisation and the pleasure of sharing." },
     ],
     vocab: [
       { word: "recipes", family: { noun: "recipe", adjective: "culinary" }, finalS: "z", inText: true },
@@ -697,11 +715,13 @@ export const THEMES: Record<string, Theme> = {
       { q: "What does sport teach?", a: "Discipline, teamwork and the art of accepting defeat." },
       { q: "How do creative hobbies help?", a: "They reduce stress and give a healthy break from screens." },
       { q: "Why do psychologists recommend hands-on hobbies?", a: "Because hobbies involving the hands, not just the eyes, are valuable." },
+      { q: "How does sharing a hobby with friends affect enjoyment?", a: "It makes the activity twice as enjoyable." },
     ],
     trueFalse: [
       { statement: "Collecting trains patience and attention to detail.", truth: true, justification: "The text says collecting trains patience and attention to detail." },
       { statement: "Hobbies increase stress.", truth: false, justification: "The text says creative hobbies reduce stress." },
       { statement: "Hobbies improve concentration at school.", truth: true, justification: "The text says students with a hobby develop better concentration." },
+      { statement: "Sport teaches teamwork and accepting defeat.", truth: true, justification: "The text says sport teaches discipline, teamwork and the art of accepting defeat." },
     ],
     vocab: [
       { word: "transports", family: { noun: "transport", verb: "transport" }, finalS: "s", inText: true },

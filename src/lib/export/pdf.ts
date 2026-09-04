@@ -54,7 +54,54 @@ export async function renderPdf(docModel: ExportDocument): Promise<Buffer> {
         doc.moveDown(0.1);
       }
       font(9.5).fillColor("#111827").text(task.prompt, { align: "left" });
+      if (task.table && task.table.headers.length > 0) {
+        doc.moveDown(0.3);
+        drawTable(task.table.headers, task.table.rows);
+        doc.moveDown(0.2);
+      }
     });
+
+  function drawTable(headers: string[], rows: string[][]) {
+    const startX = doc.x;
+    const availWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const colCount = headers.length;
+    const colWidth = availWidth / colCount;
+    const rowHeight = 20;
+    const x0 = startX;
+    let y = doc.y;
+
+    // ensure space for at least header + 1 row
+    if (y + rowHeight * (rows.length + 1) > doc.page.height - doc.page.margins.bottom) {
+      doc.addPage();
+      y = doc.y;
+    }
+
+    // header row background
+    doc.save().fillColor("#f3f4f6").rect(x0, y, availWidth, rowHeight).fill().restore();
+    headers.forEach((h, ci) => {
+      const x = x0 + ci * colWidth;
+      doc.rect(x, y, colWidth, rowHeight).stroke();
+      font(8.5, true).fillColor("#111827").text(h, x + 4, y + 6, { width: colWidth - 8, align: "left" });
+    });
+    y += rowHeight;
+
+    rows.forEach((row, ri) => {
+      if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
+        doc.addPage();
+        y = doc.y;
+      }
+      const bg = ri % 2 === 1 ? "#f9fafb" : "#ffffff";
+      doc.save().fillColor(bg).rect(x0, y, availWidth, rowHeight).fill().restore();
+      row.forEach((cell, ci) => {
+        const x = x0 + ci * colWidth;
+        doc.rect(x, y, colWidth, rowHeight).stroke();
+        font(8.5).fillColor("#111827").text(cell ?? "", x + 4, y + 6, { width: colWidth - 8, align: "left" });
+      });
+      y += rowHeight;
+    });
+    doc.y = y;
+    doc.x = x0;
+  }
 
     section.topics.forEach((topic, i) => {
       doc.moveDown(0.5);

@@ -56,6 +56,7 @@ export interface SectionDto {
   textTitle?: string | null;
   previousText?: string | null;
   previousTitle?: string | null;
+  sourceIndex?: number | null; // index into ExamDto.sources — the citation the teacher chose
   candidates: { title: string; text: string }[];
   tasks: TaskDto[];
   topics: TopicDto[];
@@ -91,10 +92,26 @@ export interface GenerationRequest {
   mode?: "first" | "regenerate";
 }
 
+export interface GeneratedSource {
+  title: string;
+  author?: string | null;
+  publication?: string | null;
+  url?: string | null;
+  adaptationNote: string;
+  isExternal: boolean;
+}
+
 export interface GeneratedText {
   title: string;
   text: string;
   words: number;
+  source?: GeneratedSource | null;
+}
+
+export interface GeneratedTextCandidate {
+  title: string;
+  text: string;
+  source?: GeneratedSource | null;
 }
 
 export interface GeneratedTask {

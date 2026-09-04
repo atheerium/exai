@@ -10,6 +10,7 @@ interface SectionContent {
   previousText?: string | null;
   previousTitle?: string | null;
   candidates?: unknown[];
+  sourceIndex?: number | null;
 }
 
 /**
@@ -102,6 +103,7 @@ export async function examToDto(exam: any): Promise<ExamDto> {
       previousText: content.previousText ?? null,
       previousTitle: content.previousTitle ?? null,
       candidates: content.candidates ?? [],
+      sourceIndex: content.sourceIndex ?? null,
       tasks: parseTasks(s.tasks ?? []),
       topics: parseTopics(s.topics ?? []),
     };
@@ -130,6 +132,7 @@ export async function examToDto(exam: any): Promise<ExamDto> {
         guideVersion: exam.config.guideVersion ?? null,
         language: exam.config.language ?? "en",
         teacherKeywords: exam.config.teacherKeywords ?? null,
+        difficulty: exam.config.difficulty ?? null,
       }
     : null;
 
