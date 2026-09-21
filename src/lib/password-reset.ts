@@ -107,7 +107,7 @@ function validatePasswordStrength(password: string): void {
 
 // Always resolves successfully for existing accounts; for unknown emails it
 // performs the same work so response timing does not leak account existence.
-export async function requestPasswordReset(email: string): Promise<{ ok: true; devUrl?: string }> {
+export async function requestPasswordReset(email: string): Promise<{ ok: true }> {
   // Validate email format
   validateEmailFormat(email);
   
@@ -142,12 +142,12 @@ export async function requestPasswordReset(email: string): Promise<{ ok: true; d
   });
   
   try {
-    const sent = await sendPasswordResetEmail({
+    await sendPasswordResetEmail({
       to: user.email,
       name: user.name,
       url: resetPasswordUrl(token),
     });
-    return { ok: true, devUrl: sent.devUrl };
+    return { ok: true };
   } catch (e) {
     // Delivery failed: never leave a dangling token behind.
     await prisma.passwordResetToken.delete({ where: { id: record.id } }).catch(() => {});

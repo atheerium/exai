@@ -24,9 +24,9 @@ echo "== builder/new redirect =="
 CODE=$(curl -s -b "$JAR" -o /dev/null -w "%{http_code}" "$BASE/builder/new")
 echo "redirect code $CODE"
 
-echo "== config 3as 250w =="
+echo "== config 3as 150w =="
 curl -s -b "$JAR" -X PATCH "$BASE/api/exams/$E1" -H "Content-Type: application/json" \
-  -d '{"config":{"level":"secondary","grade":"3as","stream":"Lettres et Langues Étrangères","length":250,"unit":"u-innovation","topic":"Artificial intelligence"}}' | python3 -c "import sys,json;d=json.load(sys.stdin);print('title', d['title'])"
+  -d '{"config":{"level":"secondary","grade":"3as","stream":"Lettres et Langues Étrangères","length":150,"unit":"u-innovation","topic":"Artificial intelligence"}}' | python3 -c "import sys,json;d=json.load(sys.stdin);print('title', d['title'])"
 
 echo "== text =="
 curl -s -b "$JAR" -X POST "$BASE/api/exams/$E1/generate" -H "Content-Type: application/json" -d '{"type":"TEXT"}' | python3 -c "

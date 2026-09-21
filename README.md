@@ -18,7 +18,7 @@ Every generation is a *proposal*. The teacher can edit any component, browse alt
 | --- | --- | --- |
 | Framework | Next.js 15 (App Router), React 19, TypeScript | Responsive teacher-facing SaaS, server + API in one deployable |
 | UI | Tailwind CSS + lightweight shadcn-style components | Fast, polished, no heavy dependencies |
-| Data | Prisma + SQLite (`prisma/dev.db`) | Simple local persistence for the MVP; swap to Postgres by changing the datasource |
+| Data | Prisma + PostgreSQL (Supabase, pooled) | Managed Postgres with pooled connections for serverless |
 | Auth | Email/password, bcrypt hashing, httpOnly DB sessions | Secure baseline; Google login is an open decision (OD-07) |
 | Generation | Pluggable provider facade — `mock` (default) or real LLM | Deterministic generation works offline; see "AI provider" below |
 | Export | `pdfkit` (PDF) + `docx` (Word) | Pure-JS server-side rendering, no headless browser needed |
@@ -27,7 +27,7 @@ Every generation is a *proposal*. The teacher can edit any component, browse alt
 
 ```bash
 npm install
-npx prisma db push        # create SQLite schema (already done)
+npx prisma db push        # sync schema to Supabase
 npx prisma db seed        # guide governance metadata
 npm run dev               # http://localhost:3000
 ```
@@ -49,7 +49,7 @@ bash scripts/smoke.sh     # BASE_URL and EMAIL are overridable
 - **Landing page** (§7.1) — green gradient, Algerian-inspired subtle geometry, EN/FR switch
 - **Auth** (§24, §25) — register/login/logout, private data isolation (verified by smoke test)
 - **Dashboard** (§7.2, §5.2) — New Exam, Continue Last Exam, recent library, draft vs exported status
-- **Parameters** (§7.3) — dependent dropdowns (level → grade → stream → unit → topic), stream-aware unit filtering, custom topic, validated combinations, 150/250 word lengths from guide rules
+- **Parameters** (§7.3) — dependent dropdowns (level → grade → stream → unit → topic), stream-aware unit filtering, custom topic, validated combinations, 120/150/200 word lengths (per stream) from guide rules
 - **Text stage** (§8) — editable document surface, alternative candidate navigation, source attribution, failure-safe regeneration (previous text is never destroyed)
 - **Part One** (§9) — comprehension tasks with marks (7 pts), independent per-task replacement panel, dismissible
 - **Text exploration** (§10) — heading `B. Text exploration`, `08 pts`, five skill categories (vocabulary, morphology, phonology, grammar, discourse), marks validated to 8
@@ -87,7 +87,7 @@ All candidates pass `validateCandidate` (structure, length, marks totals, sectio
 - **AI abstraction**: provider facade with a shared context/validation layer; costs tracked per operation type.
 - **Guide/rule storage**: typed config in `src/data/guides.ts` (code for the MVP), with governance metadata (version, source reference, active flag) in `GuideConfig` so future admin UI can manage them without redeploys (§30, §47).
 - **PDF/DOCX**: generated server-side with `pdfkit`/`docx` from a shared document model (`src/lib/export/assemble.ts`), so preview and exports never diverge.
-- **Economical MVP**: SQLite + one Next.js process + mock provider = zero infrastructure. Scaling = Postgres, real provider, and object storage for exports.
+- **Economical MVP**: Supabase Postgres + one Next.js process + mock provider = minimal infrastructure. Scaling = real provider and object storage for exports.
 
 ## Known open decisions (from the PRD — not invented here)
 

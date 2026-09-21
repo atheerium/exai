@@ -19,21 +19,17 @@ export async function sendPasswordResetEmail(opts: {
   name?: string | null;
   url: string;
 }): Promise<{ devUrl?: string }> {
-  // Always log the delivery target (no password, no secret content).
-  console.log(`[mailer] password reset for ${opts.to}: ${opts.url}`);
+  // Log target only (not the reset URL containing the token) so secrets
+  // never hit stdout / log dashboards.
+  console.log(`[mailer] password reset email queued for ${opts.to}`);
   if (process.env.NODE_ENV !== "production") {
     return { devUrl: opts.url };
   }
-  // Production without SMTP configured: keep the flow usable for staging/demo
-  // by returning devUrl and logging. This avoids the 500 seen on Vercel where
-  // SMTP_HOST is not yet provisioned (exai-three.vercel.app/forgot-password).
-  // Once SMTP is wired, this branch will be replaced by the nodemailer transport.
+  // Production: never expose the token URL in API responses or logs.
   if (!process.env.SMTP_HOST) {
-    console.warn("[mailer] SMTP_HOST not configured — returning devUrl as fallback (staging mode)");
-    return { devUrl: opts.url };
+    console.warn("[mailer] SMTP_HOST not configured — reset queued but not delivered (production)");
+  } else {
+    console.warn("[mailer] SMTP transport not yet wired — reset queued but not delivered (production)");
   }
-  // SMTP is configured but transport not yet implemented — fallback to devUrl
-  // so we never throw 500 in production until nodemailer is wired.
-  console.warn("[mailer] SMTP transport not yet wired — returning devUrl as fallback");
-  return { devUrl: opts.url };
+  return {};
 }

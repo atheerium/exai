@@ -16,6 +16,9 @@ export interface SkillRule {
   marks: number;
   instruction: string;
   tableRequired?: boolean;
+  // BAC Master Guide: option code and alternative formulas
+  optionCode?: string; // "1A", "2A", etc.
+  formulas?: string[]; // alternative wordings
 }
 
 export interface PartOneRule {
@@ -34,10 +37,38 @@ export interface PartOneRule {
     maxIdeas?: number;
     maxWords?: number;
     includeInference?: boolean;
+    gapCount?: number;
+    gapWordsProvided?: boolean; // true = formula 1 (list given); false = formula 2 (no list / 6 words)
+    utteranceCount?: number;
+    solvedExampleRow?: boolean;
+    tableHeaders?: string[];
+    tableRowCount?: number;
+    choiceCount?: number; // per item (e.g., 3 choices for MCQ)
+    itemCount?: number; // exact items in table / list
+    pairCount?: number; // rhyming pairs
+    paragraphsRequired?: boolean; // paragraph identification requires paragraph numbers
   };
+  // BAC Master Guide: option formulas per task family
+  optionCode?: string; // "1A", "1B", etc.
+  formulas?: string[]; // alternative wordings
 }
 
-// Stream categories per the 2017 Ministry Exam Guide
+// Stream categories per the BAC Master Guide
+export interface StreamInfo {
+  duration: string; // e.g. "3 hours"
+  coefficient: number;
+  lengthMin: number;
+  lengthMax: number;
+  selectionCount: { comprehension: number; textExploration: number }; // e.g. 5+5 or 4+4
+  rubric?: { relevance: number; coherence: number; linguisticResources: number; excellence: number };
+}
+
+export const STREAM_INFOS: Record<StreamCategory, StreamInfo> = {
+  foreign_languages: { duration: "3 hours", coefficient: 5, lengthMin: 150, lengthMax: 200, selectionCount: { comprehension: 5, textExploration: 5 }, rubric: { relevance: 1.5, coherence: 1.0, linguisticResources: 2.0, excellence: 1.5 } },
+  literature_philosophy: { duration: "2 hours", coefficient: 3, lengthMin: 120, lengthMax: 150, selectionCount: { comprehension: 4, textExploration: 4 }, rubric: { relevance: 1.0, coherence: 1.0, linguisticResources: 2.0, excellence: 1.0 } },
+  sciences: { duration: "2 hours", coefficient: 2, lengthMin: 120, lengthMax: 150, selectionCount: { comprehension: 4, textExploration: 4 }, rubric: { relevance: 1.0, coherence: 1.0, linguisticResources: 2.0, excellence: 1.0 } },
+};
+
 export type StreamCategory = "foreign_languages" | "literature_philosophy" | "sciences";
 
 export function getStreamCategory(stream: string | null): StreamCategory {
@@ -56,6 +87,7 @@ export interface WritingRule {
   freeInstruction: string;
   singleTopic?: boolean;
   instruction?: string;
+  rubric?: { relevance: number; coherence: number; linguisticResources: number; excellence: number };
 }
 
 export interface Guide {
@@ -74,6 +106,7 @@ export interface Guide {
   writing: WritingRule;
   structure: "bac" | "bem";
   headings?: { partOne?: string; textExploration?: string; writing?: string };
+  streamInfo?: StreamInfo; // resolved from stream category at build time
 }
 
 export interface UnitDef {
@@ -927,18 +960,22 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
       itemCount: 4,
       constraints: { maxStatements: 4 },
     },
-    {
-      family: "QUESTIONS",
-      marks: 2,
+      {
+        family: "QUESTIONS",
+        optionCode: "3",
+        formulas: ["Direct & Inferential Questions"],
+        marks: 2,
       instruction: "Answer the following questions according to the text.",
       exactWording: "Answer the following questions according to the text.",
       tableRequired: false,
       itemCount: 4,
       constraints: { maxQuestions: 4, includeInference: true },
     },
-    {
-      family: "PARAGRAPH_ID",
-      marks: 1.5,
+      {
+        family: "PARAGRAPH_ID",
+        optionCode: "2A",
+        formulas: ["Paragraph Identification", "Sentence Ordering"],
+        marks: 1.5,
       instruction: "In which paragraph is it mentioned that...?",
       exactWording: "In which paragraph is it mentioned that...?",
       tableRequired: true,
@@ -967,11 +1004,11 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
   const bemTextExploration = {
     total: 7,
     skills: [
-      { skill: "VOCABULARY", family: "MEANING", marks: 1.5, instruction: "Find in the text words or phrases that are closest in meaning to the following.", tableRequired: true },
-      { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
-      { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: false },
-      { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
-      { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: true },
+        { skill: "VOCABULARY", family: "MEANING", optionCode: "1A", formulas: ["Synonyms / Antonyms", "Matching Table", "Definition Match"], marks: 1.5, instruction: "Find in the text words or phrases that are closest in meaning to the following.", tableRequired: true },
+        { skill: "MORPHOLOGY", family: "WORD_FAMILY", optionCode: "2A", formulas: ["Chart Completion", "Affix Separation"], marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
+        { skill: "PHONOLOGY", family: "SOUND_CLASS", optionCode: "4A", formulas: ["Final /s/", "Final /ed/", "Stressed Syllable", "Syllable Count", "Silent Letter", "Rhyming Pairs"], marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: false },
+        { skill: "GRAMMAR", family: "REWRITE", optionCode: "3A", formulas: ["Rephrase", "Combination", "Conjugation", "Question Formation"], marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
+        { skill: "DISCOURSE", family: "GAP_FILL", optionCode: "5A", formulas: ["Gap Fill (Formula 1 / 2)", "Open Gap Fill", "Paragraph Reordering", "Dialogue Completion"], marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: true },
     ],
   };
 
@@ -979,6 +1016,8 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
     foreign_languages: [
       {
         family: "TRUE_FALSE",
+        optionCode: "1B",
+        formulas: ["True / False", "True / False with Correction"],
         marks: 1.5,
         instruction: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
         exactWording: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
@@ -1006,6 +1045,8 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
       },
       {
         family: "COHESIVE_MARKERS",
+        optionCode: "4",
+        formulas: ["Cohesive Markers"],
         marks: 1,
         instruction: "Who or what do the underlined words refer to in the text?",
         exactWording: "Who or what do the underlined words refer to in the text?",
@@ -1015,6 +1056,8 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
       },
       {
         family: "TITLE_OR_IDEA",
+        optionCode: "5A",
+        formulas: ["Title (Formula 1 / 2)", "General Idea (Formula 1 / 2)"],
         marks: 1,
         instruction: "Give a title to the text / Choose the general idea of the text.",
         exactWording: "Give a title to the text / Choose the general idea of the text.",
@@ -1025,6 +1068,8 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
     literature_philosophy: [
       {
         family: "TRUE_FALSE",
+        optionCode: "1B",
+        formulas: ["True / False", "True / False with Correction"],
         marks: 2,
         instruction: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
         exactWording: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
@@ -1034,6 +1079,8 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
       },
       {
         family: "QUESTIONS",
+        optionCode: "3",
+        formulas: ["Direct & Inferential Questions"],
         marks: 2,
         instruction: "Answer the following questions according to the text.",
         exactWording: "Answer the following questions according to the text.",
@@ -1043,6 +1090,8 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
       },
       {
         family: "PARAGRAPH_ID",
+        optionCode: "2A",
+        formulas: ["Paragraph Identification", "Sentence Ordering"],
         marks: 1.5,
         instruction: "In which paragraph is it mentioned that...?",
         exactWording: "In which paragraph is it mentioned that...?",
@@ -1052,6 +1101,8 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
       },
       {
         family: "COHESIVE_MARKERS",
+        optionCode: "4",
+        formulas: ["Cohesive Markers"],
         marks: 1.5,
         instruction: "Who or what do the underlined words refer to in the text?",
         exactWording: "Who or what do the underlined words refer to in the text?",
@@ -1063,6 +1114,8 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
     sciences: [
       {
         family: "TRUE_FALSE",
+        optionCode: "1B",
+        formulas: ["True / False", "True / False with Correction"],
         marks: 2,
         instruction: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
         exactWording: "Are the following statements true or false? Write T or F next to the letter corresponding to the statement.",
@@ -1072,15 +1125,19 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
       },
       {
         family: "QUESTIONS",
+        optionCode: "3",
+        formulas: ["Direct & Inferential Questions"],
         marks: 2,
         instruction: "Answer the following questions according to the text.",
         exactWording: "Answer the following questions according to the text.",
         tableRequired: false,
         itemCount: 3,
-        constraints: { maxQuestions: 3 },
+        constraints: { maxQuestions: 3, includeInference: true },
       },
       {
         family: "PARAGRAPH_ID",
+        optionCode: "2A",
+        formulas: ["Paragraph Identification", "Sentence Ordering", "Table Completion"],
         marks: 2,
         instruction: "In which paragraph is it mentioned that...?",
         exactWording: "In which paragraph is it mentioned that...?",
@@ -1090,6 +1147,8 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
       },
       {
         family: "COHESIVE_MARKERS",
+        optionCode: "4",
+        formulas: ["Cohesive Markers"],
         marks: 2,
         instruction: "Who or what do the underlined words refer to in the text?",
         exactWording: "Who or what do the underlined words refer to in the text?",
@@ -1114,21 +1173,21 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
     literature_philosophy: {
       total: 8,
       skills: [
-        { skill: "VOCABULARY", family: "MEANING", marks: 2, instruction: "Find in the text words or phrases that are closest in meaning to the following.", tableRequired: true },
-        { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
-        { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1.5, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: false },
-        { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
-        { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: true },
+        { skill: "VOCABULARY", family: "MEANING", optionCode: "1A", formulas: ["Synonyms / Antonyms", "Matching Table", "Definition Match"], marks: 2, instruction: "Find in the text words or phrases that are closest in meaning to the following.", tableRequired: true },
+        { skill: "MORPHOLOGY", family: "WORD_FAMILY", optionCode: "2A", formulas: ["Chart Completion", "Affix Separation"], marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
+        { skill: "PHONOLOGY", family: "SOUND_CLASS", optionCode: "4A", formulas: ["Final /s/", "Final /ed/", "Stressed Syllable", "Syllable Count", "Silent Letter", "Rhyming Pairs"], marks: 1.5, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: false },
+        { skill: "GRAMMAR", family: "REWRITE", optionCode: "3A", formulas: ["Rephrase", "Combination", "Conjugation", "Question Formation"], marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
+        { skill: "DISCOURSE", family: "GAP_FILL", optionCode: "5A", formulas: ["Gap Fill (Formula 1 / 2)", "Open Gap Fill", "Paragraph Reordering", "Dialogue Completion"], marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: true },
       ],
     },
     sciences: {
       total: 7,
       skills: [
-        { skill: "VOCABULARY", family: "MEANING", marks: 1.5, instruction: "Find in the text words or phrases that are closest in meaning to the following.", tableRequired: true },
-        { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
-        { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: false },
-        { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
-        { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: true },
+        { skill: "VOCABULARY", family: "MEANING", optionCode: "1A", formulas: ["Synonyms / Antonyms", "Matching Table", "Definition Match"], marks: 1.5, instruction: "Find in the text words or phrases that are closest in meaning to the following.", tableRequired: true },
+        { skill: "MORPHOLOGY", family: "WORD_FAMILY", optionCode: "2A", formulas: ["Chart Completion", "Affix Separation"], marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
+        { skill: "PHONOLOGY", family: "SOUND_CLASS", optionCode: "4A", formulas: ["Final /s/", "Final /ed/", "Stressed Syllable", "Syllable Count", "Silent Letter", "Rhyming Pairs"], marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: false },
+        { skill: "GRAMMAR", family: "REWRITE", optionCode: "3A", formulas: ["Rephrase", "Combination", "Conjugation", "Question Formation"], marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
+        { skill: "DISCOURSE", family: "GAP_FILL", optionCode: "5A", formulas: ["Gap Fill (Formula 1 / 2)", "Open Gap Fill", "Paragraph Reordering", "Dialogue Completion"], marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: true },
       ],
     },
   };
@@ -1178,16 +1237,22 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
     };
   }
 
+  const bacVersion = "2026.1-bac-master-guide";
+  const bacSourceRef = sourceRef ?? "2026 BAC Master Guide — English Examination Specifications";
+  const streamCat = getStreamCategory(stream ?? null);
+  const info = STREAM_INFOS[streamCat];
+  const bacLengthOptions = info.lengthMin === 150 ? [120, 150, 200] : [120, 150];
+
   return {
     key,
     name,
     language,
     level,
     grade,
-    version: "2017.1-ministry",
-    sourceRef: sourceRef ?? "2017 Ministry Exam Guide — Baccalaureate English",
-    lengthOptions,
-    defaultLength: 150,
+    version: bacVersion,
+    sourceRef: bacSourceRef,
+    lengthOptions: bacLengthOptions,
+    defaultLength: info.lengthMin,
     marks: { partOne: partOneTotal, textExploration: resolvedTextExploration.total, writing: writingMarks },
     partOne: resolvedPartOne,
     textExploration: {
@@ -1203,8 +1268,10 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
       guidedInstruction:
         "Write a text of about 80–120 words on the following topic, using the notes given.",
       freeInstruction: "Write a text of about 80–120 words on the following topic.",
+      rubric: info.rubric,
     },
     structure: "bac",
+    streamInfo: info,
   };
 }
 

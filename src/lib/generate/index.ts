@@ -164,6 +164,29 @@ export function validateCandidate(
               issues.push(`Task ${i + 1} has ${actual} items (expected ${rule.itemCount}).`);
             }
           }
+          // BAC Master Guide option-level constraints
+          if (rule.constraints) {
+            const c = rule.constraints;
+            // Gap fill: exactly c.gapCount gaps
+            if (c.gapCount != null && task.prompt) {
+              const gaps = (task.prompt.match(/___|\.\.\.|\[.*?\]/g) || []).length;
+              if (gaps !== c.gapCount) issues.push(`Task ${i + 1} gap count ${gaps} != ${c.gapCount}`);
+            }
+            // Dialogue: exactly c.utteranceCount missing utterances
+            if (c.utteranceCount != null && task.prompt) {
+              const blanks = (task.prompt.match(/A:|B:|___/g) || []).length;
+              if (blanks < c.utteranceCount) issues.push(`Task ${i + 1} utterances below ${c.utteranceCount}`);
+            }
+            // Choice count (MCQ)
+            if (c.choiceCount != null && task.prompt) {
+              const choices = (task.prompt.match(/^[a-d]\)[^.]*$/gm) || []).length;
+              if (choices !== c.choiceCount) issues.push(`Task ${i + 1} choice count ${choices} != ${c.choiceCount}`);
+            }
+            // Solved example row for morphology
+            if (c.solvedExampleRow && task.prompt && !task.prompt.includes("Example")) {
+              issues.push(`Task ${i + 1} requires solved example row.`);
+            }
+          }
           // placeholder hooks for future teacher inputs (no behavior change until supplied)
           // rule.taskSpecificRules / rule.teacherStandardRules are intentionally empty until teacher supplies values
         }

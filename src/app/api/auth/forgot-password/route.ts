@@ -9,9 +9,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = schema.parse(await req.json());
     // Always return 200 to avoid leaking which emails have accounts.
-    const result = await requestPasswordReset(body.email);
+    // Never expose reset links to clients; only acknowledge the request.
+    await requestPasswordReset(body.email);
     await track("password_reset_requested", { userId: undefined });
-    return NextResponse.json(result);
+    return NextResponse.json({ ok: true });
   } catch (e: any) {
     if (e?.issues) return NextResponse.json({ error: e.issues[0].message }, { status: 400 });
     const msg = e?.message ?? "";

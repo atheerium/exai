@@ -1,5 +1,5 @@
 // Exaai data model — conceptual entities from PRD sections 13–15
-// Storage technology: PostgreSQL via Neon (serverless, pooled connections).
+// Storage technology: PostgreSQL via Supabase (pooled connections, pgbouncer).
 
 generator client {
   provider = "prisma-client-js"

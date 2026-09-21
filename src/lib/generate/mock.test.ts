@@ -30,7 +30,7 @@ function ctx(overrides: Partial<MockContext> = {}): MockContext {
 
 test("generateText produces a passage near the requested length", () => {
   const short = generateText(ctx({ length: 150 }), 0);
-  const long = generateText(ctx({ length: 250 }), 0);
+  const long = generateText(ctx({ length: 200 }), 0);
   assert.ok(short.words >= 125 && short.words <= 200, `short words ${short.words}`);
   assert.ok(long.words >= 200, `long words ${long.words}`);
   assert.ok(short.title.includes("Future"));
