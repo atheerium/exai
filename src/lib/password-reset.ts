@@ -121,19 +121,8 @@ export async function requestPasswordReset(email: string): Promise<{ ok: true }>
     return { ok: true };
   }
   
-  // Check rate limiting for existing users
-  const now = new Date();
-  const windowStart = new Date(now.getTime() - ATTEMPT_WINDOW_MS);
-  const recentAttempts = await prisma.passwordResetAttempt.count({
-    where: {
-      email: email.toLowerCase().trim(),
-      createdAt: { gte: windowStart }
-    }
-  });
-  
-  if (recentAttempts >= MAX_ATTEMPTS_PER_EMAIL) {
-    throw new Error("Too many reset attempts. Please try again later.");
-  }
+  // Record and enforce rate limit via the attempt tracker.
+  await recordFailedAttempt(email);
   
   const token = randomBytes(32).toString("hex");
   const tokenHash = hashToken(token);
