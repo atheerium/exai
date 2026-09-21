@@ -24,8 +24,12 @@ export interface ProviderConfig {
 export async function chat(config: ProviderConfig, prompt: object): Promise<any> {
   if (!config.apiKey) throw new Error(`${config.providerLabel.toUpperCase()}_API_KEY is not configured (AI_PROVIDER=${config.providerLabel}).`);
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
   const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
+    signal: controller.signal,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
     body: JSON.stringify({
       model: config.model,
@@ -37,17 +41,22 @@ export async function chat(config: ProviderConfig, prompt: object): Promise<any>
       ],
     }),
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`AI provider error ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
-  }
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("AI provider returned no content.");
   try {
-    return JSON.parse(content);
-  } catch {
-    throw new Error("AI provider returned invalid JSON.");
+    clearTimeout(timeout);
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`AI provider error ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+    }
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) throw new Error("AI provider returned no content.");
+    try {
+      return JSON.parse(content);
+    } catch {
+      throw new Error("AI provider returned invalid JSON.");
+    }
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
