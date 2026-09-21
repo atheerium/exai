@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { createSession, requireCsrf } from "@/lib/auth";
+import { createSession } from "@/lib/auth";
 import { track } from "@/lib/events";
 
 const schema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(8).max(128),
   name: z.string().max(80).optional(),
   language: z.enum(["en", "fr"]).optional().default("en"),
 });
@@ -18,7 +18,8 @@ export async function POST(req: NextRequest) {
     const email = body.email.toLowerCase().trim();
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
+      // Return the same generic error as login to prevent account enumeration.
+      return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
     const passwordHash = await bcrypt.hash(body.password, 10);
     const user = await prisma.user.create({
