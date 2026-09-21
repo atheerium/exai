@@ -81,6 +81,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     if (body.status) {
+      const allowedStatus = ["NEW", "DRAFT", "ACTIVE", "EXPORTED", "ARCHIVED"];
+      if (!allowedStatus.includes(body.status)) {
+        return NextResponse.json({ error: "Invalid exam status." }, { status: 400 });
+      }
       await prisma.exam.update({ where: { id }, data: { status: String(body.status) } });
     }
 
@@ -92,8 +96,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         if (!section) continue;
         if (typeof sec.text === "string" || typeof sec.textTitle === "string" || "sourceIndex" in sec) {
           const content = section.content ? JSON.parse(section.content) : {};
-          if (typeof sec.text === "string") content.text = sec.text;
-          if (typeof sec.textTitle === "string") content.title = sec.textTitle;
+          if (typeof sec.text === "string") content.text = String(sec.text).slice(0, 30000);
+          if (typeof sec.textTitle === "string") content.title = String(sec.textTitle).slice(0, 500);
           if ("sourceIndex" in sec) {
             content.sourceIndex = sec.sourceIndex === null ? null : Number(sec.sourceIndex);
           }
@@ -108,10 +112,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             const task = await prisma.task.findFirst({ where: { id: t.id, sectionId: section.id } });
             if (!task) continue;
             const data: any = {};
-            if (typeof t.prompt === "string") data.prompt = t.prompt;
-            if (typeof t.instruction === "string") data.instruction = t.instruction;
-            if (typeof t.answer === "string") data.answer = t.answer;
-            if (typeof t.marks === "number") data.marks = t.marks;
+            if (typeof t.prompt === "string") data.prompt = String(t.prompt).slice(0, 5000);
+            if (typeof t.instruction === "string") data.instruction = String(t.instruction).slice(0, 5000);
+            if (typeof t.answer === "string") data.answer = String(t.answer).slice(0, 5000);
+            if (typeof t.marks === "number" && Number.isFinite(t.marks) && t.marks >= 0 && t.marks <= 100) data.marks = t.marks;
             if (Object.keys(data).length) {
               data.manualEdited = true;
               await prisma.task.update({ where: { id: task.id }, data });
@@ -123,12 +127,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             const topic = await prisma.topic.findFirst({ where: { id: t.id, sectionId: section.id } });
             if (!topic) continue;
             const data: any = {};
-            if (typeof t.situation === "string") data.situation = t.situation;
-            if (typeof t.instruction === "string") data.instruction = t.instruction;
-            if (typeof t.keywords === "string") data.keywords = t.keywords;
-            if (typeof t.title === "string") data.title = t.title;
+            if (typeof t.situation === "string") data.situation = String(t.situation).slice(0, 5000);
+            if (typeof t.instruction === "string") data.instruction = String(t.instruction).slice(0, 5000);
+            if (typeof t.keywords === "string") data.keywords = String(t.keywords).slice(0, 1000);
+            if (typeof t.title === "string") data.title = String(t.title).slice(0, 500);
             if (typeof t.form === "string") data.form = t.form;
-            if (typeof t.marks === "number") data.marks = t.marks;
+            if (typeof t.marks === "number" && Number.isFinite(t.marks) && t.marks >= 0 && t.marks <= 100) data.marks = t.marks;
             if (Object.keys(data).length) {
               data.manualEdited = true;
               await prisma.topic.update({ where: { id: topic.id }, data });
