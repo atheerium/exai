@@ -17,7 +17,7 @@ interface SectionContent {
  * Safely parse JSON string, returning defaultValue on parse error.
  * Prevents crashes from corrupted data in the database.
  */
-function safeParse<T>(json: string | null | undefined, defaultValue: T): T {
+export function safeParse<T>(json: string | null | undefined, defaultValue: T): T {
   if (!json) return defaultValue;
   try {
     return JSON.parse(json);

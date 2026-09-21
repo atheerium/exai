@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma, setRlsContext } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import { safeParse } from "@/lib/serialize";
 import { track } from "@/lib/events";
 
 const createSchema = z.object({
@@ -22,7 +23,7 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json({
-      items: items.map((f) => ({ id: f.id, label: f.label, content: JSON.parse(f.content) })),
+      items: items.map((f) => ({ id: f.id, label: f.label, content: safeParse(f.content, {}) })),
     });
   } catch (e: any) {
     if (e?.message === "UNAUTHORIZED") return NextResponse.json({ error: "Please log in." }, { status: 401 });
