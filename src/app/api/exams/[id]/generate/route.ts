@@ -74,6 +74,8 @@ async function persistSources(
   }
 }
 
+const GENERATION_DAILY_LIMIT = 50;
+
 function sectionHeading(grade: string, type: string, language?: string | null, stream?: string | null): string {
   const guide = getGuide(grade, language ?? "en", stream ?? undefined);
   if (type === "PART_ONE") return guide.headings?.partOne ?? "A. Reading Comprehension";
@@ -94,6 +96,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
     if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
     if (!exam.config) return NextResponse.json({ error: "Set the exam parameters first." }, { status: 400 });
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const todayCount = await prisma.generation.count({
+      where: { examId: id, createdAt: { gte: startOfDay } },
+    });
+    if (todayCount >= GENERATION_DAILY_LIMIT) {
+      return NextResponse.json({ error: "Generation limit reached for today." }, { status: 429 });
+    }
 
     const body = (await req.json()) as { type: string; taskId?: string; topicId?: string; target?: "simpler" | "harder" };
     const type = body.type;
