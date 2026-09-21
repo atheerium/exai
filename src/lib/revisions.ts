@@ -141,32 +141,34 @@ export async function restoreRevision(examId: string, revisionId: string): Promi
   if (!revision) throw new Error("NOT_FOUND");
   const snap = JSON.parse(revision.snapshot) as RevisionSnapshot;
 
-  await prisma.examSection.deleteMany({ where: { examId } });
-  await prisma.source.deleteMany({ where: { examId } });
+  await prisma.$transaction(async (tx) => {
+    await tx.examSection.deleteMany({ where: { examId } });
+    await tx.source.deleteMany({ where: { examId } });
 
-  if (snap.config) {
-    await prisma.examConfig.upsert({
-      where: { examId },
-      update: snap.config,
-      create: { examId, ...snap.config },
-    });
-  }
-
-  for (const sec of snap.sections) {
-    const created = await prisma.examSection.create({
-      data: { examId, type: sec.type, heading: sec.heading, order: sec.order, content: sec.content ?? "{}" },
-    });
-    for (const t of sec.tasks) {
-      await prisma.task.create({ data: { sectionId: created.id, ...t } });
+    if (snap.config) {
+      await tx.examConfig.upsert({
+        where: { examId },
+        update: snap.config,
+        create: { examId, ...snap.config },
+      });
     }
-    for (const t of sec.topics) {
-      await prisma.topic.create({ data: { sectionId: created.id, ...t } });
+
+    for (const sec of snap.sections) {
+      const created = await tx.examSection.create({
+        data: { examId, type: sec.type, heading: sec.heading, order: sec.order, content: sec.content ?? "{}" },
+      });
+      for (const t of sec.tasks) {
+        await tx.task.create({ data: { sectionId: created.id, ...t } });
+      }
+      for (const t of sec.topics) {
+        await tx.topic.create({ data: { sectionId: created.id, ...t } });
+      }
     }
-  }
 
-  for (const src of snap.sources) {
-    await prisma.source.create({ data: { examId, ...src } });
-  }
+    for (const src of snap.sources) {
+      await tx.source.create({ data: { examId, ...src } });
+    }
 
-  await prisma.exam.update({ where: { id: examId }, data: { title: snap.title || "Untitled exam" } });
+    await tx.exam.update({ where: { id: examId }, data: { title: snap.title || "Untitled exam" } });
+  });
 }
