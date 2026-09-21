@@ -1,8 +1,10 @@
 // Minimal in-memory login throttle (PRD section 29: suspicious authentication
-// patterns). Sliding window of failures per key (ip + email); after `max`
+// patterns). WARNING: this is per-process memory only; it does NOT work
+// reliably on serverless (Vercel) or multi-instance deployments. Replace with
+// Redis / edge rate limiter before production scale.
+// Sliding window of failures per key (ip + email); after `max`
 // failures within `windowMs`, further attempts are rejected with a lockout for
-// `lockMs`. Successful login clears the counter. Production deployments should
-// swap this for a shared store (Redis) or an edge rate limiter.
+// `lockMs`. Successful login clears the counter.
 
 export interface LoginThrottleOptions {
   max: number;
@@ -49,6 +51,10 @@ export const loginThrottle = createLoginThrottle({
 });
 
 export function clientIp(headers: Headers): string {
+  // WARNING: serverless/multi-instance deployments share no memory; this Map
+  // resets per process and per deploy. In production, replace with Redis or an
+  // edge rate limiter. Also, x-forwarded-for is client-spoofable; in production
+  // verify against a trusted proxy allow-list before using.
   const fwd = headers.get("x-forwarded-for");
   if (fwd) return fwd.split(",")[0].trim();
   return headers.get("x-real-ip") ?? "unknown";
