@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, setRlsContext } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, requireCsrf } from "@/lib/auth";
 import { examToDto } from "@/lib/serialize";
 import { track } from "@/lib/events";
 
 export async function POST(req: NextRequest) {
   try {
+    await requireCsrf(req.headers);
     const user = await requireUser();
     await setRlsContext(user.id);
     const body = (await req.json().catch(() => ({}))) as { title?: string };

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { requireCsrf } from "@/lib/auth";
 import { requestPasswordReset } from "@/lib/password-reset";
 import { track } from "@/lib/events";
 

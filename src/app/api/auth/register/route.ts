@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { createSession } from "@/lib/auth";
+import { createSession, requireCsrf } from "@/lib/auth";
 import { track } from "@/lib/events";
 
 const schema = z.object({

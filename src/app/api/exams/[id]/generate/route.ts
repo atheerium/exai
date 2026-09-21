@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, setRlsContext } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, requireCsrf } from "@/lib/auth";
 import { loadExamDto } from "@/lib/serialize";
 import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, generateRewriteCandidates, validateCandidate, providerName } from "@/lib/generate";
 import { track } from "@/lib/events";
@@ -84,6 +84,7 @@ function sectionHeading(grade: string, type: string, language?: string | null, s
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    await requireCsrf(req.headers);
     const user = await requireUser();
     await setRlsContext(user.id);
     const { id } = await params;

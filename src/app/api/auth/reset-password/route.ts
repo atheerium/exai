@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resetPassword } from "@/lib/password-reset";
 import { track } from "@/lib/events";
+import { requireCsrf } from "@/lib/auth";
 
 const schema = z.object({ token: z.string().min(16), password: z.string().min(6) });
 
 export async function POST(req: NextRequest) {
   try {
+    await requireCsrf(req.headers);
     const body = schema.parse(await req.json());
     await resetPassword(body.token, body.password);
     await track("password_reset_completed");

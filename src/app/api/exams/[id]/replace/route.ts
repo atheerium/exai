@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, setRlsContext } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, requireCsrf } from "@/lib/auth";
 import { loadExamDto } from "@/lib/serialize";
 import { track } from "@/lib/events";
 import { captureRevision } from "@/lib/revisions";
@@ -10,6 +10,7 @@ import { captureRevision } from "@/lib/revisions";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    await requireCsrf(req.headers);
     const user = await requireUser();
     await setRlsContext(user.id);
     const { id } = await params;

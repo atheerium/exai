@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma, setRlsContext } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, requireCsrf } from "@/lib/auth";
 import { loadExamDto } from "@/lib/serialize";
 import { track } from "@/lib/events";
 
@@ -18,6 +18,7 @@ const schema = z.object({
 // Apply a saved favourite or custom task to one task in the exam (PRD 9.2).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    await requireCsrf(req.headers);
     const user = await requireUser();
     await setRlsContext(user.id);
     const { id } = await params;
