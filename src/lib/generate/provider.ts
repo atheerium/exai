@@ -27,22 +27,23 @@ export async function chat(config: ProviderConfig, prompt: object): Promise<any>
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
 
-  const res = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: "POST",
-    signal: controller.signal,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({
-      model: config.model,
-      temperature: 0.7,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM },
-        { role: "user", content: JSON.stringify(prompt) },
-      ],
-    }),
-  });
+  // `fetch` is inside the try so a transport-level rejection (DNS, refused
+  // connection, the abort itself) still reaches `finally` and clears the timer.
   try {
-    clearTimeout(timeout);
+    const res = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({
+        model: config.model,
+        temperature: 0.7,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: SYSTEM },
+          { role: "user", content: JSON.stringify(prompt) },
+        ],
+      }),
+    });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(`AI provider error ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
