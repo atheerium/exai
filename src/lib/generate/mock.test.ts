@@ -275,6 +275,10 @@ test("generatePartOnePrimary generates correct itemCount for each task family", 
       assert.equal(wordLines.length, expectedCount, `COHESIVE_MARKERS should have ${expectedCount} items`);
     } else if (task.family === "TITLE_OR_IDEA") {
       assert.equal(expectedCount, 1, `TITLE_OR_IDEA should have 1 item`);
+      const lines = task.prompt.split("\n").filter((l) => l.trim());
+      const choices = lines.filter((l) => /^\d+[\.\)]/.test(l) || /^[A-Z][\.\)]/.test(l) || /^- /.test(l));
+      const counted = choices.length > 0 ? choices.length : lines.length;
+      assert.equal(counted, 1, `TITLE_OR_IDEA prompt should count as 1 item, got ${counted}`);
     }
   }
 });

@@ -89,21 +89,28 @@ export function normaliseDifficulty(difficulty?: string | null): "standard" | "h
   return "standard";
 }
 
+interface PassagePart {
+  text: string;
+  keep: boolean;
+}
+
 function applyDifficulty(
-  sentences: string[],
+  parts: PassagePart[],
   difficulty: "standard" | "harder" | "simpler",
   extraDetail: string[]
-): string[] {
+): PassagePart[] {
   if (difficulty === "simpler") {
-    return splitLongSentences(sentences).map((s) => substitute(s, PLAIN_CONNECTIVES));
+    return parts.flatMap((p) =>
+      splitLongSentences([p.text]).map((t) => ({ text: substitute(t, PLAIN_CONNECTIVES), keep: p.keep }))
+    );
   }
   if (difficulty === "harder") {
-    const harder = sentences.map((s) => substitute(s, ADVANCED_CONNECTIVES));
+    const harder = parts.map((p) => ({ ...p, text: substitute(p.text, ADVANCED_CONNECTIVES) }));
     const insertAt = Math.max(1, harder.length - 1);
-    harder.splice(insertAt, 0, ...extraDetail);
+    harder.splice(insertAt, 0, ...extraDetail.map((text) => ({ text, keep: false })));
     return harder;
   }
-  return sentences;
+  return parts;
 }
 
 export function mockSource(ctx: MockContext): GeneratedSource {
@@ -121,16 +128,19 @@ export function generateText(ctx: MockContext, variant = 0): GeneratedText {
   const theme = getTheme(ctx.themeKey);
   const rng = new Seeded(ctx.seed + `:text:${variant}`);
   const topic = ctx.topic;
+  const fill = (s: string) => s.replace(/\{topic\}/g, topic.toLowerCase());
 
   const body = rng.shuffle(theme.body);
-  const sentences: string[] = [...rng.take(theme.lead, 2)];
-  sentences.push(...body.slice(0, 8));
+  // Lead and conclusion carry the passage arc; the rest is droppable so the
+  // assembly can be trimmed to the requested length band.
+  const parts: PassagePart[] = [...rng.take(theme.lead, 2)].map((text) => ({ text, keep: true }));
+  parts.push(...body.slice(0, 8).map((text) => ({ text, keep: false })));
   if (ctx.length >= 200) {
     const detail = rng.take(theme.detail, 5);
     const insertAt = 2 + Math.floor(8 / 2);
-    sentences.splice(insertAt, 0, ...detail);
+    parts.splice(insertAt, 0, ...detail.map((text) => ({ text, keep: false })));
   }
-  sentences.push(...rng.take(theme.conclusion, 2));
+  parts.push(...rng.take(theme.conclusion, 2).map((text) => ({ text, keep: true })));
 
   // When teacherKeywords are provided, weave keyword-derived sentences into the passage.
   if (ctx.teacherKeywords && ctx.teacherKeywords.trim()) {
@@ -141,21 +151,32 @@ export function generateText(ctx: MockContext, variant = 0): GeneratedText {
       );
       // Insert keyword sentences after the lead sentences, mixed into the body
       const insertPos = 2 + Math.min(3, Math.floor(body.length / 2));
-      sentences.splice(insertPos, 0, ...rng.take(keywordSentences, Math.min(keywords.length, 2)));
+      parts.splice(
+        insertPos,
+        0,
+        ...rng.take(keywordSentences, Math.min(keywords.length, 2)).map((text) => ({ text, keep: false }))
+      );
     }
   }
 
   const difficulty = normaliseDifficulty(ctx.difficulty);
   const extraDetail = difficulty === "harder" ? rng.take(theme.detail, 2) : [];
-  const resolved = applyDifficulty(sentences, difficulty, extraDetail).map((s) =>
-    s.replace(/\{topic\}/g, topic.toLowerCase())
-  );
-  // Pad with an extra body sentence if below target length.
-  while (countWords(resolved.join(" ")) < ctx.length - 15) {
-    resolved.push(body[rng.int(body.length)].replace(/\{topic\}/g, topic.toLowerCase()));
+  const resolved = applyDifficulty(parts, difficulty, extraDetail);
+  const wordCount = () => countWords(resolved.map((p) => fill(p.text)).join(" "));
+
+  // validateCandidate() (src/lib/generate/index.ts) rejects anything outside
+  // the guide's ±20% length band, so trim to fit before the teacher sees it.
+  const maxWords = Math.ceil(ctx.length * 1.2);
+  for (let i = resolved.length - 1; i >= 0 && wordCount() > maxWords; i--) {
+    if (!resolved[i].keep) resolved.splice(i, 1);
   }
 
-  const text = toParagraphs(resolved);
+  // Pad with an extra body sentence if below target length.
+  while (wordCount() < ctx.length - 15) {
+    resolved.push({ text: body[rng.int(body.length)], keep: false });
+  }
+
+  const text = toParagraphs(resolved.map((p) => fill(p.text)));
   const title = theme.title.replace(/\{topic\}/g, titleCaseTopic(topic));
   return { title, text, words: countWords(text), source: mockSource(ctx) };
 }
@@ -274,9 +295,9 @@ function generatePartOnePrimary(rule: PartOneRule, theme: ReturnType<typeof getT
     return {
       skill: "READING",
       family: "TITLE_OR_IDEA",
-      prompt: `Choose the most appropriate title for the text.\nA. ${titles[0]}\nB. ${titles[1]}\nC. ${titles[2]}`,
+      prompt: "Give a title to the text / Choose the general idea of the text.",
       instruction,
-      answer: `A. ${titles[0]}`,
+      answer: titles[0],
       marks: rule.marks,
     };
   }

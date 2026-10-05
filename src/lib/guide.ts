@@ -1,7 +1,7 @@
 // Guide engine helpers: resolve the applicable guide/rules for an exam
 // configuration (PRD sections 16.1, 19) and validate teacher parameters.
 
-import { GRADES, GUIDES, getGrade, getGuide, type Guide } from "@/data/guides";
+import { GRADES, GUIDES, getGrade, getGuide, getAvailableLanguages, type Guide } from "@/data/guides";
 import { getTheme } from "@/data/themes";
 
 export interface ResolvedExamRules {
@@ -67,9 +67,17 @@ export function validateConfigInputs(params: {
   length?: number;
   unit: string;
   topic: string;
+  language?: string;
 }) {
   if (!params.level || !params.grade || !params.unit || !params.topic) {
     throw new Error("Missing required parameters");
+  }
+  if (params.level !== "secondary") {
+    throw new Error(`Grade level must be "secondary"; middle school is not yet supported.`);
+  }
+  const available = getAvailableLanguages();
+  if (params.language && !available.includes(params.language)) {
+    throw new Error(`Missing Language support: "${params.language}" guides do not exist yet.`);
   }
   resolveRules(params);
   return true;

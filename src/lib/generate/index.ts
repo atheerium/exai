@@ -10,6 +10,7 @@
 // generation toward specific themes or vocabulary.
 
 import { resolveRules } from "@/lib/guide";
+import { countWords } from "./rng";
 import type { GenerationRequest } from "@/types";
 import * as mock from "./mock";
 import * as openai from "./openai";
@@ -121,16 +122,24 @@ export function validateCandidate(
   type: GenerationRequest["type"],
   payload: unknown,
   expectedMarks?: number,
-  opts?: { singleTopic?: boolean; guide?: ReturnType<typeof resolveRules>["guide"] | null }
+  opts?: { singleTopic?: boolean; guide?: ReturnType<typeof resolveRules>["guide"] | null; length?: number }
 ): { ok: boolean; issues: string[] } {
   const issues: string[] = [];
   if (type === "TEXT") {
     const t = payload as GeneratedText;
-    if (!t.text || t.text.trim().length < 50) issues.push("Generated text is too short.");
     if (!t.title) issues.push("Generated text has no title.");
-    // paragraphs: at least one blank line separation expected
-    if (t.text && !t.text.includes("\n\n") && t.text.split("\n").length < 2) {
-      // soft check: we do not fail here, but mock/provider already produce paragraphs via PARAGRAPH_NOTE
+    if (!t.text) {
+      issues.push("Generated text has no text.");
+    } else {
+      const words = countWords(t.text);
+      if (words < 10) issues.push("Generated text is too short.");
+      if (opts?.length) {
+        const minWords = Math.floor(opts.length * 0.8);
+        const maxWords = Math.ceil(opts.length * 1.2);
+        if (words < minWords || words > maxWords) {
+          issues.push(`Generated text word count ${words} is outside the expected range (${minWords}-${maxWords} for length ${opts.length}).`);
+        }
+      }
     }
   }
   if (type === "PART_ONE" || type === "TEXT_EXPLORATION") {
