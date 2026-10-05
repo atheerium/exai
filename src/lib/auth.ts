@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from "crypto";
+import { cache } from "react";
 import { cookies } from "next/headers";
-import { prisma } from "@/lib/db";
+import { prisma, withDbRetry } from "@/lib/db";
 
 const SESSION_COOKIE = process.env.SESSION_COOKIE_NAME || "exai_session";
 const CSRF_COOKIE = "csrf_token";
@@ -41,22 +42,28 @@ export async function createSession(userId: string): Promise<void> {
   });
 }
 
-export async function getCurrentUser(): Promise<{ id: string; email: string; name: string | null; language: string; role: string } | null> {
+// Memoized per request (React cache): the (app) layout AND the page each
+// call getCurrentUser during the same navigation; without this the identical
+// session+user lookup hits the DB twice per page load. Same return value,
+// one query per request instead of two.
+export const getCurrentUser = cache(async function getCurrentUser(): Promise<{ id: string; email: string; name: string | null; language: string; role: string } | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const tokenHash = hashToken(token);
-  const session = await prisma.session.findUnique({
-    where: { token: tokenHash },
-    include: { user: true },
-  });
+  const session = await withDbRetry(() =>
+    prisma.session.findUnique({
+      where: { token: tokenHash },
+      include: { user: true },
+    })
+  );
   if (!session) return null;
   if (session.expiresAt < new Date()) {
     await prisma.session.delete({ where: { id: session.id } }).catch(() => {});
     return null;
   }
   return session.user;
-}
+});
 
 export async function requireUser(): Promise<{ id: string; email: string; name: string | null; language: string; role: string }> {
   const user = await getCurrentUser();

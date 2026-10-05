@@ -11,23 +11,25 @@ export function hashToken(token: string): string {
 }
 
 // Track failed attempts to prevent brute force attacks
-export async function recordFailedAttempt(email: string): Promise<void> {
+export async function recordFailedAttempt(email: string, ip: string): Promise<void> {
   const now = new Date();
   const windowStart = new Date(now.getTime() - ATTEMPT_WINDOW_MS);
+  const normalizedEmail = email.toLowerCase().trim();
   
   await prisma.$transaction(async (tx) => {
     // Clean up old attempts
     await tx.passwordResetAttempt.deleteMany({
       where: {
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
         createdAt: { lt: windowStart }
       }
     });
     
-    // Count recent attempts
+    // Count recent attempts for this (IP, email) pair
     const recentAttempts = await tx.passwordResetAttempt.count({
       where: {
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
+        ipAddress: ip,
         createdAt: { gte: windowStart }
       }
     });
@@ -39,9 +41,9 @@ export async function recordFailedAttempt(email: string): Promise<void> {
     // Record this attempt
     await tx.passwordResetAttempt.create({
       data: {
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
         createdAt: now,
-        ipAddress: "masked" // Would typically come from request context
+        ipAddress: ip
       }
     });
   });
@@ -91,14 +93,13 @@ function validateEmailFormat(email: string): void {
   }
 }
 
-// Password validation aligned with registration (min 6) — keeps staging usable.
-// Complexity requirements can be tightened before public launch if desired.
-function validatePasswordStrength(password: string): void {
+// Password validation aligned with registration (min 8).
+export function validatePasswordStrength(password: string): void {
   if (!password || typeof password !== 'string') {
     throw new Error("Password is required.");
   }
-  if (password.length < 6) {
-    throw new Error("Password must be at least 6 characters long.");
+  if (password.length < 8) {
+    throw new Error("Password must be at least 8 characters long.");
   }
   if (password.length > 128) {
     throw new Error("Password is too long.");
@@ -107,7 +108,7 @@ function validatePasswordStrength(password: string): void {
 
 // Always resolves successfully for existing accounts; for unknown emails it
 // performs the same work so response timing does not leak account existence.
-export async function requestPasswordReset(email: string): Promise<{ ok: true }> {
+export async function requestPasswordReset(email: string, ip: string = "unknown"): Promise<{ ok: true }> {
   // Validate email format
   validateEmailFormat(email);
   
@@ -122,7 +123,7 @@ export async function requestPasswordReset(email: string): Promise<{ ok: true }>
   }
   
   // Record and enforce rate limit via the attempt tracker.
-  await recordFailedAttempt(email);
+  await recordFailedAttempt(email, ip);
   
   const token = randomBytes(32).toString("hex");
   const tokenHash = hashToken(token);

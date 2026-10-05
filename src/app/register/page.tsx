@@ -21,7 +21,7 @@ export default function RegisterPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (password.length < 6) {
+    if (password.length < 8) {
       toast(t("auth.passwordHint"), "error");
       return;
     }
@@ -59,7 +59,7 @@ export default function RegisterPage() {
           <p className="mt-1 text-sm text-muted-foreground">{t("auth.registerSub")}</p>
         </div>
 
-        <form onSubmit={onSubmit} className="rounded-2xl border bg-white/90 p-6 shadow-lg backdrop-blur sm:p-8">
+        <form onSubmit={onSubmit} className="rounded-2xl border bg-card/90 p-6 shadow-lg backdrop-blur sm:p-8">
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="name">{t("auth.name")}</Label>

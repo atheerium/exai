@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
+import { apiFetch } from "@/lib/api-client";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,7 +23,7 @@ export default function LoginPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await apiFetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -53,7 +54,7 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-muted-foreground">{t("auth.loginSub")}</p>
         </div>
 
-        <form onSubmit={onSubmit} className="rounded-2xl border bg-white/90 p-6 shadow-lg backdrop-blur sm:p-8">
+        <form onSubmit={onSubmit} className="rounded-2xl border bg-card/90 p-6 shadow-lg backdrop-blur sm:p-8">
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="email">{t("auth.email")}</Label>

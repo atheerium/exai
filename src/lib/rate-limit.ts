@@ -54,8 +54,31 @@ export function clientIp(headers: Headers): string {
   // WARNING: serverless/multi-instance deployments share no memory; this Map
   // resets per process and per deploy. In production, replace with Redis or an
   // edge rate limiter. Also, x-forwarded-for is client-spoofable; in production
-  // verify against a trusted proxy allow-list before using.
+  // verify against a trusted proxy allow-list before using. We take the LAST
+  // comma-separated entry (the one appended by the trusted proxy) rather than
+  // the first, which can be spoofed by the client.
   const fwd = headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim();
+  if (fwd) {
+    const parts = fwd.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length > 0) return parts[parts.length - 1];
+  }
   return headers.get("x-real-ip") ?? "unknown";
 }
+
+// Per-IP login throttle (independent of email): catches attackers rotating
+// many victim emails from a single source IP. Backed by the same in-memory
+// store as loginThrottle; per the warning above, replace with Redis/edge
+// rate limiter for production scale.
+export const ipLoginThrottle = createLoginThrottle({
+  max: 5,
+  windowMs: 15 * 60 * 1000,
+  lockMs: 60 * 1000,
+});
+
+// Per-IP registration throttle: 10 attempts per hour per IP to prevent
+// registration spam / credential-stuffing account-creation bursts.
+export const registerThrottle = createLoginThrottle({
+  max: 10,
+  windowMs: 60 * 60 * 1000,
+  lockMs: 60 * 60 * 1000,
+});

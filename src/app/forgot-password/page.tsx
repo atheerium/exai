@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
+import { apiFetch } from "@/lib/api-client";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = React.useState("");
@@ -17,7 +18,7 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      const res = await fetch("/api/auth/forgot-password", {
+      const res = await apiFetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -36,7 +37,7 @@ export default function ForgotPasswordPage() {
   if (done) {
     return (
       <main className="flex min-h-screen items-center justify-center exaai-gradient px-4">
-        <div className="w-full max-w-md rounded-2xl border bg-white/90 p-8 text-center shadow-lg">
+        <div className="w-full max-w-md rounded-2xl border bg-card/90 p-8 text-center shadow-lg">
           <MailCheck className="mx-auto h-10 w-10 text-emerald-600" />
           <h1 className="mt-4 text-2xl font-bold tracking-tight">Check your email</h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -79,7 +80,7 @@ export default function ForgotPasswordPage() {
             Enter your account email and we will send you a reset link.
           </p>
         </div>
-        <form onSubmit={onSubmit} className="rounded-2xl border bg-white/90 p-6 shadow-lg sm:p-8">
+        <form onSubmit={onSubmit} className="rounded-2xl border bg-card/90 p-6 shadow-lg sm:p-8">
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>

@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { createSession } from "@/lib/auth";
 import { track } from "@/lib/events";
+import { registerThrottle, clientIp } from "@/lib/rate-limit";
 
 const schema = z.object({
   email: z.string().email(),
@@ -14,6 +15,16 @@ const schema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = clientIp(req.headers);
+    const gate = registerThrottle.check(ip);
+    if (!gate.allowed) {
+      return NextResponse.json(
+        { error: "Too many registration attempts. Try again later." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil(gate.retryAfterMs / 1000)) } }
+      );
+    }
+    registerThrottle.recordFailure(ip);
+
     const body = schema.parse(await req.json());
     const email = body.email.toLowerCase().trim();
     const existing = await prisma.user.findUnique({ where: { email } });
