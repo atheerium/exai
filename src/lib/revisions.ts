@@ -2,7 +2,7 @@
 // exam's configuration, sections (with tasks/topics) and sources, so an
 // earlier state can be restored without losing the exam identity.
 
-import { prisma } from "@/lib/db";
+import { prisma, type DbClient } from "@/lib/db";
 
 const MAX_REVISIONS = 50;
 
@@ -17,6 +17,9 @@ export interface RevisionSnapshot {
     topic: string;
     customTopic: boolean;
     guideVersion?: string | null;
+    language?: string;
+    teacherKeywords?: string | null;
+    difficulty?: string | null;
   } | null;
   sections: {
     type: string;
@@ -57,8 +60,9 @@ export interface RevisionSnapshot {
   }[];
 }
 
-export async function captureRevision(examId: string, label: string): Promise<void> {
-  const exam = await prisma.exam.findUnique({
+export async function captureRevision(examId: string, label: string, client?: DbClient): Promise<void> {
+  const db = client ?? prisma;
+  const exam = await db.exam.findUnique({
     where: { id: examId },
     include: {
       config: true,
@@ -80,6 +84,9 @@ export async function captureRevision(examId: string, label: string): Promise<vo
           topic: exam.config.topic,
           customTopic: exam.config.customTopic,
           guideVersion: exam.config.guideVersion,
+          language: exam.config.language,
+          teacherKeywords: exam.config.teacherKeywords,
+          difficulty: exam.config.difficulty,
         }
       : null,
     sections: exam.sections.map((s) => ({
@@ -121,18 +128,18 @@ export async function captureRevision(examId: string, label: string): Promise<vo
     })),
   };
 
-  await prisma.examRevision.create({ data: { examId, label, snapshot: JSON.stringify(snapshot) } });
+  await db.examRevision.create({ data: { examId, label, snapshot: JSON.stringify(snapshot) } });
 
   // Cap history depth (PRD OD-11: configurable retention).
-  const excess = await prisma.examRevision.count({ where: { examId } });
+  const excess = await db.examRevision.count({ where: { examId } });
   if (excess > MAX_REVISIONS) {
-    const oldest = await prisma.examRevision.findMany({
+    const oldest = await db.examRevision.findMany({
       where: { examId },
       orderBy: { createdAt: "asc" },
       take: excess - MAX_REVISIONS,
       select: { id: true },
     });
-    await prisma.examRevision.deleteMany({ where: { id: { in: oldest.map((r) => r.id) } } });
+    await db.examRevision.deleteMany({ where: { id: { in: oldest.map((r) => r.id) } } });
   }
 }
 
@@ -141,7 +148,8 @@ export async function restoreRevision(examId: string, revisionId: string): Promi
   if (!revision) throw new Error("NOT_FOUND");
   const snap = JSON.parse(revision.snapshot) as RevisionSnapshot;
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(
+    async (tx) => {
     await tx.examSection.deleteMany({ where: { examId } });
     await tx.source.deleteMany({ where: { examId } });
 
@@ -170,5 +178,7 @@ export async function restoreRevision(examId: string, revisionId: string): Promi
     }
 
     await tx.exam.update({ where: { id: examId }, data: { title: snap.title || "Untitled exam" } });
-  });
+    },
+    { timeout: 30000, maxWait: 10000 }
+  );
 }

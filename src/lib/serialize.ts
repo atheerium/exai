@@ -1,6 +1,6 @@
 // Serialization between Prisma records and the DTO shapes the UI consumes.
 
-import { prisma } from "@/lib/db";
+import { prisma, type DbClient } from "@/lib/db";
 import type { ExamDto, SectionDto, SourceDto, TaskDto, TopicDto, ExamConfigDto } from "@/types";
 
 /** Schema for the JSON stored in ExamSection.content */
@@ -149,8 +149,9 @@ export async function examToDto(exam: any): Promise<ExamDto> {
   };
 }
 
-export async function loadExamDto(examId: string, userId: string): Promise<ExamDto> {
-  const exam = await prisma.exam.findFirst({
+export async function loadExamDto(examId: string, userId: string, client?: DbClient): Promise<ExamDto> {
+  const db = client ?? prisma;
+  const exam = await db.exam.findFirst({
     where: { id: examId, userId },
     include: {
       config: true,
@@ -159,8 +160,12 @@ export async function loadExamDto(examId: string, userId: string): Promise<ExamD
     },
   });
   if (!exam) throw new Error("NOT_FOUND");
-  await prisma.exam.update({ where: { id: exam.id }, data: { lastOpenedAt: new Date() } });
   return examToDto(exam);
+}
+
+export async function touchLastOpened(examId: string, userId: string, client?: DbClient): Promise<void> {
+  const db = client ?? prisma;
+  await db.exam.update({ where: { id: examId, userId }, data: { lastOpenedAt: new Date() } });
 }
 
 export { prisma };

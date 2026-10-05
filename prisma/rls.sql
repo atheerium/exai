@@ -5,6 +5,20 @@
 -- via SET LOCAL app.current_user_id in Prisma middleware. RLS policies use
 -- current_setting('app.current_user_id') to enforce per-user data isolation.
 -- Note: Prisma IDs are TEXT (cuid/uuid strings), so we compare as text.
+--
+-- WHY NO FORCE ROW LEVEL SECURITY (reviewed 2026-09-23): Prisma connects as
+-- the table-owning pooler role, which plain ENABLE RLS bypasses, so these
+-- policies are currently a second layer for non-owner roles only — tenant
+-- isolation is enforced by per-query userId clauses (verified: cross-user API
+-- access returns 404). Enabling FORCE would break unauthenticated bootstrap
+-- paths that run without an RLS context: registration (no User INSERT policy
+-- exists), login/session lookup (getCurrentUser), forgot-password token
+-- creation, restoreRevision (global client by design), track() analytics
+-- writes, GuideConfig catalog reads, and /ops aggregates. To make FORCE safe,
+-- move Prisma to a dedicated non-owner role AND set the RLS context on every
+-- query path above (deployment + code change, not just SQL).
+-- The PasswordResetToken SELECT USING (true) is intentional: unauthenticated
+-- recovery looks up the unguessable token hash as a capability secret.
 
 -- =============================================================================
 -- 0. HELPER FUNCTIONS

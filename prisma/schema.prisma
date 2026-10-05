@@ -189,6 +189,7 @@ model ProductEvent {
 
   @@index([name, createdAt])
   @@index([userId, createdAt])
+  @@index([examId, createdAt])
 }
 
 // Password reset tokens (PRD section 6). Only the hash is stored; each token is
