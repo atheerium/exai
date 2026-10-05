@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, setRlsContext } from "@/lib/db";
+import { withRls, type DbClient } from "@/lib/db";
 import { requireUser, requireCsrf } from "@/lib/auth";
-import { loadExamDto } from "@/lib/serialize";
+import { loadExamDto, touchLastOpened } from "@/lib/serialize";
 import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, generateRewriteCandidates, validateCandidate, providerName } from "@/lib/generate";
 import { track } from "@/lib/events";
 import { captureRevision } from "@/lib/revisions";
 import { getGuide } from "@/data/guides";
-import type { GeneratedSource, GeneratedTask, GeneratedTopic } from "@/types";
+import type { GeneratedSource, GeneratedTask, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 
 function textOnly(candidate: { title: string; text: string }): { title: string; text: string } {
   return { title: candidate.title, text: candidate.text };
@@ -29,6 +29,7 @@ function sourceKey(source: GeneratedSource): string {
 // return none fall back to the "no external source" note. Distinct citations are
 // kept so the teacher can pick one from the source dropdown.
 async function persistSources(
+  db: DbClient,
   examId: string,
   sectionId: string,
   candidateSources: (GeneratedSource | null)[],
@@ -39,9 +40,9 @@ async function persistSources(
   for (const source of resolved) unique.set(sourceKey(source), source);
 
   if (!isRegeneration) {
-    await prisma.source.deleteMany({ where: { examId, sectionId } }).catch(() => {});
+    await db.source.deleteMany({ where: { examId, sectionId } }).catch(() => {});
   } else {
-    const existing = await prisma.source.findMany({ where: { examId, sectionId } });
+    const existing = await db.source.findMany({ where: { examId, sectionId } });
     for (const row of existing) {
       unique.delete(
         sourceKey({
@@ -58,7 +59,7 @@ async function persistSources(
 
   const accessedAt = new Date().toISOString().slice(0, 10);
   for (const source of unique.values()) {
-    await prisma.source.create({
+    await db.source.create({
       data: {
         examId,
         sectionId,
@@ -84,242 +85,337 @@ function sectionHeading(grade: string, type: string, language?: string | null, s
   return "A. Reading Comprehension";
 }
 
+function sectionOf(sections: any[], type: string) {
+  return sections.find((s: any) => s.type === type);
+}
+
+type Phase2Data =
+  | { kind: "TEXT"; candidates: GeneratedTextCandidate[] }
+  | { kind: "PART_ONE" | "TEXT_EXPLORATION"; sets: GeneratedTask[][] }
+  | { kind: "WRITING"; cands: { guided: GeneratedTopic; free: GeneratedTopic | null }[]; singleTopic: boolean }
+  | { kind: "REWRITE"; rewriteResult: GeneratedTextCandidate[]; target: "simpler" | "harder" }
+  | { kind: "TASK_ALT"; sets: GeneratedTask[][]; task: { id: string; order: number; section: { id: string; type: string } } }
+  | { kind: "TOPIC_ALT"; cands: { guided: GeneratedTopic; free: GeneratedTopic | null }[]; topic: { id: string; kind: string }; singleTopic: boolean };
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireCsrf(req.headers);
     const user = await requireUser();
-    await setRlsContext(user.id);
     const { id } = await params;
-    const exam = await prisma.exam.findFirst({
-      where: { id, userId: user.id },
-      include: { config: true, sections: { include: { tasks: true, topics: true } } },
-    });
-    if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
-    if (!exam.config) return NextResponse.json({ error: "Set the exam parameters first." }, { status: 400 });
-
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const todayCount = await prisma.generation.count({
-      where: { examId: id, createdAt: { gte: startOfDay } },
-    });
-    if (todayCount >= GENERATION_DAILY_LIMIT) {
-      return NextResponse.json({ error: "Generation limit reached for today." }, { status: 429 });
-    }
-
     const body = (await req.json()) as { type: string; taskId?: string; topicId?: string; target?: "simpler" | "harder" };
     const type = body.type;
     const provider = providerName();
+    const supportedTypes = ["TEXT", "PART_ONE", "TEXT_EXPLORATION", "WRITING", "REWRITE", "TASK_ALT", "TOPIC_ALT"];
 
-    const ctx = buildContext({
-      level: exam.config.level,
-      grade: exam.config.grade,
-      stream: exam.config.stream,
-      length: exam.config.length,
-      unit: exam.config.unit,
-      topic: exam.config.topic,
-      examId: exam.id,
-      language: exam.config.language,
-      teacherKeywords: exam.config.teacherKeywords ?? null,
-      difficulty: exam.config.difficulty ?? null,
+    // Phase 1: short read tx — ownership, config, quota, context build, task/topic lookup
+    const phase1 = await withRls(user.id, async (tx) => {
+      const exam = await tx.exam.findFirst({
+        where: { id, userId: user.id },
+        include: { config: true, sections: { include: { tasks: true, topics: true } } },
+      });
+      if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
+      if (!exam.config) return NextResponse.json({ error: "Set the exam parameters first." }, { status: 400 });
+
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const todayCount = await tx.generation.count({
+        where: { exam: { userId: user.id }, createdAt: { gte: startOfDay } },
+      });
+      if (todayCount >= GENERATION_DAILY_LIMIT) {
+        return NextResponse.json({ error: "Generation limit reached for today." }, { status: 429 });
+      }
+
+      const ctx = buildContext({
+        level: exam.config.level,
+        grade: exam.config.grade,
+        stream: exam.config.stream,
+        length: exam.config.length,
+        unit: exam.config.unit,
+        topic: exam.config.topic,
+        examId: exam.id,
+        language: exam.config.language,
+        teacherKeywords: exam.config.teacherKeywords ?? null,
+        difficulty: exam.config.difficulty ?? null,
+      });
+
+      let lookup: { task?: any; topic?: any } = {};
+      if (type === "TASK_ALT" && body.taskId) {
+        const task = await tx.task.findFirst({
+          where: { id: body.taskId, section: { examId: id } },
+          include: { section: true },
+        });
+        if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
+        lookup.task = task;
+      } else if (type === "TOPIC_ALT" && body.topicId) {
+        const topic = await tx.topic.findFirst({
+          where: { id: body.topicId, section: { examId: id } },
+        });
+        if (!topic) return NextResponse.json({ error: "Topic not found." }, { status: 404 });
+        lookup.topic = topic;
+      }
+
+      return { exam, ctx, lookup };
     });
 
-    const log = (status: string, error?: string) =>
-      prisma.generation.create({ data: { examId: id, type, provider, status, error } });
+    if (phase1 instanceof NextResponse) return phase1;
+    const { exam, ctx, lookup } = phase1;
 
-    const sectionOf = (sections: any[], type: string) =>
-      sections.find((s: any) => s.type === type);
+    // Pre-checks that don't need a tx (data from Phase 1 read)
+    if (type === "REWRITE") {
+      const textSection = sectionOf(exam.sections, "TEXT");
+      if (!textSection?.content) return NextResponse.json({ error: "Generate the reading text first." }, { status: 400 });
+      const current = JSON.parse(textSection.content);
+      if (!current.text) return NextResponse.json({ error: "Generate the reading text first." }, { status: 400 });
+    }
+    if (!supportedTypes.includes(type)) {
+      return NextResponse.json({ error: "Unsupported generation type." }, { status: 400 });
+    }
+
+    // Phase 2: provider calls + validation (OUTSIDE any transaction — providers
+    // can take up to 30s, and holding a pooled connection during that pins it)
+    let validationIssues: string[] | null = null;
+    let phase2Data: Phase2Data | null = null;
 
     if (type === "TEXT") {
       const candidates = await generateTextCandidates(ctx);
-      const v = validateCandidate("TEXT", { text: candidates[0].text, title: candidates[0].title });
-      if (!v.ok) {
-        await log("ERROR", v.issues.join("; "));
-        await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
-        return NextResponse.json({ error: v.issues.join(" ") }, { status: 422 });
+      const issues: string[] = [];
+      for (const c of candidates) {
+        const v = validateCandidate("TEXT", { text: c.text, title: c.title }, undefined, { length: ctx.length });
+        if (!v.ok) issues.push(...v.issues);
       }
-      let section = sectionOf(exam.sections, "TEXT");
-      if (!section) {
-        section = await prisma.examSection.create({
-          data: { examId: id, type: "TEXT", heading: sectionHeading(exam.config.grade, "TEXT", exam.config.language, exam.config.stream), order: 1, content: "{}" },
-        });
+      if (issues.length > 0) {
+        validationIssues = issues;
+      } else {
+        phase2Data = { kind: "TEXT", candidates };
       }
-      const current = section.content ? JSON.parse(section.content) : {};
-      const isRegeneration = !!current.text;
-      // "Generate another text" never overwrites approved work: new versions land
-      // in the alternatives box and the teacher selects one explicitly (PRD 15.2).
-      const content = isRegeneration
-        ? { ...current, candidates: [...(current.candidates ?? []), ...candidates.map(textOnly)] }
-        : { ...current, title: candidates[0].title, text: candidates[0].text, candidates: candidates.slice(1).map(textOnly) };
-      await prisma.examSection.update({
-        where: { id: section.id },
-        data: { content: JSON.stringify(content) },
-      });
-      await persistSources(id, section.id, candidates.map((c) => c.source ?? null), isRegeneration);
-      await log("OK");
-      await track("text_generated", { userId: user.id, examId: id, meta: { mode: isRegeneration ? "regenerate" : "first" } });
-      await captureRevision(id, isRegeneration ? "Text alternatives generated" : "Text generated");
     } else if (type === "PART_ONE" || type === "TEXT_EXPLORATION") {
       const sets = type === "PART_ONE" ? await generatePartOneCandidates(ctx) : await generateTextExplorationCandidates(ctx);
       const guideMarks = type === "PART_ONE" ? ctx.guide.marks.partOne : ctx.guide.marks.textExploration;
       const v = validateCandidate(type, sets[0], guideMarks, { guide: ctx.guide });
       if (!v.ok) {
-        await log("ERROR", v.issues.join("; "));
-        await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
-        return NextResponse.json({ error: v.issues.join(" ") }, { status: 422 });
+        validationIssues = v.issues;
+      } else {
+        phase2Data = { kind: type, sets };
       }
-      let section = sectionOf(exam.sections, type);
-      if (!section) {
-        section = await prisma.examSection.create({
-          data: {
-            examId: id,
-            type,
-            heading: sectionHeading(exam.config.grade, type, exam.config.language, exam.config.stream),
-            order: type === "PART_ONE" ? 2 : 3,
-            content: "{}",
-          },
-        });
-      }
-      await prisma.task.deleteMany({ where: { sectionId: section.id } });
-      const primary = sets[0];
-      for (let i = 0; i < primary.length; i++) {
-        const task = primary[i] as GeneratedTask;
-        const candidates = sets.slice(1).map((s) => s[i]).filter(Boolean);
-        await prisma.task.create({
-          data: {
-            sectionId: section.id,
-            skill: task.skill ?? null,
-            prompt: task.prompt,
-            instruction: task.instruction,
-            answer: task.answer ?? null,
-            marks: task.marks,
-            order: i,
-            family: task.family ?? null,
-            tableData: task.table ? JSON.stringify(task.table) : null,
-            candidates: JSON.stringify(candidates),
-          },
-        });
-      }
-      await log("OK");
-      await track(type === "PART_ONE" ? "part_one_generated" : "part_two_generated", { userId: user.id, examId: id });
-      await captureRevision(id, type === "PART_ONE" ? "Part One generated" : "Text exploration generated");
     } else if (type === "WRITING") {
       const cands = await generateWritingCandidates(ctx);
       const singleTopic = !!ctx.guide.writing.singleTopic;
       const v = validateCandidate("WRITING", cands[0], undefined, singleTopic ? { singleTopic: true } : undefined);
       if (!v.ok) {
-        await log("ERROR", v.issues.join("; "));
-        await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
-        return NextResponse.json({ error: v.issues.join(" ") }, { status: 422 });
+        validationIssues = v.issues;
+      } else {
+        phase2Data = { kind: "WRITING", cands, singleTopic };
       }
-      let section = sectionOf(exam.sections, "WRITING");
-      if (!section) {
-        section = await prisma.examSection.create({
-          data: { examId: id, type: "WRITING", heading: sectionHeading(exam.config.grade, "WRITING", exam.config.language, exam.config.stream), order: 4, content: "{}" },
-        });
-      }
-      await prisma.topic.deleteMany({ where: { sectionId: section.id } });
-      const guidedSets = cands.map((c) => c.guided);
-      await prisma.topic.create({
-        data: {
-          sectionId: section.id,
-          kind: "GUIDED",
-          title: guidedSets[0].title,
-          situation: guidedSets[0].situation,
-          instruction: guidedSets[0].instruction,
-          keywords: guidedSets[0].keywords ?? null,
-          form: guidedSets[0].form,
-          marks: guidedSets[0].marks,
-          order: 0,
-          candidates: JSON.stringify(guidedSets.slice(1)),
-        },
-      });
-      if (!singleTopic) {
-        const freeSets = cands.map((c) => c.free).filter(Boolean);
-        if (freeSets.length > 0 && freeSets[0]) {
-          await prisma.topic.create({
-            data: {
-              sectionId: section.id,
-              kind: "FREE",
-              title: freeSets[0].title,
-              situation: freeSets[0].situation,
-              instruction: freeSets[0].instruction,
-              keywords: null,
-              form: freeSets[0].form,
-              marks: freeSets[0].marks,
-              order: 1,
-              candidates: JSON.stringify(freeSets.slice(1)),
-            },
-          });
-        }
-      }
-      await log("OK");
-      await track("writing_generated", { userId: user.id, examId: id });
-      await captureRevision(id, "Writing generated");
     } else if (type === "REWRITE") {
       const textSection = sectionOf(exam.sections, "TEXT");
-      if (!textSection?.content) {
-        return NextResponse.json({ error: "Generate the reading text first." }, { status: 400 });
-      }
       const current = JSON.parse(textSection.content);
-      if (!current.text) {
-        return NextResponse.json({ error: "Generate the reading text first." }, { status: 400 });
-      }
       const target = body.target === "harder" ? "harder" : "simpler";
       const rewriteResult = await generateRewriteCandidates(ctx, {
         text: current.text,
         title: current.title,
         target,
       });
-      const rewritten = rewriteResult[0];
-      const v = validateCandidate("TEXT", rewritten);
-      if (!v.ok) {
-        await log("ERROR", v.issues.join("; "));
-        await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: v.issues } });
-        return NextResponse.json({ error: v.issues.join(" ") }, { status: 422 });
+      const issues: string[] = [];
+      for (const c of rewriteResult) {
+        const v = validateCandidate("TEXT", { text: c.text, title: c.title }, undefined, { length: ctx.length });
+        if (!v.ok) issues.push(...v.issues);
       }
-      // Simplify / Make harder propose: the rewrites go to the alternatives box and
-      // the current text stays untouched until the teacher selects one (PRD 15.2).
-      current.candidates = [...(current.candidates ?? []), ...rewriteResult.map(textOnly)];
-      await prisma.examSection.update({
-        where: { id: textSection.id },
-        data: { content: JSON.stringify(current) },
-      });
-      await log("OK");
-      await track("text_rewritten", { userId: user.id, examId: id, meta: { target } });
-      await captureRevision(id, target === "simpler" ? "Simplified text" : "Hardened text");
-    } else if (type === "TASK_ALT" && body.taskId) {
-      const task = await prisma.task.findFirst({
-        where: { id: body.taskId, section: { examId: id } },
-        include: { section: true },
-      });
-      if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
-      const sets =
-        task.section.type === "PART_ONE"
-          ? await generatePartOneCandidates(ctx)
-          : await generateTextExplorationCandidates(ctx);
-      const index = task.order;
-      const candidates = sets.slice(1).map((s) => s[index]).filter(Boolean);
-      await prisma.task.update({ where: { id: task.id }, data: { candidates: JSON.stringify(candidates) } });
-      await log("OK");
-      await track("task_replaced", { userId: user.id, examId: id, meta: { kind: "generate_more" } });
-    } else if (type === "TOPIC_ALT" && body.topicId) {
-      const topic = await prisma.topic.findFirst({ where: { id: body.topicId, section: { examId: id } } });
-      if (!topic) return NextResponse.json({ error: "Topic not found." }, { status: 404 });
+      if (issues.length > 0) {
+        validationIssues = issues;
+      } else {
+        phase2Data = { kind: "REWRITE", rewriteResult, target };
+      }
+    } else if (type === "TASK_ALT" && body.taskId && lookup?.task) {
+      const task = lookup.task;
+      const guideMarks = task.section.type === "PART_ONE" ? ctx.guide.marks.partOne : ctx.guide.marks.textExploration;
+      const sets = task.section.type === "PART_ONE"
+        ? await generatePartOneCandidates(ctx)
+        : await generateTextExplorationCandidates(ctx);
+      const issues: string[] = [];
+      for (const set of sets.slice(1)) {
+        const v = validateCandidate(task.section.type as "PART_ONE" | "TEXT_EXPLORATION", set, guideMarks, { guide: ctx.guide });
+        if (!v.ok) issues.push(...v.issues);
+      }
+      if (issues.length > 0) {
+        validationIssues = issues;
+      } else {
+        phase2Data = { kind: "TASK_ALT", sets, task };
+      }
+    } else if (type === "TOPIC_ALT" && body.topicId && lookup?.topic) {
+      const topic = lookup.topic;
       const cands = await generateWritingCandidates(ctx);
-      const topicSets = topic.kind === "GUIDED"
-        ? cands.map((c) => c.guided)
-        : cands.map((c) => c.free).filter(Boolean);
-      const sets = (topicSets.length > 0 ? topicSets.slice(1) : []);
-      await prisma.topic.update({ where: { id: topic.id }, data: { candidates: JSON.stringify(sets) } });
-      await log("OK");
-      await track("topic_replaced", { userId: user.id, examId: id, meta: { kind: "generate_more" } });
+      const singleTopic = !!ctx.guide.writing.singleTopic;
+      const issues: string[] = [];
+      for (const c of cands.slice(1)) {
+        const v = validateCandidate("WRITING", c, undefined, singleTopic ? { singleTopic: true } : undefined);
+        if (!v.ok) issues.push(...v.issues);
+      }
+      if (issues.length > 0) {
+        validationIssues = issues;
+      } else {
+        phase2Data = { kind: "TOPIC_ALT", cands, topic, singleTopic };
+      }
     } else {
       return NextResponse.json({ error: "Unsupported generation type." }, { status: 400 });
     }
 
-    const dto = await loadExamDto(id, user.id);
-    return NextResponse.json(dto);
+    // Phase 3: short write tx — log + persist + captureRevision (no provider calls)
+    return await withRls(user.id, async (tx) => {
+      const log = (status: string, error?: string) =>
+        tx.generation.create({ data: { examId: id, type, provider, status, error } });
+
+      if (validationIssues) {
+        await log("ERROR", validationIssues.join("; "));
+        await track("generation_failed", { userId: user.id, examId: id, meta: { type, issues: validationIssues } });
+        return NextResponse.json({ error: validationIssues.join(" ") }, { status: 422 });
+      }
+
+      if (!phase2Data) {
+        return NextResponse.json({ error: "Generation failed. Please try again." }, { status: 500 });
+      }
+
+      const cfg = exam.config!;
+
+      if (phase2Data.kind === "TEXT") {
+        const { candidates } = phase2Data;
+        let section = sectionOf(exam.sections, "TEXT");
+        if (!section) {
+          section = await tx.examSection.create({
+            data: { examId: id, type: "TEXT", heading: sectionHeading(cfg.grade, "TEXT", cfg.language, cfg.stream), order: 1, content: "{}" },
+          });
+        }
+        const current = section.content ? JSON.parse(section.content) : {};
+        const isRegeneration = !!current.text;
+        const content = isRegeneration
+          ? { ...current, candidates: [...(current.candidates ?? []), ...candidates.map(textOnly)] }
+          : { ...current, title: candidates[0].title, text: candidates[0].text, candidates: candidates.slice(1).map(textOnly) };
+        await tx.examSection.update({
+          where: { id: section.id },
+          data: { content: JSON.stringify(content) },
+        });
+        await persistSources(tx, id, section.id, candidates.map((c) => c.source ?? null), isRegeneration);
+        await log("OK");
+        await track("text_generated", { userId: user.id, examId: id, meta: { mode: isRegeneration ? "regenerate" : "first" } });
+        await captureRevision(id, isRegeneration ? "Text alternatives generated" : "Text generated", tx);
+      } else if (phase2Data.kind === "PART_ONE" || phase2Data.kind === "TEXT_EXPLORATION") {
+        const { sets } = phase2Data;
+        let section = sectionOf(exam.sections, phase2Data.kind);
+        if (!section) {
+          section = await tx.examSection.create({
+            data: {
+              examId: id,
+              type: phase2Data.kind,
+              heading: sectionHeading(cfg.grade, phase2Data.kind, cfg.language, cfg.stream),
+              order: phase2Data.kind === "PART_ONE" ? 2 : 3,
+              content: "{}",
+            },
+          });
+        }
+        await tx.task.deleteMany({ where: { sectionId: section.id } });
+        const primary = sets[0];
+        for (let i = 0; i < primary.length; i++) {
+          const task = primary[i] as GeneratedTask;
+          const candidates = sets.slice(1).map((s) => s[i]).filter(Boolean);
+          await tx.task.create({
+            data: {
+              sectionId: section.id,
+              skill: task.skill ?? null,
+              prompt: task.prompt,
+              instruction: task.instruction,
+              answer: task.answer ?? null,
+              marks: task.marks,
+              order: i,
+              family: task.family ?? null,
+              tableData: task.table ? JSON.stringify(task.table) : null,
+              candidates: JSON.stringify(candidates),
+            },
+          });
+        }
+        await log("OK");
+        await track(phase2Data.kind === "PART_ONE" ? "part_one_generated" : "part_two_generated", { userId: user.id, examId: id });
+        await captureRevision(id, phase2Data.kind === "PART_ONE" ? "Part One generated" : "Text exploration generated", tx);
+      } else if (phase2Data.kind === "WRITING") {
+        const { cands, singleTopic } = phase2Data;
+        let section = sectionOf(exam.sections, "WRITING");
+        if (!section) {
+          section = await tx.examSection.create({
+            data: { examId: id, type: "WRITING", heading: sectionHeading(cfg.grade, "WRITING", cfg.language, cfg.stream), order: 4, content: "{}" },
+          });
+        }
+        await tx.topic.deleteMany({ where: { sectionId: section.id } });
+        const guidedSets = cands.map((c) => c.guided);
+        await tx.topic.create({
+          data: {
+            sectionId: section.id,
+            kind: "GUIDED",
+            title: guidedSets[0].title,
+            situation: guidedSets[0].situation,
+            instruction: guidedSets[0].instruction,
+            keywords: guidedSets[0].keywords ?? null,
+            form: guidedSets[0].form,
+            marks: guidedSets[0].marks,
+            order: 0,
+            candidates: JSON.stringify(guidedSets.slice(1)),
+          },
+        });
+        if (!singleTopic) {
+          const freeSets = cands.map((c) => c.free).filter(Boolean);
+          if (freeSets.length > 0 && freeSets[0]) {
+            await tx.topic.create({
+              data: {
+                sectionId: section.id,
+                kind: "FREE",
+                title: freeSets[0].title,
+                situation: freeSets[0].situation,
+                instruction: freeSets[0].instruction,
+                keywords: null,
+                form: freeSets[0].form,
+                marks: freeSets[0].marks,
+                order: 1,
+                candidates: JSON.stringify(freeSets.slice(1)),
+              },
+            });
+          }
+        }
+        await log("OK");
+        await track("writing_generated", { userId: user.id, examId: id });
+        await captureRevision(id, "Writing generated", tx);
+      } else if (phase2Data.kind === "REWRITE") {
+        const { rewriteResult, target } = phase2Data;
+        const textSection = sectionOf(exam.sections, "TEXT");
+        const current = JSON.parse(textSection!.content);
+        current.candidates = [...(current.candidates ?? []), ...rewriteResult.map(textOnly)];
+        await tx.examSection.update({
+          where: { id: textSection!.id },
+          data: { content: JSON.stringify(current) },
+        });
+        await log("OK");
+        await track("text_rewritten", { userId: user.id, examId: id, meta: { target } });
+        await captureRevision(id, target === "simpler" ? "Simplified text" : "Hardened text", tx);
+      } else if (phase2Data.kind === "TASK_ALT") {
+        const { sets, task } = phase2Data;
+        const index = task.order;
+        const candidates = sets.slice(1).map((s) => s[index]).filter(Boolean);
+        await tx.task.update({ where: { id: task.id }, data: { candidates: JSON.stringify(candidates) } });
+        await log("OK");
+        await track("task_replaced", { userId: user.id, examId: id, meta: { kind: "generate_more" } });
+      } else if (phase2Data.kind === "TOPIC_ALT") {
+        const { cands, topic } = phase2Data;
+        const topicSets = topic.kind === "GUIDED"
+          ? cands.map((c) => c.guided)
+          : cands.map((c) => c.free).filter(Boolean);
+        const sets = topicSets.length > 0 ? topicSets.slice(1) : [];
+        await tx.topic.update({ where: { id: topic.id }, data: { candidates: JSON.stringify(sets) } });
+        await log("OK");
+        await track("topic_replaced", { userId: user.id, examId: id, meta: { kind: "generate_more" } });
+      }
+
+      await touchLastOpened(id, user.id, tx);
+      const dto = await loadExamDto(id, user.id, tx);
+      return NextResponse.json(dto);
+    });
   } catch (e: any) {
+    if (e?.message === "CSRF_MISMATCH") return NextResponse.json({ error: "CSRF failed." }, { status: 403 });
     if (e?.message === "UNAUTHORIZED") return NextResponse.json({ error: "Please log in." }, { status: 401 });
     const msg = e?.message?.includes("not") ? e.message : "Generation failed. Please try again.";
     return NextResponse.json({ error: msg }, { status: 500 });

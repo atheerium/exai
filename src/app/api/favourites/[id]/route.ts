@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, setRlsContext } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { withRls } from "@/lib/db";
+import { requireUser, requireCsrf } from "@/lib/auth";
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    await requireCsrf(req.headers);
     const user = await requireUser();
-    await setRlsContext(user.id);
     const { id } = await params;
-    const item = await prisma.favouriteTask.findFirst({ where: { id, userId: user.id } });
-    if (!item) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    await prisma.favouriteTask.delete({ where: { id } });
+    const deleted = await withRls(user.id, async (tx) => {
+      const item = await tx.favouriteTask.findFirst({ where: { id, userId: user.id } });
+      if (!item) return false;
+      await tx.favouriteTask.delete({ where: { id } });
+      return true;
+    });
+    if (!deleted) return NextResponse.json({ error: "Not found." }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
+    if (e?.message === "CSRF_MISMATCH") return NextResponse.json({ error: "CSRF failed." }, { status: 403 });
     return NextResponse.json({ error: "Could not delete favourite." }, { status: 500 });
   }
 }

@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, setRlsContext } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
-import { loadExamDto } from "@/lib/serialize";
-import { captureRevision, restoreRevision } from "@/lib/revisions";
+import { withRls } from "@/lib/db";
+import { requireUser, requireCsrf } from "@/lib/auth";
+import { captureRevision } from "@/lib/revisions";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
-    await setRlsContext(user.id);
     const { id } = await params;
-    const exam = await prisma.exam.findFirst({ where: { id, userId: user.id } });
-    if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
-    const revisions = await prisma.examRevision.findMany({
-      where: { examId: id },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, label: true, createdAt: true },
+    const revisions = await withRls(user.id, async (tx) => {
+      const exam = await tx.exam.findFirst({ where: { id, userId: user.id } });
+      if (!exam) return null;
+      return tx.examRevision.findMany({
+        where: { examId: id },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, label: true, createdAt: true },
+      });
     });
+    if (!revisions) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
     return NextResponse.json({
       revisions: revisions.map((r) => ({ id: r.id, label: r.label, createdAt: r.createdAt.toISOString() })),
     });
@@ -27,15 +28,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    await requireCsrf(req.headers);
     const user = await requireUser();
-    await setRlsContext(user.id);
     const { id } = await params;
-    const exam = await prisma.exam.findFirst({ where: { id, userId: user.id } });
-    if (!exam) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
     const body = (await req.json()) as { label?: string };
-    await captureRevision(id, body.label?.trim() || "Manual checkpoint");
+    const saved = await withRls(user.id, async (tx) => {
+      const exam = await tx.exam.findFirst({ where: { id, userId: user.id } });
+      if (!exam) return false;
+      await captureRevision(id, body.label?.trim() || "Manual checkpoint", tx);
+      return true;
+    });
+    if (!saved) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
+    if (e?.message === "CSRF_MISMATCH") return NextResponse.json({ error: "CSRF failed." }, { status: 403 });
     if (e?.message === "UNAUTHORIZED") return NextResponse.json({ error: "Please log in." }, { status: 401 });
     return NextResponse.json({ error: "Could not save a checkpoint." }, { status: 500 });
   }

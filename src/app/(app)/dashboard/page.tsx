@@ -6,10 +6,12 @@ import { Dashboard } from "@/components/dashboard/dashboard";
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) return null;
+  // List view only renders title/status/config/dates (see Dashboard/ExamCard);
+  // sections+tasks+topics+sources are never read here, so load config only.
   const [exams, favouritesCount, customsCount] = await Promise.all([
     prisma.exam.findMany({
       where: { userId: user.id, status: { not: "ARCHIVED" } },
-      include: { config: true, sections: { include: { tasks: true, topics: true } }, sources: true },
+      include: { config: true },
       orderBy: { lastOpenedAt: "desc" },
       take: 12,
     }),

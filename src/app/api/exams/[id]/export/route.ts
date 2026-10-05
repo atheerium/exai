@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setRlsContext } from "@/lib/db";
+import { withRls } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { loadExamDto } from "@/lib/serialize";
 import { assembleDocument } from "@/lib/export/assemble";
@@ -10,13 +10,14 @@ import { track } from "@/lib/events";
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
-    await setRlsContext(user.id);
     const { id } = await params;
     const format = req.nextUrl.searchParams.get("format") || "pdf";
     if (format !== "pdf" && format !== "docx") {
       return NextResponse.json({ error: "Unsupported format." }, { status: 400 });
     }
-    const dto = await loadExamDto(id, user.id);
+    const dto = await withRls(user.id, async (tx) => {
+      return loadExamDto(id, user.id, tx);
+    });
     const docModel = assembleDocument(dto);
     const filename = `${slug(dto.title) || "exam"}.${format}`;
 
