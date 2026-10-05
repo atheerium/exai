@@ -1,6 +1,9 @@
 // Assemble the exam document from the stored DTO for export (PRD section 18,
-// Appendix A). Sections are ordered A (Reading Comprehension), B (Text
-// exploration), C (Written expression) with marks taken from the guide.
+// Appendix A). For `bac` guides the sections follow the official Algerian BAC
+// paper: umbrella "Part One: Reading" (comprehension + text exploration with
+// the passage), then "Part Two: Written Expression". BEM guides keep the
+// legacy three-section layout. Marks always come from the guide; only the
+// presentation (headings, grouping, numbering) changes here.
 
 import type { ExamDto, SectionDto } from "@/types";
 import { getGuide } from "@/data/guides";
@@ -30,6 +33,7 @@ export interface ExportTopic {
 export interface ExportSection {
   heading: string;
   marksLabel: string;
+  intro?: string;
   text?: ExportText;
   sourceNote?: string;
   tasks: ExportTask[];
@@ -42,11 +46,15 @@ export interface ExportDocument {
   meta: string[];
   sections: ExportSection[];
   generatedBy: string;
+  structure: "bac" | "bem";
 }
+
+const pad2 = (n: number): string => String(n).padStart(2, "0");
 
 export function assembleDocument(exam: ExamDto): ExportDocument {
   const grade = exam.config?.grade ?? "";
   const guide = grade ? getGuide(grade, exam.config?.language ?? "en", exam.config?.stream ?? undefined) : null;
+  const isBac = (guide?.structure ?? "bac") === "bac";
   const section = (type: string): SectionDto | undefined => exam.sections.find((s) => s.type === type);
   const textSec = section("TEXT");
   const p1Sec = section("PART_ONE");
@@ -55,12 +63,16 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
 
   const sourceIndex = textSec?.sourceIndex ?? 0;
   const source = exam.sources[sourceIndex] ?? exam.sources[0];
-  const sourceNote = source
-    ? `${source.title ?? "Source"}${source.adaptationNote ? ` — ${source.adaptationNote}` : ""}`
+  const sourceNote = source?.title
+    ? isBac
+      ? `Adapted from ${source.title}`
+      : `${source.title ?? "Source"}${source.adaptationNote ? ` — ${source.adaptationNote}` : ""}`
     : null;
 
   const marks = (type: "partOne" | "textExploration" | "writing") =>
     guide ? formatMarks(guide.marks[type]) : "";
+  const bacMarks = (type: "partOne" | "textExploration" | "writing") =>
+    guide ? `${pad2(guide.marks[type])} pts` : "";
 
   const meta = [
     `Level: ${exam.config?.level === "middle" ? "Middle school" : "Secondary school"}`,
@@ -70,6 +82,7 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
     `Topic: ${exam.config?.topic ?? "—"}`,
     `Length: ${exam.config?.length ?? 150} words`,
     `Language: ${exam.config?.language === "fr" ? "French" : "English"}`,
+    guide?.streamInfo ? `Duration: ${guide.streamInfo.duration}` : null,
     exam.config?.guideVersion ? `Guide: ${exam.config.guideVersion}` : null,
   ].filter(Boolean) as string[];
 
@@ -96,6 +109,51 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
     marks: formatMarks(t.marks),
   }));
 
+  const text = textSec?.text
+    ? { title: textSec.textTitle ?? undefined, body: textSec.text }
+    : undefined;
+
+  if (isBac) {
+    const umbrellaTotal = (guide?.marks.partOne ?? 0) + (guide?.marks.textExploration ?? 0);
+    return {
+      title: exam.title || "English Exam",
+      subtitle: exam.config ? `English Examination — ${exam.config.grade.toUpperCase()}` : "English Examination",
+      meta,
+      sections: [
+        {
+          heading: guide?.headings?.partOne ?? "Part One: Reading",
+          marksLabel: `${pad2(umbrellaTotal)} pts`,
+          text,
+          sourceNote: sourceNote ?? undefined,
+          tasks: [],
+          topics: [],
+        },
+        {
+          heading: "A/ Comprehension",
+          marksLabel: bacMarks("partOne"),
+          intro: "Read the text carefully and do the activities.",
+          tasks: partOneTasks,
+          topics: [],
+        },
+        {
+          heading: guide?.headings?.textExploration ?? "B/ Text Exploration",
+          marksLabel: bacMarks("textExploration"),
+          tasks: p2Tasks,
+          topics: [],
+        },
+        {
+          heading: guide?.headings?.writing ?? "Part Two: Written Expression",
+          marksLabel: bacMarks("writing"),
+          intro: topics.length >= 2 ? "Choose ONE of the following topics" : undefined,
+          tasks: [],
+          topics,
+        },
+      ],
+      generatedBy: "Generated with Exaai",
+      structure: "bac",
+    };
+  }
+
   const partOneHeading = guide?.headings?.partOne ?? "A. Reading Comprehension";
   const textExplorationHeading = guide?.headings?.textExploration ?? guide?.textExploration.heading ?? "B. Text exploration";
   const writingHeading = guide?.headings?.writing ?? "C. Written expression";
@@ -108,9 +166,7 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
       {
         heading: partOneHeading,
         marksLabel: `${marks("partOne")} pts`,
-        text: textSec?.text
-          ? { title: textSec.textTitle ?? undefined, body: textSec.text }
-          : undefined,
+        text,
         sourceNote: sourceNote ?? undefined,
         tasks: partOneTasks,
         topics: [],
@@ -129,5 +185,6 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
       },
     ],
     generatedBy: "Generated with Exaai",
+    structure: "bem",
   };
 }

@@ -1272,6 +1272,11 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
     },
     structure: "bac",
     streamInfo: info,
+    headings: {
+      partOne: "Part One: Reading",
+      textExploration: "B/ Text Exploration",
+      writing: "Part Two: Written Expression",
+    },
   };
 }
 
