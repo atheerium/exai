@@ -44,7 +44,7 @@ export default async function OpsPage() {
         <p className="mb-3 text-sm text-muted-foreground">
           {totalCostEstimates.total} recent generations, {totalCostEstimates.failed} failed.
         </p>
-        <div className="overflow-x-auto rounded-xl border bg-white">
+        <div className="overflow-x-auto rounded-xl border bg-card">
           <table className="w-full text-left text-sm">
             <thead className="border-b bg-secondary/40 text-xs uppercase text-muted-foreground">
               <tr>
@@ -78,7 +78,7 @@ export default async function OpsPage() {
         <h2 className="mb-2 text-lg font-semibold">Funnel events</h2>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {eventCounts.map((e) => (
-            <div key={e.name} className="rounded-lg border bg-white px-3 py-2">
+            <div key={e.name} className="rounded-lg border bg-card px-3 py-2">
               <p className="text-xs text-muted-foreground">{e.name}</p>
               <p className="text-lg font-bold">{e._count._all}</p>
             </div>
@@ -91,7 +91,7 @@ export default async function OpsPage() {
 
       <section>
         <h2 className="mb-2 text-lg font-semibold">Guide governance (US-029)</h2>
-        <div className="overflow-x-auto rounded-xl border bg-white">
+        <div className="overflow-x-auto rounded-xl border bg-card">
           <table className="w-full text-left text-sm">
             <thead className="border-b bg-secondary/40 text-xs uppercase text-muted-foreground">
               <tr>

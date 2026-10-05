@@ -5,6 +5,8 @@ import { RefreshCw, ChevronLeft, ChevronRight, Check, Info, Sparkles, Undo2 } fr
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
@@ -53,10 +55,12 @@ export function TextStage({
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">A. Reading Comprehension</h2>
-          <p className="mt-1 text-sm font-semibold text-emerald-700">
-            {guide ? `${formatMarks(guide.marks.partOne)} pts` : ""}
-          </p>
+          <h2 className="text-xl font-extrabold tracking-tight">A. Reading Comprehension</h2>
+          {guide && (
+            <Badge variant="success" className="mt-1.5">
+              {formatMarks(guide.marks.partOne)} pts
+            </Badge>
+          )}
         </div>
         {source?.adaptationNote && (
           <p className="max-w-xs text-right text-xs text-muted-foreground">{source.adaptationNote}</p>
@@ -65,28 +69,28 @@ export function TextStage({
 
       {sources.length > 1 && (
         <div className="flex flex-wrap items-center gap-2">
-          <label className="text-sm font-medium text-muted-foreground">Source</label>
-          <select
+          <label className="text-sm font-medium text-muted-foreground">{t("builder.source")}</label>
+          <Select
             value={selectedSourceIndex}
             onChange={(e) =>
               onEdit({ sections: [{ id: section!.id, sourceIndex: Number(e.target.value) }] })
             }
-            className="rounded-md border bg-white px-2 py-1 text-sm"
+            className="w-auto min-w-[14rem]"
           >
             {sources.map((s, i) => (
               <option key={i} value={i}>
                 {s.title}
-                {s.author ? ` — ${s.author}` : ""}
+                {s.author ? ` · ${s.author}` : ""}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       )}
 
       <p className="text-sm text-muted-foreground">{t("builder.textStageHelp")}</p>
 
       {!section?.text ? (
-        <div className="rounded-xl border border-dashed py-16 text-center">
+        <div className="rounded border-2 border-dashed border-foreground bg-card py-16 text-center">
           {generating ? (
             <div className="mx-auto max-w-md space-y-3 px-6">
               <Skeleton className="mx-auto h-5 w-48" />
@@ -126,16 +130,23 @@ export function TextStage({
 
           {/* Alternatives */}
           {candidates.length > 0 && (
-            <div className="rounded-xl border bg-secondary/40 p-4">
+            <div className="rounded border-2 border-foreground bg-secondary p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">{t("builder.alternatives")}</span>
+                  <span className="text-sm font-bold">{t("builder.alternatives")}</span>
                   <span className="text-xs text-muted-foreground">
-                    {alt >= 0 ? `${alt + 1} / ${candidates.length}` : `${candidates.length} available`}
+                    {alt >= 0 ? `${alt + 1} / ${candidates.length}` : `${candidates.length} ${t("builder.alternativesAvailable")}`}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setAlt((a) => Math.max(0, a - 1))} disabled={alt <= 0}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAlt((a) => Math.max(0, a - 1))}
+                    disabled={alt <= 0}
+                    aria-label={t("builder.prevAlternative")}
+                    title={t("builder.prevAlternative")}
+                  >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
                   <Button
@@ -143,6 +154,8 @@ export function TextStage({
                     size="sm"
                     onClick={() => setAlt((a) => Math.min(candidates.length - 1, a + 1))}
                     disabled={alt >= candidates.length - 1}
+                    aria-label={t("builder.nextAlternative")}
+                    title={t("builder.nextAlternative")}
                   >
                     <ChevronRight className="h-4 w-4" />
                   </Button>
@@ -162,7 +175,7 @@ export function TextStage({
                 </div>
               </div>
               {alt >= 0 && (
-                <div className="mt-3 min-h-[280px] max-h-[420px] overflow-y-auto rounded-lg border bg-white p-4">
+                <div className="mt-3 min-h-[280px] max-h-[420px] overflow-y-auto rounded border-2 border-foreground bg-card p-4 shadow-sm">
                   <p className="text-sm font-semibold">{candidates[alt].title}</p>
                   <p className="mt-1 whitespace-pre-wrap text-[15px] leading-relaxed text-foreground">{candidates[alt].text}</p>
                   <p className="mt-2 text-right text-xs text-muted-foreground">
@@ -171,9 +184,9 @@ export function TextStage({
                 </div>
               )}
               {alt < 0 && (
-                <div className="mt-3 flex min-h-[280px] items-center justify-center rounded-lg border border-dashed bg-white p-4">
-                  <p className="text-center text-xs text-muted-foreground">
-                    Browse candidate texts with the arrows. Your current text is always kept until you select one.
+                <div className="mt-3 rounded border-2 border-dashed border-foreground bg-card px-4 py-6 text-center">
+                  <p className="mx-auto max-w-sm text-xs leading-relaxed text-muted-foreground">
+                    {t("builder.alternativesHint")}
                   </p>
                 </div>
               )}

@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Check, ChevronDown, ChevronUp, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { useI18n, type I18nKey } from "@/lib/i18n";
 import { getGuide } from "@/data/guides";
@@ -14,6 +15,7 @@ import { TasksStage } from "./tasks-stage";
 import { WritingStage } from "./writing-stage";
 import { PreviewStage } from "./preview-stage";
 import { VersionsButton, VersionsModal } from "./versions-modal";
+import { apiFetch } from "@/lib/api-client";
 
 export type SectionId = "params" | "text" | "partOne" | "partTwo" | "writing" | "preview";
 
@@ -108,7 +110,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
   async function savePatch(patch: Record<string, unknown>, silent = false) {
     setSaveState("saving");
     try {
-      const res = await fetch(`/api/exams/${exam.id}`, {
+      const res = await apiFetch(`/api/exams/${exam.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
@@ -134,7 +136,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     if (generating) return;
     setGenerating(type);
     try {
-      const res = await fetch(`/api/exams/${exam.id}/generate`, {
+      const res = await apiFetch(`/api/exams/${exam.id}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, ...extra }),
@@ -168,7 +170,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
 
   async function replaceItem(kind: "TEXT" | "TASK" | "TOPIC", id: string, index: number) {
     try {
-      const res = await fetch(`/api/exams/${exam.id}/replace`, {
+      const res = await apiFetch(`/api/exams/${exam.id}/replace`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind, ...(kind === "TASK" ? { taskId: id } : kind === "TOPIC" ? { topicId: id } : {}), index }),
@@ -194,7 +196,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
 
   async function saveFavourite(taskId: string) {
     try {
-      const res = await fetch(`/api/exams/${exam.id}/favourites`, {
+      const res = await apiFetch(`/api/exams/${exam.id}/favourites`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ taskId }),
@@ -211,7 +213,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     if (generating) return;
     setGenerating("REWRITE");
     try {
-      const res = await fetch(`/api/exams/${exam.id}/generate`, {
+      const res = await apiFetch(`/api/exams/${exam.id}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "REWRITE", target }),
@@ -254,7 +256,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     difficulty?: string | null;
   }) {
     try {
-      const res = await fetch(`/api/exams/${exam.id}`, {
+      const res = await apiFetch(`/api/exams/${exam.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ config }),
@@ -296,7 +298,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
 
       {/* Sticky section nav */}
       <nav
-        className="no-print sticky top-0 z-40 flex gap-1 overflow-x-auto rounded-xl border bg-white p-1.5 shadow-sm"
+        className="no-print sticky top-0 z-40 flex gap-1 overflow-x-auto rounded border-2 border-foreground bg-card p-1.5 shadow-sm"
         aria-label="Exam sections"
       >
         {SECTIONS.map((s) => {
@@ -318,8 +320,12 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
               disabled={!isUnlocked}
               aria-label={`${t(s.labelKey)}${isComplete ? " (complete)" : ""}`}
               className={cn(
-                "flex min-w-[72px] flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
-                isActive ? "bg-primary text-primary-foreground shadow" : isUnlocked ? "text-foreground hover:bg-accent" : "cursor-not-allowed text-muted-foreground/50"
+                "flex sm:min-w-[72px] sm:flex-1 items-center justify-center gap-1.5 rounded border-2 border-foreground px-2.5 py-1.5 text-xs font-bold transition-transform duration-100 ease-out active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
+                isActive
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : isUnlocked
+                    ? "bg-card text-foreground shadow-none hover:bg-accent"
+                    : "cursor-not-allowed bg-muted text-muted-foreground shadow-none"
               )}
             >
               {isComplete ? (
@@ -328,13 +334,17 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
                 <span
                   className={cn(
                     "flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold",
-                    isActive ? "bg-white/20" : isUnlocked ? "bg-secondary text-primary" : "bg-muted text-muted-foreground"
+                    isActive
+                      ? "bg-primary-foreground/20"
+                      : isUnlocked
+                        ? "bg-secondary text-primary"
+                        : "bg-card text-muted-foreground"
                   )}
                 >
                   {SECTIONS.indexOf(s) + 1}
                 </span>
               )}
-              <span className="truncate">{t(s.labelKey)}</span>
+              <span className="whitespace-nowrap">{t(s.labelKey)}</span>
             </button>
           );
         })}
@@ -346,7 +356,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         <section
           id="section-params"
           ref={(el) => { sectionRefs.current.params = el; }}
-          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+          className="scroll-mt-20 rounded border-2 border-foreground bg-card p-5 shadow sm:p-8"
         >
           <ParametersStage
             exam={exam}
@@ -360,7 +370,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         <section
           id="section-text"
           ref={(el) => { sectionRefs.current.text = el; }}
-          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+          className="scroll-mt-20 rounded border-2 border-foreground bg-card p-5 shadow sm:p-8"
         >
           {!unlocked.text ? (
             <EmptySection
@@ -368,6 +378,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
               label={t("builder.generateText")}
               prereq={!hasConfig}
               prereqMsg={t("builder.prereqMissing")}
+              prereqTarget={t("builder.parameters")}
               onGenerate={() => {
                 scrollToSection("params");
               }}
@@ -393,7 +404,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         <section
           id="section-partOne"
           ref={(el) => { sectionRefs.current.partOne = el; }}
-          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+          className="scroll-mt-20 rounded border-2 border-foreground bg-card p-5 shadow sm:p-8"
         >
           {!unlocked.partOne ? (
             <EmptySection
@@ -401,6 +412,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
               label={t("builder.generatePartOne")}
               prereq={!hasText}
               prereqMsg={t("builder.prereqMissing")}
+              prereqTarget={t("builder.text")}
               onGenerate={() => {
                 if (hasText) generate("PART_ONE");
                 else scrollToSection("text");
@@ -429,7 +441,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         <section
           id="section-partTwo"
           ref={(el) => { sectionRefs.current.partTwo = el; }}
-          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+          className="scroll-mt-20 rounded border-2 border-foreground bg-card p-5 shadow sm:p-8"
         >
           {!unlocked.partTwo ? (
             <EmptySection
@@ -437,6 +449,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
               label={t("builder.generatePartTwo")}
               prereq={!hasPartOne}
               prereqMsg={t("builder.prereqMissing")}
+              prereqTarget={t("builder.partOne")}
               onGenerate={() => {
                 if (hasPartOne) generate("TEXT_EXPLORATION");
                 else scrollToSection("partOne");
@@ -465,7 +478,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         <section
           id="section-writing"
           ref={(el) => { sectionRefs.current.writing = el; }}
-          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+          className="scroll-mt-20 rounded border-2 border-foreground bg-card p-5 shadow sm:p-8"
         >
           {!unlocked.writing ? (
             <EmptySection
@@ -473,6 +486,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
               label={t("builder.generateWriting")}
               prereq={!hasPartTwo}
               prereqMsg={t("builder.prereqMissing")}
+              prereqTarget={t("builder.partTwo")}
               onGenerate={() => {
                 if (hasPartTwo) generate("WRITING");
                 else scrollToSection("partTwo");
@@ -498,7 +512,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         <section
           id="section-preview"
           ref={(el) => { sectionRefs.current.preview = el; }}
-          className="scroll-mt-20 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+          className="scroll-mt-20 rounded border-2 border-foreground bg-card p-5 shadow sm:p-8"
         >
           {!unlocked.preview ? (
             <EmptySection
@@ -506,6 +520,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
               label={t("builder.previewInline")}
               prereq={!hasWriting}
               prereqMsg={t("builder.prereqMissing")}
+              prereqTarget={t("builder.writing")}
               onGenerate={() => {
                 if (hasWriting) scrollToSection("preview");
                 else scrollToSection("writing");
@@ -528,35 +543,39 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
   );
 }
 
-/* Empty section placeholder shown when prerequisites aren't met */
+/* Empty section placeholder shown when prerequisites aren't met.
+   Always offers a way forward: a button that takes the teacher to the
+   blocking section (named with the same label as the stepper). */
 function EmptySection({
   title,
   label,
   prereq,
   prereqMsg,
+  prereqTarget,
   onGenerate,
 }: {
   title: string;
   label: string;
   prereq: boolean;
   prereqMsg: string;
+  prereqTarget?: string;
   onGenerate: () => void;
 }) {
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold tracking-tight text-foreground">{title}</h2>
-      <div className="rounded-xl border border-dashed py-12 text-center">
+      <h2 className="text-xl font-extrabold tracking-tight text-foreground">{title}</h2>
+      <div className="rounded border-2 border-dashed border-foreground bg-card px-6 py-10 text-center">
         <p className="text-sm text-muted-foreground">
           {prereq ? prereqMsg : label}
         </p>
-        {!prereq && (
-          <button
-            onClick={onGenerate}
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90"
-          >
-            {label}
-          </button>
-        )}
+        <Button
+          onClick={onGenerate}
+          variant={prereq ? "outline" : "default"}
+          size="lg"
+          className="mt-4"
+        >
+          {prereq && prereqTarget ? prereqTarget : label}
+        </Button>
       </div>
     </div>
   );

@@ -67,7 +67,7 @@ function EditableMarks({
       title="Click to edit marks"
     >
       {formatMarks(value)} {value === 1 ? "mark" : "marks"}
-      <Pencil className="h-2.5 w-2.5 opacity-50" />
+      <Pencil className="h-2.5 w-2.5 opacity-60" />
     </button>
   );
 }
@@ -113,16 +113,16 @@ export function WritingStage({
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h2 className="text-xl font-bold tracking-tight">{guide?.headings?.writing ?? "C. Written expression"}</h2>
-        <p className="mt-1 text-sm font-semibold text-emerald-700">
+        <h2 className="text-xl font-extrabold tracking-tight">{guide?.headings?.writing ?? "C. Written expression"}</h2>
+        <Badge variant="success" className="mt-1.5">
           {guide ? `${formatMarks(guide.marks.writing)} pts` : "05 pts"}
-        </p>
+        </Badge>
       </div>
 
       <p className="text-sm text-muted-foreground">{t("builder.writingHelp")}</p>
 
       {topics.length < topicThreshold ? (
-        <div className="rounded-xl border border-dashed py-16 text-center">
+        <div className="rounded border-2 border-dashed border-foreground bg-card py-16 text-center">
           {generating ? (
             <div className="mx-auto max-w-md space-y-3 px-6">
               <Skeleton className="mx-auto h-4 w-56" />
@@ -150,7 +150,7 @@ export function WritingStage({
         <ReplacementModal
           open
           onClose={() => setReplacing(null)}
-          title={`${t("builder.alternatives")} — ${replacing.kind === "GUIDED" ? t("builder.topic1") : t("builder.topic2")}`}
+          title={`${t("builder.alternatives")}: ${replacing.kind === "GUIDED" ? t("builder.topic1") : t("builder.topic2")}`}
           items={(replacing.candidates ?? []).map((c: any, i: number): AltItem => ({
             key: `${replacing.id}-alt-${i}`,
             prompt: [c.title, c.situation, c.instruction, c.keywords ? `Key words: ${c.keywords}` : ""].filter(Boolean).join("\n\n"),
@@ -182,10 +182,10 @@ function TopicCard({
   const { t } = useI18n();
   const guided = topic.kind === "GUIDED";
   return (
-    <div className="rounded-xl border bg-white p-5 shadow-sm">
+    <div className="rounded border-2 border-foreground bg-card p-5 shadow">
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
+          <span className="rounded-full border-2 border-foreground bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary">
             {guided ? t("builder.topic1") : t("builder.topic2")}
           </span>
           <Badge variant={guided ? "default" : "outline"}>{guided ? t("builder.guided") : t("builder.free")}</Badge>
@@ -222,7 +222,7 @@ function TopicCard({
           className="min-h-[64px] text-sm"
         />
         {guided && (
-          <div className="flex items-center gap-2 rounded-lg border bg-secondary/40 px-3 py-2">
+          <div className="flex items-center gap-2 rounded border-2 border-foreground bg-secondary px-3 py-2">
             <BookOpen className="h-4 w-4 shrink-0 text-primary" />
             <span className="text-xs font-medium text-muted-foreground">{t("builder.keywords")}:</span>
             <Input

@@ -6,10 +6,12 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
 import { formatMarks } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-client";
 
 export interface AltItem {
   key: string;
@@ -81,7 +83,7 @@ export function ReplacementModal({
   async function apply(item: SavedItem, source: "favourite" | "custom") {
     if (!examId || !taskId) return;
     try {
-      const res = await fetch(`/api/exams/${examId}/apply-task`, {
+      const res = await apiFetch(`/api/exams/${examId}/apply-task`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ taskId, source, ...item.content }),
@@ -104,7 +106,7 @@ export function ReplacementModal({
     }
     setSaving(true);
     try {
-      const res = await fetch("/api/custom-tasks", {
+      const res = await apiFetch("/api/custom-tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ label: label.trim(), prompt: prompt.trim(), marks: Number(marks) || 1 }),
@@ -125,7 +127,7 @@ export function ReplacementModal({
   }
 
   async function remove(item: SavedItem, source: "favourite" | "custom") {
-    await fetch(`/api/${source === "favourite" ? "favourites" : "custom-tasks"}/${item.id}`, { method: "DELETE" });
+    await apiFetch(`/api/${source === "favourite" ? "favourites" : "custom-tasks"}/${item.id}`, { method: "DELETE" });
     loadSaved();
   }
 
@@ -138,16 +140,16 @@ export function ReplacementModal({
   return (
     <Modal open={open} onClose={onClose} title={title} side="right" className="sm:max-w-xl">
       {/* Tabs */}
-      <div className="mb-4 flex gap-1 rounded-lg bg-secondary/60 p-1">
+      <div className="mb-4 flex gap-1 rounded border-2 border-foreground bg-secondary p-1">
         {tabs.map((tb) => (
           <button
             key={tb.key}
             onClick={() => !tb.disabled && setTab(tb.key)}
             disabled={tb.disabled}
             className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
-              tab === tb.key ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-              tb.disabled && "cursor-not-allowed opacity-40"
+              "flex flex-1 items-center justify-center gap-1.5 rounded border-2 border-transparent px-2 py-1.5 text-xs font-bold transition-transform duration-100 ease-out active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
+              tab === tb.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              tb.disabled && "cursor-not-allowed text-muted-foreground"
             )}
           >
             <tb.icon className="h-3.5 w-3.5" />
@@ -159,15 +161,15 @@ export function ReplacementModal({
       {tab === "alternatives" && (
         <div className="space-y-3">
           {items.length === 0 && (
-            <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+            <div className="rounded border-2 border-dashed border-foreground bg-card p-8 text-center text-sm text-muted-foreground">
               {t("builder.noAlternatives")}
             </div>
           )}
           {items.map((item, i) => (
-            <div key={item.key} className="rounded-xl border bg-secondary/40 p-4">
+            <div key={item.key} className="rounded border-2 border-foreground bg-card p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <p className="line-clamp-6 whitespace-pre-line text-sm">{item.prompt}</p>
-                <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary">
+                <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
                   {typeof item.marks === "number" ? `${formatMarks(item.marks)} pts` : item.meta}
                 </span>
               </div>
@@ -179,7 +181,7 @@ export function ReplacementModal({
               </div>
             </div>
           ))}
-          {items.length > 0 && onMore && (
+          {onMore && (
             <Button variant="outline" className="w-full" onClick={onMore} disabled={busy}>
               <Sparkles className="h-4 w-4" />
               {busy ? t("common.generating") : "Generate more alternatives"}
@@ -205,17 +207,16 @@ export function ReplacementModal({
             </Button>
           )}
           {showForm && (
-            <form onSubmit={createCustom} className="space-y-3 rounded-xl border bg-secondary/40 p-4">
+            <form onSubmit={createCustom} className="space-y-3 rounded border-2 border-foreground bg-card p-4 shadow-sm">
               <div className="space-y-1.5">
                 <Label className="text-xs">Label</Label>
                 <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Vocabulary: closest meaning" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Prompt</Label>
-                <textarea
+                <Textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  className="min-h-[90px] w-full rounded-md border border-input bg-white px-3 py-2 text-sm"
                   placeholder="Type the task exactly as students should see it."
                 />
               </div>
@@ -256,20 +257,30 @@ function SavedList({
   onApply: (item: SavedItem) => void;
   onRemove: (item: SavedItem) => void;
 }) {
+  const { t } = useI18n();
   if (items.length === 0) {
-    return <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">{empty}</p>;
+    return (
+      <p className="rounded border-2 border-dashed border-foreground bg-card p-8 text-center text-sm text-muted-foreground">
+        {empty}
+      </p>
+    );
   }
   return (
     <div className="space-y-3">
       {items.map((item) => (
-        <div key={item.id} className="rounded-xl border bg-secondary/40 p-4">
+        <div key={item.id} className="rounded border-2 border-foreground bg-card p-4 shadow-sm">
           <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-sm font-semibold">{item.label}</p>
+            <p className="truncate text-sm font-bold">{item.label}</p>
             <div className="flex shrink-0 items-center gap-1">
-              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary">
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
                 {typeof item.content.marks === "number" ? `${formatMarks(item.content.marks)} pts` : ""}
               </span>
-              <button onClick={() => onRemove(item)} className="rounded p-1 text-muted-foreground hover:text-destructive" title="Delete">
+              <button
+                onClick={() => onRemove(item)}
+                className="rounded p-1 text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                aria-label={t("dashboard.delete")}
+                title={t("dashboard.delete")}
+              >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>

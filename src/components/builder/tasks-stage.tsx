@@ -81,7 +81,7 @@ function EditableMarks({
       title="Click to edit marks"
     >
       {formatMarks(value)} {value === 1 ? "mark" : "marks"}
-      {!disabled && <Pencil className="h-2.5 w-2.5 opacity-50" />}
+      {!disabled && <Pencil className="h-2.5 w-2.5 opacity-60" />}
     </button>
   );
 }
@@ -139,8 +139,8 @@ export function TasksStage({
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h2 className="text-xl font-bold tracking-tight text-foreground">{heading.title}</h2>
-        <p className="mt-1 text-sm font-semibold text-emerald-700">{heading.marks}</p>
+        <h2 className="text-xl font-extrabold tracking-tight text-foreground">{heading.title}</h2>
+        {heading.marks && <Badge variant="success" className="mt-1.5">{heading.marks}</Badge>}
       </div>
 
       <p className="text-sm text-muted-foreground">
@@ -148,7 +148,7 @@ export function TasksStage({
       </p>
 
       {tasks.length === 0 ? (
-        <div className="rounded-xl border border-dashed py-16 text-center">
+        <div className="rounded border-2 border-dashed border-foreground bg-card py-16 text-center">
           {generating ? (
             <div className="mx-auto max-w-md space-y-3 px-6">
               <Skeleton className="mx-auto h-4 w-64" />
@@ -170,7 +170,7 @@ export function TasksStage({
       ) : (
         <>
           <div className="flex items-center justify-between gap-3">
-            <Badge variant="secondary" className="text-xs">
+            <Badge variant="default" className="text-xs">
               {t("builder.marksTotal")}: {formatMarks(total)} {t("builder.marks")}
             </Badge>
             <Button variant="ghost" size="sm" onClick={() => setAnswers(!answers)}>
@@ -181,10 +181,10 @@ export function TasksStage({
 
           <div className="space-y-4">
             {tasks.map((task, i) => (
-              <div key={task.id} className="rounded-xl border bg-white p-5 shadow-sm">
+              <div key={task.id} className="rounded border-2 border-foreground bg-card p-5 shadow">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
+                    <span className="rounded-full border-2 border-foreground bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary">
                       Task {i + 1}
                     </span>
                     {task.skill && SKILL_LABELS[task.skill] && (
@@ -196,7 +196,13 @@ export function TasksStage({
                         onChange={(v) => onEdit({ sections: [{ id: section!.id, tasks: [{ id: task.id, marks: v }] }] })}
                       />
                     </span>
-                    <Button variant="ghost" size="sm" onClick={() => onSaveFavourite(task.id)} title="Save as favourite">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onSaveFavourite(task.id)}
+                      aria-label="Save as favourite"
+                      title="Save as favourite"
+                    >
                       <Star className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -214,7 +220,7 @@ export function TasksStage({
                       <thead>
                         <tr>
                           {task.table.headers.map((h, hi) => (
-                            <th key={hi} className="border border-gray-300 bg-gray-100 px-3 py-1.5 text-left text-xs font-semibold text-gray-700">
+                            <th key={hi} className="border border-border bg-muted px-3 py-1.5 text-left text-xs font-semibold text-foreground">
                               {h}
                             </th>
                           ))}
@@ -224,7 +230,7 @@ export function TasksStage({
                         {task.table.rows.map((row, ri) => (
                           <tr key={ri}>
                             {row.map((cell, ci) => (
-                              <td key={ci} className="border border-gray-300 px-3 py-1.5 text-sm">
+                              <td key={ci} className="border border-border px-3 py-1.5 text-sm">
                                 {ci === 0 ? <span className="font-medium">{cell}</span> : cell === "—" ? <span className="text-muted-foreground italic">—</span> : cell}
                               </td>
                             ))}
@@ -264,7 +270,7 @@ export function TasksStage({
         <ReplacementModal
           open
           onClose={() => setReplacing(null)}
-          title={`${t("builder.alternatives")} — Task ${tasks.findIndex((x) => x.id === replacing.id) + 1}`}
+          title={`${t("builder.alternatives")}: Task ${tasks.findIndex((x) => x.id === replacing.id) + 1}`}
           items={(replacing.candidates ?? []).map((c: any, i: number): AltItem => ({
             key: `${replacing.id}-alt-${i}`,
             prompt: c.prompt ?? "",

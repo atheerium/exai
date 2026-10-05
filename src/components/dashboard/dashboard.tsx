@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
+import { apiFetch } from "@/lib/api-client";
 import type { ExamDto } from "@/types";
 
 export function Dashboard({
@@ -29,7 +30,7 @@ export function Dashboard({
   async function newExam() {
     setCreating(true);
     try {
-      const res = await fetch("/api/exams", { method: "POST" });
+      const res = await apiFetch("/api/exams", { method: "POST" });
       const exam = await res.json();
       if (!res.ok) throw new Error(exam.error);
       router.push(`/builder/${exam.id}`);
@@ -46,7 +47,7 @@ export function Dashboard({
     <div className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
+          <h1 className="text-2xl font-extrabold tracking-tight">
             {t("dashboard.welcome")}, {displayName.split(" ")[0] || "teacher"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">{t("dashboard.title")}</p>
@@ -59,21 +60,21 @@ export function Dashboard({
 
       {/* Continue Last Exam */}
       {last && (
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden transition-transform duration-100 hover:shadow-lg active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
           <Link href={`/builder/${last.id}`} className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-4">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded border-2 border-foreground bg-primary/10 text-primary">
                 <FileText className="h-6 w-6" />
               </span>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <p className="text-xs font-medium text-muted-foreground">
                   {t("dashboard.continueLast")}
                 </p>
-                <h2 className="mt-1 text-lg font-semibold">{last.title}</h2>
+                <h2 className="mt-1 text-lg font-bold">{last.title}</h2>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   {last.config && (
                     <>
-                      <span className="rounded bg-secondary px-2 py-0.5 font-medium">{last.config.grade.toUpperCase()}</span>
+                      <span className="rounded-full bg-secondary px-2 py-0.5 font-medium text-secondary-foreground">{last.config.grade.toUpperCase()}</span>
                       <span>{last.config.unit}</span>
                       <span>·</span>
                       <span>{last.config.length} {t("builder.words")}</span>
@@ -96,32 +97,32 @@ export function Dashboard({
       {/* Favourites + custom tasks entry */}
       <div className="grid gap-4 sm:grid-cols-2">
         <Link href="/favourites">
-          <Card className="group transition-shadow hover:shadow-md">
+          <Card className="group transition-transform duration-100 hover:shadow-lg active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
             <CardContent className="flex items-center gap-4 p-5">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+              <span className="flex h-11 w-11 items-center justify-center rounded border-2 border-foreground bg-amber-100 text-amber-800">
                 <Star className="h-5 w-5" />
               </span>
               <div className="flex-1">
-                <h3 className="font-semibold">{t("nav.favourites")}</h3>
+                <h3 className="font-bold">{t("nav.favourites")}</h3>
                 <p className="text-xs text-muted-foreground">
                   {favouritesCount} saved · {customsCount} custom
                 </p>
               </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-100 group-hover:translate-x-0.5" />
             </CardContent>
           </Card>
         </Link>
         <Link href="/library">
-          <Card className="group transition-shadow hover:shadow-md">
+          <Card className="group transition-transform duration-100 hover:shadow-lg active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
             <CardContent className="flex items-center gap-4 p-5">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <span className="flex h-11 w-11 items-center justify-center rounded border-2 border-foreground bg-primary/10 text-primary">
                 <BookMarked className="h-5 w-5" />
               </span>
               <div className="flex-1">
-                <h3 className="font-semibold">{t("nav.library")}</h3>
+                <h3 className="font-bold">{t("nav.library")}</h3>
                 <p className="text-xs text-muted-foreground">{exams.length} exams</p>
               </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-100 group-hover:translate-x-0.5" />
             </CardContent>
           </Card>
         </Link>
@@ -129,12 +130,12 @@ export function Dashboard({
 
       {/* Empty state or recent exams */}
       {recent.length === 0 ? (
-        <Card>
+        <Card className="border-dashed">
           <CardContent className="flex flex-col items-center py-16 text-center">
-            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <span className="flex h-14 w-14 items-center justify-center rounded border-2 border-foreground bg-primary/10 text-primary">
               <FileText className="h-7 w-7" />
             </span>
-            <h3 className="mt-4 text-lg font-semibold">{t("dashboard.empty")}</h3>
+            <h3 className="mt-4 text-lg font-bold">{t("dashboard.empty")}</h3>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">{t("dashboard.emptyD")}</p>
             <Button onClick={newExam} className="mt-6">
               <Plus className="h-4 w-4" />
@@ -145,9 +146,13 @@ export function Dashboard({
       ) : (
         <div>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">{t("dashboard.recent")}</h2>
-            <Link href="/library" className="text-sm font-medium text-primary hover:underline">
-              {t("nav.library")} →
+            <h2 className="text-lg font-extrabold">{t("dashboard.recent")}</h2>
+            <Link
+              href="/library"
+              className="inline-flex items-center gap-0.5 text-sm font-medium text-primary hover:underline"
+            >
+              {t("nav.library")}
+              <ChevronRight className="h-4 w-4" />
             </Link>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -170,17 +175,17 @@ function ExamCard({ exam }: { exam: ExamDto }) {
     e.preventDefault();
     e.stopPropagation();
     if (!confirm("Delete this exam permanently?")) return;
-    await fetch(`/api/exams/${exam.id}`, { method: "DELETE" });
+    await apiFetch(`/api/exams/${exam.id}`, { method: "DELETE" });
     toast("Exam deleted", "success");
     router.refresh();
   }
 
   return (
-    <Link href={`/builder/${exam.id}`}>
-      <Card className="group h-full transition-shadow hover:shadow-md">
-        <CardContent className="flex h-full flex-col p-5">
+    <Card className="group h-full transition-transform duration-100 hover:shadow-lg active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+      <CardContent className="flex h-full flex-col p-5">
+        <Link href={`/builder/${exam.id}`} className="flex flex-1 flex-col">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="line-clamp-2 font-semibold leading-snug">{exam.title}</h3>
+            <h3 className="line-clamp-2 font-bold leading-snug">{exam.title}</h3>
             <Badge variant={status === "EXPORTED" ? "success" : status === "DRAFT" ? "muted" : "default"}>
               {status === "EXPORTED" ? t("dashboard.exported") : status === "NEW" ? t("dashboard.draft") : t("dashboard.active")}
             </Badge>
@@ -188,30 +193,32 @@ function ExamCard({ exam }: { exam: ExamDto }) {
           <p className="mt-2 line-clamp-1 text-sm text-muted-foreground">
             {exam.config ? `${exam.config.grade.toUpperCase()} · ${exam.config.unit}` : "No parameters yet"}
           </p>
-          <div className="mt-auto flex items-center justify-between pt-4">
-            <span className="text-xs text-muted-foreground">
-              {t("dashboard.lastOpened")}: {new Date(exam.lastOpenedAt).toLocaleDateString()}
-            </span>
-            <div className="flex items-center gap-1" onClick={(e) => e.preventDefault()}>
-              <a
-                href={`/api/exams/${exam.id}/export?format=pdf`}
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-primary"
-                title={t("builder.exportPdf")}
-                download
-              >
-                <Download className="h-4 w-4" />
-              </a>
-              <button
-                onClick={remove}
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                title={t("dashboard.delete")}
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
+        </Link>
+        <div className="mt-auto flex items-center justify-between pt-4">
+          <span className="text-xs text-muted-foreground">
+            {t("dashboard.lastOpened")}: {new Date(exam.lastOpenedAt).toLocaleDateString()}
+          </span>
+          <div className="flex items-center gap-1">
+            <a
+              href={`/api/exams/${exam.id}/export?format=pdf`}
+              className="rounded border-2 border-foreground bg-card p-1.5 text-muted-foreground shadow-sm transition-transform duration-100 ease-out hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+              aria-label={t("builder.exportPdf")}
+              title={t("builder.exportPdf")}
+              download
+            >
+              <Download className="h-4 w-4" />
+            </a>
+            <button
+              onClick={remove}
+              className="rounded border-2 border-foreground bg-card p-1.5 text-muted-foreground shadow-sm transition-transform duration-100 ease-out hover:bg-destructive hover:text-destructive-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+              aria-label={t("dashboard.delete")}
+              title={t("dashboard.delete")}
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
           </div>
-        </CardContent>
-      </Card>
-    </Link>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

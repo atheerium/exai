@@ -37,13 +37,12 @@ export default async function LandingPage() {
       {/* Hero */}
       <section className="relative mx-auto flex w-full max-w-6xl flex-col items-center px-6 pt-16 pb-20 text-center">
         <div className="absolute inset-x-0 top-0 -z-10 h-[480px] algerian-motif opacity-70 [mask-image:radial-gradient(60%_60%_at_50%_30%,black,transparent)]" />
-        <span className="inline-flex items-center gap-2 rounded-full border bg-white/70 px-4 py-1.5 text-sm font-medium text-primary shadow-sm backdrop-blur">
+        <span className="inline-flex items-center gap-2 rounded-full border bg-card/70 px-4 py-1.5 text-sm font-medium text-primary shadow-sm backdrop-blur">
           <span className="h-2 w-2 rounded-full bg-emerald-500" />
           Made for Algerian English teachers
         </span>
         <h1 className="mt-6 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight sm:text-6xl">
-          Create complete English exams in minutes.{" "}
-          <span className="text-primary">Keep every decision in your hands.</span>
+          Create complete English exams in minutes. Keep every decision in your hands.
         </h1>
         <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
           Exaai generates the reading text, the tasks and the marks from the exam structure. You
@@ -65,7 +64,7 @@ export default async function LandingPage() {
         </div>
 
         {/* Preview mock */}
-        <div className="mt-16 w-full max-w-3xl rounded-2xl border bg-white/90 p-8 text-left shadow-xl backdrop-blur">
+        <div className="mt-16 w-full max-w-3xl rounded-2xl border bg-card/90 p-8 text-left shadow-xl backdrop-blur">
           <div className="flex items-center justify-between border-b pb-3">
             <span className="text-sm font-bold text-foreground">A. Reading Comprehension</span>
             <span className="text-sm font-semibold text-emerald-700">07 pts</span>
@@ -79,13 +78,13 @@ export default async function LandingPage() {
           <div className="mt-4 space-y-2 text-sm">
             <p className="text-foreground">
               <span className="mr-2 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold text-emerald-800">
-                Task 1 — 2 pts
+                Task 1 (2 pts)
               </span>
               Answer the following questions according to the text.
             </p>
             <p className="text-foreground">
               <span className="mr-2 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold text-emerald-800">
-                Task 2 — 2 pts
+                Task 2 (2 pts)
               </span>
               Say whether the statements are true or false. Justify.
             </p>
@@ -102,7 +101,7 @@ export default async function LandingPage() {
             { n: "2", t: "Generate each section", d: "Reading text, comprehension tasks, text exploration and written expression, one step at a time." },
             { n: "3", t: "Review, replace, approve", d: "Edit anything. Swap a single weak task for a suitable alternative. Export to PDF or Word." },
           ].map((s) => (
-            <div key={s.n} className="rounded-xl border bg-white/80 p-6 shadow-sm backdrop-blur">
+            <div key={s.n} className="rounded-xl border bg-card/80 p-6 shadow-sm backdrop-blur">
               <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-base font-bold text-primary-foreground">
                 {s.n}
               </span>
@@ -133,7 +132,7 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <footer className="border-t bg-white/60 py-8 text-center text-sm text-muted-foreground">
+      <footer className="border-t bg-card/60 py-8 text-center text-sm text-muted-foreground">
         Exaai — exam creation, lightened. Made for English teachers in Algeria.
       </footer>
     </main>

@@ -123,9 +123,9 @@ export function ParametersStage({
     const config = exam.config;
     const streamLabel = config.stream ? ` · ${config.stream}` : "";
     return (
-      <div className="flex items-center justify-between gap-4">
-        <div className="space-y-0.5">
-          <h2 className="text-lg font-bold tracking-tight">{t("builder.parameters")}</h2>
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0 space-y-0.5">
+          <h2 className="text-lg font-extrabold tracking-tight">{t("builder.parameters")}</h2>
           <p className="text-sm text-muted-foreground">
             {config.grade}{streamLabel} · {config.unit} · {config.topic} · {config.length} {t("builder.words")}
             {config.teacherKeywords ? ` · "${config.teacherKeywords}"` : ""}
@@ -143,14 +143,21 @@ export function ParametersStage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">{t("builder.parameters")}</h2>
+          <h2 className="text-xl font-extrabold tracking-tight">{t("builder.parameters")}</h2>
           <p className="mt-1 flex items-start gap-1.5 text-sm text-muted-foreground">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             {t("builder.parametersHelp")}
           </p>
         </div>
         {collapsed === false && exam.config && (
-          <Button variant="ghost" size="sm" onClick={onToggleCollapse} className="shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleCollapse}
+            className="shrink-0"
+            aria-label={t("builder.collapse")}
+            title={t("builder.collapse")}
+          >
             <ChevronUp className="h-4 w-4" />
           </Button>
         )}
@@ -161,9 +168,11 @@ export function ParametersStage({
           <Label>{t("builder.level")}</Label>
           <Select value={level} onChange={(e) => setLevel(e.target.value)} required>
             <option value="">{t("builder.selectLevel")}</option>
-            {Object.keys(catalog?.levels ?? {}).map((l) => (
+            {Object.keys(catalog?.levels ?? {})
+              .filter((l) => l === "secondary")
+              .map((l) => (
               <option key={l} value={l}>
-                {l === "middle" ? "Middle school" : "Secondary school"}
+                Secondary school
               </option>
             ))}
           </Select>
@@ -250,7 +259,7 @@ export function ParametersStage({
                 setCustomTopic(!customTopic);
                 if (!customTopic) setTopic("");
               }}
-              className="text-xs font-medium text-primary hover:underline"
+              className="text-[13px] font-medium text-primary hover:underline"
             >
               {customTopic ? t("builder.selectTopic") : t("builder.customTopic")}
             </button>

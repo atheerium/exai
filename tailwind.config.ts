@@ -50,6 +50,17 @@ const config: Config = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      // Neobrutalist elevation: hard zero-blur ink offsets, no soft shadows.
+      // Sizes follow design.markdown; xl extends the same pattern (+2px) so
+      // out-of-scope surfaces that reference shadow-xl keep a defined shadow.
+      boxShadow: {
+        xs: "2px 2px 0 0 hsl(var(--foreground))",
+        sm: "2px 2px 0 0 hsl(var(--foreground))",
+        DEFAULT: "4px 4px 0 0 hsl(var(--foreground))",
+        md: "4px 4px 0 0 hsl(var(--foreground))",
+        lg: "6px 6px 0 0 hsl(var(--foreground))",
+        xl: "8px 8px 0 0 hsl(var(--foreground))",
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },
@@ -67,7 +78,7 @@ const config: Config = {
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        "fade-in": "fade-in 0.4s ease-out",
+          "fade-in": "fade-in 0.2s ease-out",
       },
     },
   },

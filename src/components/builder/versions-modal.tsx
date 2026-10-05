@@ -5,6 +5,7 @@ import { History, RotateCcw, Plus, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
+import { apiFetch } from "@/lib/api-client";
 
 interface Revision {
   id: string;
@@ -44,7 +45,7 @@ export function VersionsModal({
   async function checkpoint() {
     setBusy(true);
     try {
-      const res = await fetch(`/api/exams/${examId}/revisions`, {
+      const res = await apiFetch(`/api/exams/${examId}/revisions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ label: "Manual checkpoint" }),
@@ -63,7 +64,7 @@ export function VersionsModal({
     if (!confirm("Restore this version? Current work will be replaced (it stays available as a newer revision).")) return;
     setRestoring(id);
     try {
-      const res = await fetch(`/api/exams/${examId}/revisions/restore`, {
+      const res = await apiFetch(`/api/exams/${examId}/revisions/restore`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ revisionId: id }),
@@ -88,12 +89,12 @@ export function VersionsModal({
           {busy ? "Saving…" : "Save a checkpoint now"}
         </Button>
         {revisions.length === 0 ? (
-          <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+          <p className="rounded border-2 border-dashed border-foreground bg-card p-8 text-center text-sm text-muted-foreground">
             No saved versions yet. Each generation or replacement creates one automatically.
           </p>
         ) : (
           revisions.map((r) => (
-            <div key={r.id} className="rounded-xl border bg-secondary/40 p-4">
+            <div key={r.id} className="rounded border-2 border-foreground bg-card p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold">{r.label}</p>

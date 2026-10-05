@@ -3,6 +3,7 @@
 import * as React from "react";
 import { CheckCircle2, AlertCircle, Info, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DICT, readLangCookie } from "@/lib/i18n";
 
 // Minimal toast system: window event based, no provider nesting required.
 
@@ -33,26 +34,30 @@ export function Toaster() {
     return () => window.removeEventListener("exai-toast", onToast);
   }, []);
 
+  // Toaster mounts outside <I18nProvider>, so read the language cookie directly.
+  const dismissLabel = DICT[readLangCookie()]["builder.dismiss"];
+
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-full max-w-sm flex-col gap-2">
       {items.map((t) => (
         <div
           key={t.id}
           className={cn(
-            "pointer-events-auto flex items-start gap-2 rounded-lg border bg-white px-4 py-3 text-sm shadow-lg animate-fade-in",
-            t.kind === "success" && "border-emerald-200 text-emerald-900",
-            t.kind === "error" && "border-red-200 text-red-900",
-            t.kind === "info" && "border-zinc-200 text-zinc-900"
+            "pointer-events-auto flex items-start gap-2 rounded border-2 border-foreground bg-card px-4 py-3 text-sm shadow animate-fade-in",
+            t.kind === "success" && "text-emerald-900",
+            t.kind === "error" && "text-red-900",
+            t.kind === "info" && "text-foreground"
           )}
         >
           {t.kind === "success" && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />}
           {t.kind === "error" && <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />}
-          {t.kind === "info" && <Info className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500" />}
+          {t.kind === "info" && <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
           <span className="flex-1">{t.message}</span>
           <button
             onClick={() => setItems((prev) => prev.filter((x) => x.id !== t.id))}
-            className="rounded p-0.5 text-muted-foreground hover:bg-muted"
-            aria-label="Dismiss"
+            className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            aria-label={dismissLabel}
+            title={dismissLabel}
           >
             <X className="h-3.5 w-3.5" />
           </button>

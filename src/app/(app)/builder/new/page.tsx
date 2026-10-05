@@ -1,5 +1,7 @@
 "use client";
 import { useTransition } from "react";
+import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { createNewExam } from "./actions";
 
 export default function NewExamPage() {
@@ -11,13 +13,10 @@ export default function NewExamPage() {
         action={() => startTransition(createNewExam)}
         className="mt-4"
       >
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-        >
+        <Button type="submit" disabled={isPending}>
+          {isPending && <Loader2 className="animate-spin" />}
           {isPending ? "Creating..." : "Create new exam"}
-        </button>
+        </Button>
       </form>
     </div>
   );

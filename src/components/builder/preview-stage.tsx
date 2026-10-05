@@ -44,8 +44,9 @@ export function PreviewStage({ exam }: { exam: ExamDto }) {
 }
 
 function ExamDocument({ doc }: { doc: ExportDocument }) {
+  const isBac = doc.structure === "bac";
   return (
-    <div className="print-block mx-auto max-w-3xl rounded-xl border bg-white p-8 shadow-sm sm:p-12">
+    <div className="print-block mx-auto max-w-3xl rounded-xl border bg-card p-8 shadow-sm sm:p-12">
       <header className="border-b pb-4 text-center">
         <h1 className="text-lg font-bold tracking-tight">{doc.title}</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">{doc.subtitle}</p>
@@ -54,8 +55,10 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
 
       <div className="mt-6 space-y-8">
         {doc.sections.map((section) => {
-          const empty = !section.text?.body && section.tasks.length === 0 && section.topics.length === 0;
-          if (empty) return null;
+          // Show section if it has content OR if it has a heading and marksLabel (for BAC umbrella sections)
+          const hasContent = section.text?.body || section.tasks.length > 0 || section.topics.length > 0;
+          const isHeadingOnly = !!section.heading && !!section.marksLabel;
+          if (!hasContent && !isHeadingOnly) return null;
           return (
             <section key={section.heading}>
               <div className="flex items-baseline justify-between">
@@ -68,17 +71,25 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                 <p className="mt-2 text-[15px] leading-relaxed text-foreground/90">{section.text.body}</p>
               )}
               {section.sourceNote && (
-                <p className="mt-2 text-right text-xs text-muted-foreground">{section.sourceNote}</p>
+                <p className={`mt-2 text-right text-xs text-muted-foreground${isBac ? " italic" : ""}`}>{section.sourceNote}</p>
               )}
+
+              {section.intro && <p className="mt-3 text-sm font-semibold">{section.intro}</p>}
 
               {section.tasks.length > 0 && (
                 <div className="mt-5 space-y-5">
                   {section.tasks.map((task, i) => (
                     <div key={i}>
                       <p className="text-sm font-semibold">
-                        Task {i + 1} <span className="font-normal text-muted-foreground">({task.marks} pts)</span>
+                        {isBac ? (
+                          `${i + 1}- ${task.instruction}`.trim()
+                        ) : (
+                          <>
+                            Task {i + 1} <span className="font-normal text-muted-foreground">({task.marks} pts)</span>
+                          </>
+                        )}
                       </p>
-                      {task.instruction && <p className="mt-0.5 text-sm text-muted-foreground">{task.instruction}</p>}
+                      {!isBac && task.instruction && <p className="mt-0.5 text-sm text-muted-foreground">{task.instruction}</p>}
                       <p className="mt-1.5 whitespace-pre-line text-[15px] leading-relaxed">{task.prompt}</p>
                       {task.table && task.table.headers.length > 0 && (
                         <div className="mt-3 overflow-x-auto">
@@ -94,7 +105,7 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                             </thead>
                             <tbody>
                               {task.table.rows.map((row, ri) => (
-                                <tr key={ri} className={ri % 2 === 0 ? "bg-white" : "bg-muted/30"}>
+                                <tr key={ri} className={ri % 2 === 0 ? "bg-card" : "bg-muted/30"}>
                                   {row.map((cell, ci) => (
                                     <td key={ci} className="border px-3 py-2">
                                       {cell}
@@ -116,20 +127,38 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                   {section.topics.map((topic, i) => (
                     <div key={i}>
                       <p className="text-sm font-semibold">
-                        {topic.title} <span className="font-normal text-muted-foreground">({topic.marks} pts)</span>
+                        {isBac ? `Topic ${["One", "Two", "Three", "Four", "Five"][i] ?? i + 1}:` : (
+                          <>
+                            {topic.title} <span className="font-normal text-muted-foreground">({topic.marks} pts)</span>
+                          </>
+                        )}
                       </p>
                       {topic.situation && <p className="mt-1 text-[15px] leading-relaxed">{topic.situation}</p>}
                       {topic.instruction && <p className="mt-1 text-[15px] leading-relaxed">{topic.instruction}</p>}
-                      {topic.keywords && (
-                        <p className="mt-1 text-sm font-semibold">Key words: {topic.keywords}</p>
-                      )}
+                      {topic.keywords &&
+                        (isBac ? (
+                          <>
+                            <p className="mt-1 text-sm font-semibold">Make the best use of the following notes:</p>
+                            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[15px] leading-relaxed">
+                              {topic.keywords
+                                .split(/[,/;\n]+/)
+                                .map((k) => k.trim().replace(/^[-–•\s]+/, ""))
+                                .filter(Boolean)
+                                .map((note, ni) => (
+                                  <li key={ni}>{note}</li>
+                                ))}
+                            </ul>
+                          </>
+                        ) : (
+                          <p className="mt-1 text-sm font-semibold">Key words: {topic.keywords}</p>
+                        ))}
                     </div>
                   ))}
                 </div>
               )}
             </section>
-          );
-        })}
+          )}
+        )}
       </div>
 
       <footer className="mt-10 border-t pt-4 text-center text-xs text-muted-foreground">

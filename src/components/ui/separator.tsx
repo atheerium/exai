@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 function Separator({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("h-px w-full bg-border", className)} {...props} />;
+  return <div className={cn("h-px w-full bg-foreground", className)} {...props} />;
 }
 
 export { Separator };
