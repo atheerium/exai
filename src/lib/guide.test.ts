@@ -27,7 +27,7 @@ test("validateConfigInputs rejects disallowed lengths", () => {
 });
 
 test("validateConfigInputs rejects grade/level mismatch", () => {
-  assert.throws(() => validateConfigInputs({ ...base, level: "middle" }), /does not belong/);
+  assert.throws(() => validateConfigInputs({ ...base, level: "middle" }), /secondary/);
 });
 
 test("validateConfigInputs rejects a stream not valid for the grade", () => {
@@ -241,7 +241,7 @@ test("validateConfigInputs rejects unknown grade", () => {
 });
 
 test("validateConfigInputs rejects unknown level", () => {
-  assert.throws(() => validateConfigInputs({ ...base, level: "primary" }), /does not belong/);
+  assert.throws(() => validateConfigInputs({ ...base, level: "primary" }), /secondary/);
 });
 
 test("validateConfigInputs rejects unknown stream for grade", () => {
