@@ -7,3 +7,16 @@ prisma/dev.db
 prisma/dev.db-journal
 .env
 .vercel
+
+# Local screenshots produced during UI review passes
+/*.png
+
+# Agent scratch: session state, run continuation, evidence artifacts
+/.omo/run-continuation/
+/omo/
+
+# Browser automation console logs
+/.playwright-mcp/
+
+# Third-party exam papers used as local reference only; not redistributed
+/dz-exam-templates/
