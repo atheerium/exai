@@ -5,7 +5,7 @@ set -euo pipefail
 BASE="${BASE_URL:-http://localhost:3000}"
 EMAIL="${EMAIL:-smoke$(date +%s)@exaai.test}"
 JAR="$(mktemp /tmp/exai-test.XXXXXX)"
-trap 'rm -f "$JAR" /tmp/exam-smoke.pdf /tmp/exam-smoke.docx /tmp/unauth.txt' EXIT
+trap 'rm -f "$JAR" /tmp/exam-smoke.pdf /tmp/exam-smoke.docx /tmp/unauth.txt /tmp/overwrite.json' EXIT
 
 # CSRF: mutating API routes require X-CSRF-Token matching the csrf_token cookie
 # (issued on register/login). This wrapper injects the header on POST/PATCH/PUT/DELETE.
@@ -436,6 +436,40 @@ p1=[s for s in d['sections'] if s['type']=='PART_ONE'][0]
 w=[s for s in d['sections'] if s['type']=='WRITING'][0]
 assert t['text'] and len(p1['tasks'])==4 and len(w['topics'])==2
 print('content intact after re-login: text', len(t['text'].split()), 'words, part one', len(p1['tasks']), 'tasks, writing', len(w['topics']), 'topics')"
+
+echo "== full exam in one request (US-0xx) =="
+E8=$(curl -s -b "$JAR" -X POST "$BASE/api/exams" -H "Content-Type: application/json" -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+curl -s -b "$JAR" -X PATCH "$BASE/api/exams/$E8" -H "Content-Type: application/json" \
+  -d '{"config":{"level":"secondary","grade":"3as","stream":"Lettres et Langues Étrangères","length":150,"unit":"u-ancient","topic":"Artificial intelligence"}}' >/dev/null
+curl -s -b "$JAR" -X POST "$BASE/api/exams/$E8/generate" -H "Content-Type: application/json" \
+  -d '{"type":"FULL_EXAM"}' | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+types={s['type'] for s in d['sections']}
+assert types >= {'TEXT','PART_ONE','TEXT_EXPLORATION','WRITING'}, types
+t=[s for s in d['sections'] if s['type']=='TEXT'][0]
+p1=[s for s in d['sections'] if s['type']=='PART_ONE'][0]
+p2=[s for s in d['sections'] if s['type']=='TEXT_EXPLORATION'][0]
+w=[s for s in d['sections'] if s['type']=='WRITING'][0]
+assert t['text'] and p1['tasks'] and p2['tasks'] and w['topics']
+assert sum(x['marks'] for x in p1['tasks'])==7, 'part one marks'
+assert sum(x['marks'] for x in p2['tasks'])==7, 'text exploration marks'
+# Grounding: vocabulary/morphology targets must occur in the passage.
+import re
+low=t['text'].lower()
+for sec in (p1,p2):
+  for task in sec['tasks']:
+    if task.get('skill') not in ('VOCABULARY','MORPHOLOGY'): continue
+    for line in task['prompt'].split('\n'):
+      m=re.match(r'^\s*\d+[.)]\s*\"?([^\"->]+?)\s*(?:->|→)', line)
+      if not m: continue
+      w_=m.group(1).strip().lower()
+      assert w_ in low, f'unguarded target {w_!r} not in passage'
+print('full exam: all four sections, marks 7/7, targets grounded in the passage')"
+
+echo "== full exam refuses to clobber without overwrite (409) =="
+CODE=$(curl -s -b "$JAR" -o /tmp/overwrite.json -w "%{http_code}" -X POST "$BASE/api/exams/$E8/generate" -H "Content-Type: application/json" -d '{"type":"FULL_EXAM"}')
+[ "$CODE" = "409" ] && echo "409 as expected" || { echo "FAIL: expected 409, got $CODE"; cat /tmp/overwrite.json; exit 1; }
 
 echo "== builder page serves interactive shell =="
 HTML=""
