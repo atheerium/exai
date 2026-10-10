@@ -72,9 +72,6 @@ export function validateConfigInputs(params: {
   if (!params.level || !params.grade || !params.unit || !params.topic) {
     throw new Error("Missing required parameters");
   }
-  if (params.level !== "secondary") {
-    throw new Error(`Grade level must be "secondary"; middle school is not yet supported.`);
-  }
   const available = getAvailableLanguages();
   if (params.language && !available.includes(params.language)) {
     throw new Error(`Missing Language support: "${params.language}" guides do not exist yet.`);

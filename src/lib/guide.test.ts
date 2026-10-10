@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateConfigInputs, resolveRules, curriculumCatalog, getThemeFor } from "./guide";
-import { GUIDES, getGuide, getAvailableLanguages, languagesFromGuides, type Guide } from "../data/guides";
+import { GUIDES, GRADES, getGuide, getAvailableLanguages, languagesFromGuides, type Guide } from "../data/guides";
 
 const base = {
   level: "secondary",
@@ -27,7 +27,7 @@ test("validateConfigInputs rejects disallowed lengths", () => {
 });
 
 test("validateConfigInputs rejects grade/level mismatch", () => {
-  assert.throws(() => validateConfigInputs({ ...base, level: "middle" }), /secondary/);
+  assert.throws(() => validateConfigInputs({ ...base, level: "primary" }), /does not belong to level/);
 });
 
 test("validateConfigInputs rejects a stream not valid for the grade", () => {
@@ -241,7 +241,32 @@ test("validateConfigInputs rejects unknown grade", () => {
 });
 
 test("validateConfigInputs rejects unknown level", () => {
-  assert.throws(() => validateConfigInputs({ ...base, level: "primary" }), /secondary/);
+  assert.throws(() => validateConfigInputs({ ...base, level: "primary" }), /does not belong to level/);
+});
+
+test("validateConfigInputs accepts every middle school grade", () => {
+  for (const grade of ["1am", "2am", "3am", "4am"]) {
+    const g = Object.values(GRADES).find((x) => x.grade === grade)!;
+    const unit = g.units[0];
+    assert.equal(
+      validateConfigInputs({ level: "middle", grade, unit: unit.key, topic: unit.topics[0], length: 120 }),
+      true,
+      `${grade} should be accepted`
+    );
+  }
+});
+
+test("validateConfigInputs rejects a middle school grade that claims the secondary level", () => {
+  assert.throws(() => validateConfigInputs({ ...base, grade: "1am" }), /does not belong to level/);
+});
+
+test("validateConfigInputs enforces the shorter middle school length band", () => {
+  const g = Object.values(GRADES).find((x) => x.grade === "1am")!;
+  const unit = g.units[0];
+  assert.throws(
+    () => validateConfigInputs({ level: "middle", grade: "1am", unit: unit.key, topic: unit.topics[0], length: 200 }),
+    /Length/
+  );
 });
 
 test("validateConfigInputs rejects unknown stream for grade", () => {
