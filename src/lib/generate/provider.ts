@@ -87,15 +87,31 @@ export /**
  * These are instructions, not guarantees. `generate/grounding.ts` mechanically
  * enforces the lexically checkable subset afterwards; the requirement that a
  * task is *semantically* answerable rests on the model obeying this text.
+ *
+ * NOTE: the instruction is worthless on its own. The passage must also be in
+ * the payload (see `passageField`) — the clause names it by field so the two
+ * cannot drift apart silently again.
  */
 function groundingRule(ctx: GenContext): string {
   if (!ctx.groundingText) return "";
   return (
-    "The passage is given above. Every task MUST be answerable from that passage alone: " +
+    'Every task MUST be answerable from the "passage" field alone: ' +
     "vocabulary and morphology targets must appear verbatim in it, referent targets (they, it, this, the former) must occur in it, " +
     "and comprehension items must concern facts the passage actually states rather than general knowledge about the topic. " +
     "Do NOT invent words or events that the passage does not contain. "
   );
+}
+
+/**
+ * The passage itself, as a payload field, when one exists.
+ *
+ * Sending the rule without this is the bug this helper exists to prevent: the
+ * model would be told to ground on a passage it cannot see, then its output
+ * would fail `checkTaskLinkage` and the all-or-nothing full-exam run would
+ * return 422 with nothing written.
+ */
+function passageField(ctx: GenContext): Record<string, unknown> {
+  return ctx.groundingText ? { passage: ctx.groundingText } : {};
 }
 
 const PARAGRAPH_NOTE =
@@ -190,6 +206,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
     }));
     const json = await chat(config(), {
       ...basePrompt(ctx),
+      ...passageField(ctx),
       kind: "PART_ONE",
       marksTotal: ctx.guide.marks.partOne,
       request:
@@ -214,6 +231,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
     }));
     const json = await chat(config(), {
       ...basePrompt(ctx),
+      ...passageField(ctx),
       kind: "TEXT_EXPLORATION",
       marksTotal: ctx.guide.marks.textExploration,
       request:
