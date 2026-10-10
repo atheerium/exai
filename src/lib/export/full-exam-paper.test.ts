@@ -13,7 +13,7 @@ import { generateFullExam } from "@/lib/generate/full-exam";
 import { assembleDocument } from "./assemble";
 import { buildPaper } from "./paper";
 import { GRADES, getGuide } from "@/data/guides";
-import type { ExamDto, SectionDto } from "@/types";
+import type { ExamDto, GeneratedTask, SectionDto } from "@/types";
 
 function paramsFor(grade: string, examId: string) {
   const gradeDef = GRADES[grade]!;
@@ -34,6 +34,61 @@ function paramsFor(grade: string, examId: string) {
 
 function section(partial: Partial<SectionDto> & { type: SectionDto["type"]; id: string }): SectionDto {
   return { order: 0, candidates: [], tasks: [], topics: [], ...partial };
+}
+
+/**
+ * Candidates as the DTO carries them: `parseTasks` in `serialize.ts` puts the
+ * raw alternative JSON straight into `TaskDto.candidates`, so they arrive
+ * without id/order. This fixture mirrors that exactly rather than inventing a
+ * tidier shape the real pipeline never produces.
+ */
+type RawTask = NonNullable<ExamDto["sections"][number]["tasks"]>[number];
+
+function taskDto(
+  t: GeneratedTask,
+  id: string,
+  order: number,
+  candidates: GeneratedTask[]
+): RawTask {
+  return {
+    id,
+    order,
+    manualEdited: false,
+    skill: t.skill ?? null,
+    family: t.family ?? null,
+    prompt: t.prompt,
+    instruction: t.instruction ?? null,
+    answer: t.answer ?? null,
+    marks: t.marks,
+    table: t.table ?? null,
+    // Candidate entries arrive as raw provider objects (no id/order), exactly
+    // as parseTasks puts them into the DTO.
+    candidates: candidates as unknown as RawTask[],
+  };
+}
+
+type RawTopic = NonNullable<ExamDto["sections"][number]["topics"]>[number];
+
+function topicDto(
+  kind: RawTopic["kind"],
+  id: string,
+  order: number,
+  t: { title: string; situation: string; instruction: string; keywords?: string; form: string; marks: number },
+  candidates: RawTopic[]
+): RawTopic {
+  return {
+    id,
+    kind,
+    order,
+    manualEdited: false,
+    title: t.title,
+    situation: t.situation,
+    instruction: t.instruction,
+    keywords: t.keywords ?? null,
+    form: t.form,
+    marks: t.marks,
+    candidates,
+  };
 }
 
 /** Build the DTO shape the FULL_EXAM write path produces. */
@@ -61,18 +116,9 @@ async function fullExamDto(grade: string, examId: string): Promise<ExamDto> {
       type,
       order,
       heading,
-      tasks: sets![0].map((t, i) => ({
-        id: `${id}-${i}`,
-        order: i,
-        skill: t.skill ?? null,
-        family: t.family ?? null,
-        prompt: t.prompt,
-        instruction: t.instruction,
-        answer: t.answer ?? null,
-        marks: t.marks,
-        table: t.table ?? null,
-        candidates: sets!.slice(1).map((s) => s[i]).filter(Boolean),
-      })),
+      tasks: sets![0].map((t, i) =>
+        taskDto(t, `${id}-${i}`, i, sets!.slice(1).map((s) => s[i]).filter(Boolean))
+      ),
     });
   sections.push(mkTasks(r.partOne, "s-p1", 2, "PART_ONE", guide.headings?.partOne ?? "A. Reading Comprehension"));
   sections.push(mkTasks(r.textExploration, "s-p2", 3, "TEXT_EXPLORATION", guide.headings?.textExploration ?? "B. Text Exploration"));
@@ -85,35 +131,9 @@ async function fullExamDto(grade: string, examId: string): Promise<ExamDto> {
       order: 4,
       heading: guide.headings?.writing ?? "C. Written expression",
       topics: [
-        {
-          id: "t-g",
-          kind: "GUIDED",
-          order: 0,
-          title: w.guided.title,
-          situation: w.guided.situation,
-          instruction: w.guided.instruction,
-          keywords: w.guided.keywords ?? null,
-          form: w.guided.form,
-          marks: w.guided.marks,
-          answer: null,
-          candidates: r.writing!.slice(1).map((c) => c.guided),
-        },
+        topicDto("GUIDED", "t-g", 0, w.guided, r.writing!.slice(1).map((c) => c.guided) as RawTopic[]),
         ...(w.free
-          ? [
-              {
-                id: "t-f",
-                kind: "FREE" as const,
-                order: 1,
-                title: w.free.title,
-                situation: w.free.situation,
-                instruction: w.free.instruction,
-                keywords: null,
-                form: w.free.form,
-                marks: w.free.marks,
-                answer: null,
-                candidates: r.writing!.slice(1).map((c) => c.free).filter(Boolean),
-              },
-            ]
+          ? [topicDto("FREE", "t-f", 1, w.free, r.writing!.slice(1).map((c) => c.free).filter(Boolean) as RawTopic[])]
           : []),
       ],
     })
