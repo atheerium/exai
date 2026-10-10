@@ -137,6 +137,47 @@ test("every guide is reachable through paramsFor (no dead grade)", () => {
   assert.ok(Object.keys(GUIDES).length >= 7);
 });
 
+test("grounded vocabulary answers are never a restatement of the prompt", async () => {
+  // Regression guard: the first grounding implementation emitted
+  // "1. curiosity" as the answer to "give the meaning of curiosity", which
+  // looks answered but teaches nothing.
+  const r = await generateFullExam(BASE);
+  assert.equal(r.ok, true, JSON.stringify(r.issues));
+  const vocab = r.textExploration![0].filter((t) => (t.skill ?? "").toUpperCase() === "VOCABULARY");
+  assert.ok(vocab.length > 0);
+  for (const task of vocab) {
+    const answers = (task.answer ?? "").split("\n");
+    assert.ok(answers.length > 0, "vocabulary task has an answer key");
+    for (const line of answers) {
+      const m = line.match(/^\s*\d+\.\s*(\S+)\s*=\s*(.+)$/);
+      assert.ok(m, `answer line should be "word = meaning", got: ${line}`);
+      const [, word, meaning] = m;
+      assert.notEqual(
+        meaning.trim().toLowerCase(),
+        word.toLowerCase(),
+        "answer must not merely restate the target word"
+      );
+    }
+  }
+});
+
+test("grounded morphology rows all come from the passage", async () => {
+  const r = await generateFullExam(BASE);
+  assert.equal(r.ok, true, JSON.stringify(r.issues));
+  const passage = r.text!.text;
+  const morph = r.textExploration![0].filter((t) => (t.skill ?? "").toUpperCase() === "MORPHOLOGY");
+  assert.ok(morph.length > 0);
+  for (const task of morph) {
+    for (const target of extractTaskTargets(task)) {
+      assert.ok(occursInPassage(passage, target), `${target} missing from passage`);
+    }
+    // Every row has a real family, not blank derived forms.
+    for (const line of (task.answer ?? "").split("\n")) {
+      assert.doesNotMatch(line, /noun\s*,\s*verb\s*$/, "morphology answer has empty forms");
+    }
+  }
+});
+
 test("quota cost equals the number of provider calls", () => {
   assert.equal(FULL_EXAM_QUOTA_COST, 4);
 });

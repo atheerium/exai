@@ -9,7 +9,7 @@ import { getTheme, type Theme } from "@/data/themes";
 import type { Guide, PartOneRule, SkillRule } from "@/data/guides";
 import { countWords, Seeded } from "./rng";
 import { pickReferents } from "./referents";
-import { passageVocabulary } from "./grounding";
+import { occursInPassage, passageVocabulary } from "./grounding";
 import type { GeneratedSource, GeneratedTask, GeneratedText, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 
 export interface MockContext {
@@ -479,40 +479,62 @@ export function generateTextExploration(ctx: MockContext, variant = 0): Generate
  * this as a validation issue (see `generateTextExplorationGroundingIssues`) so a
  * teacher is told the exam is theme-level rather than passage-grounded.
  */
-function deriveVocabTargets(passage: string | null | undefined, needed: number, rng: Seeded): string[] | null {
-  if (!passage) return null;
-  const words = passageVocabulary(passage, 60).map((v) => v.word);
-  if (words.length < needed) return null;
-  return rng.shuffle(words).slice(0, needed);
+/**
+ * Vocabulary targets for a grounded task.
+ *
+ * Every target occurs in the passage, so the item is answerable from the page.
+ * Corpus words that appear in the passage are preferred because the corpus also
+ * supplies their definition, giving a real answer key. The passage pool is much
+ * larger than the corpus (61 vs 7 in practice), so when the corpus cannot fill
+ * the item the remainder is topped up with other passage content words — and
+ * those are marked in the answer key as teacher-supplied rather than given a
+ * fake definition. An answer key that restates the question teaches nothing; an
+ * acknowledged gap is actionable.
+ */
+function deriveGroundedVocab(
+  passage: string,
+  needed: number,
+  rng: Seeded,
+  theme: ReturnType<typeof getTheme>
+): { word: string; definition: string | null }[] {
+  const known = rng.shuffle(theme.vocab.filter((v) => occursInPassage(passage, v.word)));
+  const out: { word: string; definition: string | null }[] = known.map((v) => ({
+    word: v.word,
+    definition: wordDef(theme, v.word),
+  }));
+
+  if (out.length < needed) {
+    const taken = new Set(out.map((o) => o.word));
+    const extras = passageVocabulary(passage, 60)
+      .map((v) => v.word)
+      .filter((w) => !taken.has(w));
+    for (const w of rng.shuffle(extras)) {
+      if (out.length >= needed) break;
+      out.push({ word: w, definition: null });
+    }
+  }
+  return out.slice(0, Math.max(needed, out.length));
 }
 
 /**
- * Word-family derivation for a grounded morphology row. Prefers the curated
- * corpus family when the word is known (accurate answer key); otherwise
- * returns empty strings so the row is honest about having no answer rather than
- * inventing one.
+ * Word-family targets for a grounded morphology row. Only corpus words carry a
+ * family, so this cannot be topped up from the passage; the row count follows
+ * what the passage actually supports. `itemCount` is unprescribed for this
+ * skill in every guide (verified), so a shorter row is still valid.
+ *
+ * Returns null only when the passage shares no corpus word at all, which the
+ * caller reports as a clear failure: a corpus-only task could not pass
+ * `checkTaskLinkage`, so falling back would just become an opaque 422 later.
  */
-function groundedMorphFamily(words: string[], base: string, theme: ReturnType<typeof getTheme>) {
-  const key = base.toLocaleLowerCase().replace(/s$/, "");
-  const known = theme.vocab.find((v) => v.word.replace(/s$/, "") === key);
-  if (known) return { noun: known.family.noun ?? "", verb: known.family.verb ?? "", adjective: known.family.adjective ?? "" };
-  return { noun: "", verb: "", adjective: "" };
-}
-
-/**
- * Non-empty when the passage could not supply all task targets, so the exam is
- * answerable from the theme but not strictly from the printed text. Reported to
- * the caller for inclusion in the 422 body / diagnostics.
- */
-export function generateTextExplorationGroundingIssues(
-  ctx: MockContext,
-  fallbackUsed: boolean
-): string[] {
-  if (!ctx.groundingText) return [];
-  if (!fallbackUsed) return [];
-  return [
-    "The passage is too short to supply every vocabulary target, so some items fall back to unit-level vocabulary and are not strictly answerable from the text.",
-  ];
+function deriveGroundedMorphology(
+  passage: string,
+  wanted: number,
+  rng: Seeded,
+  theme: ReturnType<typeof getTheme>
+) {
+  const known = theme.vocab.filter((v) => occursInPassage(passage, v.word));
+  if (known.length === 0) return null;
+  return rng.shuffle(known).slice(0, Math.min(wanted, known.length));
 }
 
 function generateTextExplorationPrimary(
@@ -522,26 +544,32 @@ function generateTextExplorationPrimary(
   groundingText?: string | null
 ): GeneratedTask {
   if (skillRule.skill === "VOCABULARY") {
-    // Grounded path: targets are words the student can actually find in the
-    // passage, so "find the meaning" is answerable from the page.
-    const grounded = deriveVocabTargets(groundingText, 4, rng);
-    if (grounded) {
+    // Grounded path: targets are unit words the student can actually find in the
+    // passage, so the definition is answerable from the page and the answer key
+    // is a real definition rather than a restatement of the prompt.
+    if (groundingText) {
+      const words = deriveGroundedVocab(groundingText, 4, rng, theme);
+      const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
       const task: GeneratedTask = {
         skill: "VOCABULARY",
-        prompt: grounded
-          .map((w, i) => `${i + 1}. ${w.charAt(0).toUpperCase() + w.slice(1)} → ..........`)
+        prompt: words
+          .map((w, i) => `${i + 1}. ${cap(w.word.replace(/s$/, ""))} → ..........`)
           .join("\n"),
-        instruction: `Find the meaning of each of the following words as they are used in the text. ${grounded
-          .map((w, i) => `${i + 1}) ${w}:`)
+        instruction: `Find the meaning of each of the following words as they are used in the text. ${words
+          .map((w, i) => `${i + 1}) ${w.word}:`)
           .join("  ")}`,
-        answer: grounded.map((w, i) => `${i + 1}. ${w}`).join("\n"),
+        // A known corpus word gets its real definition. A passage-only word has
+        // none to give, so say so instead of inventing one.
+        answer: words
+          .map((w, i) => `${i + 1}. ${w.word} = ${w.definition ?? "(supply the meaning as used in the text)"}`)
+          .join("\n"),
         marks: skillRule.marks,
       };
       if (skillRule.tableRequired) {
         task.table = {
           headers: ["Word (in the text)", "Meaning"],
           // The meaning IS the answer — never prefill it.
-          rows: grounded.map((w) => [w, ""]),
+          rows: words.map((w) => [w.word, ""]),
         };
       }
       return task;
@@ -571,22 +599,29 @@ function generateTextExplorationPrimary(
     }
     return task;
   } else if (skillRule.skill === "MORPHOLOGY") {
-    const groundedMorph = deriveVocabTargets(groundingText, 3, rng);
-    if (groundedMorph) {
-      const rows = groundedMorph.map((base) => ({
-        base,
-        // Derived forms are the answers, so the corpus family lookup is only
-        // meaningful for words it knows; otherwise the student supplies it.
-        family: groundedMorphFamily(groundedMorph, base, theme),
+    // Same intersection as VOCABULARY: the base word must be findable in the
+    // passage, and the corpus must supply its word family so the answer key is
+    // real instead of three blank columns.
+    if (groundingText) {
+      const words = deriveGroundedMorphology(groundingText, 3, rng, theme);
+      if (!words) {
+        throw new Error(
+          "Cannot ground the morphology task: the passage shares no word with the unit vocabulary, " +
+            "so no word family can be drawn from it. Generate a different passage, or generate this section without passage grounding."
+        );
+      }
+      const rows = words.map((w) => ({
+        base: w.word.replace(/s$/, ""),
+        noun: w.family.noun ?? "",
+        verb: w.family.verb ?? "",
+        adj: w.family.adjective ?? "",
       }));
       return {
         skill: "MORPHOLOGY",
         family: "WORD_FAMILY",
         prompt: rows.map((r, i) => `${i + 1}. "${r.base}" → ..........`).join("\n"),
         instruction: skillRule.instruction,
-        answer: rows
-          .map((r, i) => `${i + 1}. ${r.base}: noun ${r.family.noun}, verb ${r.family.verb}, adjective ${r.family.adjective}`)
-          .join("\n"),
+        answer: rows.map((r, i) => `${i + 1}. ${r.base}: noun ${r.noun}, verb ${r.verb}, adjective ${r.adj}`).join("\n"),
         marks: skillRule.marks,
         table: {
           headers: ["Word", "Noun", "Verb", "Adjective"],
