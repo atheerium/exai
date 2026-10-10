@@ -16,6 +16,7 @@ import { WritingStage } from "./writing-stage";
 import { PreviewStage } from "./preview-stage";
 import { VersionsButton, VersionsModal } from "./versions-modal";
 import { apiFetch } from "@/lib/api-client";
+import { mergePatch } from "@/lib/merge-patch";
 
 export type SectionId = "params" | "text" | "partOne" | "partTwo" | "writing" | "preview";
 
@@ -37,6 +38,8 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
   const [activeSection, setActiveSection] = React.useState<SectionId>("params");
   const [paramsCollapsed, setParamsCollapsed] = React.useState(!!exam.config);
   const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPatch = React.useRef<Record<string, unknown> | null>(null);
+  const mounted = React.useRef(true);
 
   const sectionRefs = React.useRef<Record<SectionId, HTMLElement | null>>({
     params: null,
@@ -100,6 +103,20 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     return () => observer.disconnect();
   }, []);
 
+  // Flush any debounced edit when the teacher leaves the builder, otherwise
+  // the last <700ms> of work is silently dropped.
+  React.useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      const patch = pendingPatch.current;
+      pendingPatch.current = null;
+      if (patch) void savePatch(patch, true);
+    };
+  }, []);
+
   function scrollToSection(id: SectionId) {
     const el = sectionRefs.current[id];
     if (el) {
@@ -108,7 +125,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
   }
 
   async function savePatch(patch: Record<string, unknown>, silent = false) {
-    setSaveState("saving");
+    if (mounted.current) setSaveState("saving");
     try {
       const res = await apiFetch(`/api/exams/${exam.id}`, {
         method: "PATCH",
@@ -117,23 +134,34 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      if (data?.id) setExam(data);
-      setSaveState("saved");
+      if (data?.id && mounted.current) setExam(data);
+      if (mounted.current) setSaveState("saved");
       if (!silent) toast("Saved", "success");
     } catch (e: unknown) {
-      setSaveState("idle");
+      if (mounted.current) setSaveState("idle");
       toast(e instanceof Error ? e.message : "Could not save.", "error");
     }
   }
 
   function scheduleSave(patch: Record<string, unknown>) {
-    setSaveState("saving");
+    if (mounted.current) setSaveState("saving");
+    pendingPatch.current = mergePatch(pendingPatch.current, patch);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => savePatch(patch, true), 700);
+    saveTimer.current = setTimeout(flushSave, 700);
+  }
+
+  function flushSave() {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    const patch = pendingPatch.current;
+    pendingPatch.current = null;
+    if (patch) void savePatch(patch, true);
   }
 
   async function generate(type: "TEXT" | "PART_ONE" | "TEXT_EXPLORATION" | "WRITING" | "TASK_ALT" | "TOPIC_ALT", extra?: { taskId?: string; topicId?: string }) {
     if (generating) return;
+    // Land pending edits before regenerating, so generation reads fresh content.
+    flushSave();
     setGenerating(type);
     try {
       const res = await apiFetch(`/api/exams/${exam.id}/generate`, {
@@ -147,7 +175,8 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         return;
       }
       setExam(data);
-      if (type === "TEXT" && textSec?.text) {
+      const freshText = (data as ExamDto | undefined)?.sections?.find((s) => s.type === "TEXT")?.text;
+      if (type === "TEXT" && freshText) {
         toast("New versions added to the alternatives box", "success");
       } else {
         toast("Generated", "success");
@@ -255,6 +284,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     teacherKeywords?: string | null;
     difficulty?: string | null;
   }) {
+    flushSave();
     try {
       const res = await apiFetch(`/api/exams/${exam.id}`, {
         method: "PATCH",
@@ -580,6 +610,8 @@ function EmptySection({
     </div>
   );
 }
+
+
 
 // Apply a section patch to local DTO state (mirrors the API patch contract).
 function applySectionPatch(exam: ExamDto, patch: Record<string, unknown>): ExamDto {

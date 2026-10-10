@@ -5,6 +5,7 @@ import { Download, FileText, FileDown, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 import { assembleDocument, type ExportDocument } from "@/lib/export/assemble";
+import { buildPaper } from "@/lib/export/paper";
 import type { ExamDto } from "@/types";
 
 export function PreviewStage({ exam }: { exam: ExamDto }) {
@@ -42,128 +43,174 @@ export function PreviewStage({ exam }: { exam: ExamDto }) {
     </div>
   );
 }
-
 function ExamDocument({ doc }: { doc: ExportDocument }) {
-  const isBac = doc.structure === "bac";
+  const paper = React.useMemo(() => buildPaper(doc), [doc]);
+
   return (
     <div className="print-block mx-auto max-w-3xl rounded-xl border bg-card p-8 shadow-sm sm:p-12">
-      <header className="border-b pb-4 text-center">
-        <h1 className="text-lg font-bold tracking-tight">{doc.title}</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">{doc.subtitle}</p>
-        <p className="mt-2 text-xs text-muted-foreground">{doc.meta.join("   ·   ")}</p>
-      </header>
+      {paper.blocks.map((block, bi) => {
+        switch (block.kind) {
+          case "masthead":
+            return (
+              <header key={bi} className="border-b pb-4 text-center">
+                <h1 className="text-lg font-bold tracking-tight">{block.title}</h1>
+                <p className="mt-0.5 text-sm text-muted-foreground">{block.subtitle}</p>
+                {block.meta.length > 0 && (
+                  <p className="mt-2 text-xs text-muted-foreground">{block.meta.join("   ·   ")}</p>
+                )}
+              </header>
+            );
 
-      <div className="mt-6 space-y-8">
-        {doc.sections.map((section) => {
-          // Show section if it has content OR if it has a heading and marksLabel (for BAC umbrella sections)
-          const hasContent = section.text?.body || section.tasks.length > 0 || section.topics.length > 0;
-          const isHeadingOnly = !!section.heading && !!section.marksLabel;
-          if (!hasContent && !isHeadingOnly) return null;
-          return (
-            <section key={section.heading}>
-              <div className="flex items-baseline justify-between">
-                <h2 className="font-bold text-foreground">{section.heading}</h2>
-                <span className="text-sm font-semibold text-emerald-700">{section.marksLabel}</span>
+          case "sectionHead":
+            return (
+              <div key={bi} className="mt-8 flex items-baseline justify-between gap-4 first:mt-0">
+                <h2 className="font-bold text-foreground">{block.heading}</h2>
+                <span className="shrink-0 text-sm font-bold text-foreground">{block.marks}</span>
               </div>
+            );
 
-              {section.text?.title && <h3 className="mt-3 font-semibold">{section.text.title}</h3>}
-              {section.text?.body && (
-                <p className="mt-2 text-[15px] leading-relaxed text-foreground/90">{section.text.body}</p>
-              )}
-              {section.sourceNote && (
-                <p className={`mt-2 text-right text-xs text-muted-foreground${isBac ? " italic" : ""}`}>{section.sourceNote}</p>
-              )}
+          case "instruction":
+            return (
+              <p key={bi} className="mt-2 text-[15px] font-bold italic">
+                {block.text}
+              </p>
+            );
 
-              {section.intro && <p className="mt-3 text-sm font-semibold">{section.intro}</p>}
+          case "passage":
+            return (
+              <div key={bi} className="mt-4">
+                {block.title && <h3 className="mb-2 text-center text-base font-semibold">{block.title}</h3>}
+                {block.paragraphs.map((paragraph, pi) => (
+                  <p key={pi} className="mt-2 text-justify text-[15px] leading-relaxed">
+                    <Underlined text={paragraph} emphasis={block.emphasis} />
+                  </p>
+                ))}
+              </div>
+            );
 
-              {section.tasks.length > 0 && (
-                <div className="mt-5 space-y-5">
-                  {section.tasks.map((task, i) => (
-                    <div key={i}>
-                      <p className="text-sm font-semibold">
-                        {isBac ? (
-                          `${i + 1}- ${task.instruction}`.trim()
-                        ) : (
-                          <>
-                            Task {i + 1} <span className="font-normal text-muted-foreground">({task.marks} pts)</span>
-                          </>
-                        )}
-                      </p>
-                      {!isBac && task.instruction && <p className="mt-0.5 text-sm text-muted-foreground">{task.instruction}</p>}
-                      <p className="mt-1.5 whitespace-pre-line text-[15px] leading-relaxed">{task.prompt}</p>
-                      {task.table && task.table.headers.length > 0 && (
-                        <div className="mt-3 overflow-x-auto">
-                          <table className="w-full border-collapse border text-sm">
-                            <thead>
-                              <tr className="bg-muted">
-                                {task.table.headers.map((h, hi) => (
-                                  <th key={hi} className="border px-3 py-2 text-left font-semibold">
-                                    {h}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {task.table.rows.map((row, ri) => (
-                                <tr key={ri} className={ri % 2 === 0 ? "bg-card" : "bg-muted/30"}>
-                                  {row.map((cell, ci) => (
-                                    <td key={ci} className="border px-3 py-2">
-                                      {cell}
-                                    </td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+          case "sourceNote":
+            return (
+              <p key={bi} className="mt-3 text-right text-sm font-bold italic">
+                {block.text}
+              </p>
+            );
+
+          case "task":
+            return (
+              <div key={bi} className="mt-5">
+                <p className="text-[15px] font-bold italic">
+                  <span className="not-italic">{block.task.number}.</span> {block.task.instruction}
+                </p>
+                {block.task.lead.map((line, li) => (
+                  <p key={li} className="mt-1 pl-8 text-[15px] leading-relaxed">
+                    {line}
+                  </p>
+                ))}
+                {block.task.items.map((item) => (
+                  <p key={item.label} className="mt-1 flex gap-2 pl-8 text-[15px] leading-relaxed">
+                    <span className="w-4 shrink-0 font-semibold">{item.label}</span>
+                    <span className="flex-1">
+                      {item.text}
+                      {item.gap && (
+                        <span className="whitespace-nowrap">{" . . . . . . . . . . . . . . . . . ."}</span>
                       )}
-                    </div>
-                  ))}
-                </div>
-              )}
+                    </span>
+                  </p>
+                ))}
+              </div>
+            );
 
-              {section.topics.length > 0 && (
-                <div className="mt-5 space-y-5">
-                  {section.topics.map((topic, i) => (
-                    <div key={i}>
-                      <p className="text-sm font-semibold">
-                        {isBac ? `Topic ${["One", "Two", "Three", "Four", "Five"][i] ?? i + 1}:` : (
-                          <>
-                            {topic.title} <span className="font-normal text-muted-foreground">({topic.marks} pts)</span>
-                          </>
-                        )}
-                      </p>
-                      {topic.situation && <p className="mt-1 text-[15px] leading-relaxed">{topic.situation}</p>}
-                      {topic.instruction && <p className="mt-1 text-[15px] leading-relaxed">{topic.instruction}</p>}
-                      {topic.keywords &&
-                        (isBac ? (
-                          <>
-                            <p className="mt-1 text-sm font-semibold">Make the best use of the following notes:</p>
-                            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[15px] leading-relaxed">
-                              {topic.keywords
-                                .split(/[,/;\n]+/)
-                                .map((k) => k.trim().replace(/^[-–•\s]+/, ""))
-                                .filter(Boolean)
-                                .map((note, ni) => (
-                                  <li key={ni}>{note}</li>
-                                ))}
-                            </ul>
-                          </>
-                        ) : (
-                          <p className="mt-1 text-sm font-semibold">Key words: {topic.keywords}</p>
+          case "table":
+            return (
+              <div key={bi} className="mt-3 overflow-x-auto">
+                <table className="w-full border-collapse border border-foreground text-sm">
+                  <thead>
+                    <tr>
+                      {block.table.headers.map((h, hi) => (
+                        <th key={hi} className="border border-foreground px-3 py-2 text-left font-semibold text-foreground">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {block.table.rows.map((row, ri) => (
+                      <tr key={ri}>
+                        {row.map((cell, ci) => (
+                          <td key={ci} className="border border-foreground px-3 py-2 align-top">
+                            {cell || "\u00a0"}
+                          </td>
                         ))}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-        )}
-      </div>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
 
-      <footer className="mt-10 border-t pt-4 text-center text-xs text-muted-foreground">
-        {doc.generatedBy}
-      </footer>
+          case "topic":
+            return (
+              <div key={bi} className="mt-6">
+                <p className="text-[15px] font-bold">{block.topic.label}</p>
+                {block.topic.lines.map((line, li) => (
+                  <p key={li} className="mt-1 pl-8 text-[15px] leading-relaxed">
+                    {line}
+                  </p>
+                ))}
+                {block.topic.noteHeading && (
+                  <>
+                    <p className="mt-2 pl-8 text-[15px] font-semibold">{block.topic.noteHeading}</p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-14 text-[15px] leading-relaxed">
+                      {block.topic.notes.map((note, ni) => (
+                        <li key={ni}>{note}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            );
+
+          case "colophon":
+            return (
+              <footer key={bi} className="mt-10 border-t pt-4 text-center text-xs text-muted-foreground">
+                {block.text}
+              </footer>
+            );
+        }
+      })}
     </div>
+  );
+}
+
+function Underlined({ text, emphasis }: { text: string; emphasis: string[] }) {
+  const targets = emphasis.filter((w) => w.length > 1);
+  if (targets.length === 0) return <>{text}</>;
+
+  const pattern = new RegExp(
+    "\\b(" + targets.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")\\b",
+    "gi"
+  );
+  const parts: { text: string; mark: boolean }[] = [];
+  let cursor = 0;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(text)) !== null) {
+    if (m.index > cursor) parts.push({ text: text.slice(cursor, m.index), mark: false });
+    parts.push({ text: m[0], mark: true });
+    cursor = m.index + m[0].length;
+  }
+  if (cursor < text.length) parts.push({ text: text.slice(cursor), mark: false });
+
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.mark ? (
+          <u key={i} className="font-bold decoration-1 underline-offset-2">
+            {part.text}
+          </u>
+        ) : (
+          <span key={i}>{part.text}</span>
+        )
+      )}
+    </>
   );
 }

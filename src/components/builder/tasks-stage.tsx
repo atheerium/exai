@@ -216,11 +216,11 @@ export function TasksStage({
 
                 {task.table ? (
                   <div className="mt-2 overflow-x-auto">
-                    <table className="w-full border-collapse text-sm">
+                    <table className="w-full border-collapse border border-foreground text-sm">
                       <thead>
                         <tr>
                           {task.table.headers.map((h, hi) => (
-                            <th key={hi} className="border border-border bg-muted px-3 py-1.5 text-left text-xs font-semibold text-foreground">
+                            <th key={hi} className="border border-foreground px-3 py-1.5 text-left text-xs font-semibold text-foreground">
                               {h}
                             </th>
                           ))}
@@ -230,8 +230,13 @@ export function TasksStage({
                         {task.table.rows.map((row, ri) => (
                           <tr key={ri}>
                             {row.map((cell, ci) => (
-                              <td key={ci} className="border border-border px-3 py-1.5 text-sm">
-                                {ci === 0 ? <span className="font-medium">{cell}</span> : cell === "—" ? <span className="text-muted-foreground italic">—</span> : cell}
+                              <td key={ci} className="border border-foreground px-3 py-1.5 align-top text-sm">
+                                {ci === 0 ? (
+                                  <span className="font-medium">{cell}</span>
+                                ) : (
+                                  // Blank answer cells stay visibly empty for the student to write in.
+                                  cell || "\u00a0"
+                                )}
                               </td>
                             ))}
                           </tr>
