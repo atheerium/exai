@@ -20,7 +20,7 @@ Next.js 15 App Router + React 19 + TypeScript (strict) + Prisma/PostgreSQL (Supa
 | Command | Exit | Notes |
 |---|---|---|
 | `npm test` | 0 | **239 pass.** `node --import tsx --test` on **19 hardcoded paths** (`package.json:12`). No glob, no runner config, no DB or network needed. |
-| `npm run typecheck` | 0 | `rm -f tsconfig.tsbuildinfo && tsc --noEmit`. Prefer over bare `tsc`. |
+| `npm run typecheck` | 0 | `rm -f tsconfig.tsbuildinfo && tsc --noEmit`. **Must not run while `next build` runs** — see below. |
 | `npm run build` | 0 | `next build`. Only place types are enforced in CI-like flow. |
 | `npm run lint` | **1** | **Trap — do not use as a gate.** See below. |
 | `npm run vercel-build` | — | `prisma generate && next build`. Vercel entrypoint. |
@@ -60,6 +60,7 @@ Three pdfkit traps, all documented in `EXAM.md` section 3: `underline` on a cont
 8. **Marks are per-guide and computed, not the hardcoded 7/8/5** the old docs imply. `validateCandidate` falls back to `7` (Part One) / `8` (Text exploration) only when `expectedMarks` is omitted (`generate/index.ts:149`); real totals come from the resolved guide (`guides.ts:1213` BEM = 7/7/6, `guides.ts:1256` computes BAC totals).
 9. **`main` is the working branch and is committed cleanly, but local `docs/` churn is common.** As of 2026-10-05 `main` is in sync with `origin/main` and the tree is clean after the commit-hygiene pass. It does *not* stay that way: `docs/` is repeatedly reshuffled (files moved to `docs/archived/`) and review PDFs/screenshots land there. **Run `git status` before blaming a change for being pre-existing.** Reference exam PDFs under `docs/dz-exam-templates/` and `docs/screenshot-*.png` are gitignored on purpose — they are copyrighted or throwaway, and the templates dir has moved between the root and `docs/` before, so keep both the root-anchored and `docs/` ignore rules.
 10. `iconv-lite` is an **unused dependency** — no `src/` import. Don't assume it encodes anything in the export path.
+11. **`TS6053: File '.next/types/…' not found` means you ran typecheck *during* a build, not a real type error.** `tsconfig.json` includes `.next/types/**/*.ts` (Next's generated route types) and `next build` deletes and rewrites that directory mid-run, so a concurrent `tsc` sees files vanishing — reproducibly ~33 errors. `npm run typecheck` clears the stale `tsconfig.tsbuildinfo` first, which hides the *cached* variant, but the race itself only goes away by not overlapping the two commands. Sequentially it is always clean, and the exit code is still 0, so do not read these as genuine type failures — and do not "fix" them by deleting `.next/types/**` from `include`, which would break route-type validation.
 
 ## Database
 
