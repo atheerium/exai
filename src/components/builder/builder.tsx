@@ -45,8 +45,6 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
   const { t } = useI18n();
   const [exam, setExam] = React.useState<ExamDto>(initialExam);
   const [generating, setGenerating] = React.useState<string | null>(null);
-  /** Which section a full run is currently building, for progress display. */
-  const [fullExamPhase, setFullExamPhase] = React.useState<string | null>(null);
   /**
    * A destructive action awaiting confirmation. `confirm` is the primary
    * choice; `alternative`, when present, is a second real option rather than a
@@ -209,7 +207,6 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     if (generating) return;
     flushSave();
     setGenerating("FULL_EXAM");
-    setFullExamPhase("text");
     try {
       const res = await apiFetch(`/api/exams/${exam.id}/generate`, {
         method: "POST",
@@ -226,12 +223,10 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         }
         throw new Error(data.error || "Could not generate the exam.");
       }
-      setFullExamPhase(null);
       setExam(data);
       setActiveSection("preview");
       toast("Full exam generated. Review it, then edit anything you want to change.", "success");
     } catch (e: unknown) {
-      setFullExamPhase(null);
       toast(e instanceof Error ? e.message : "Could not generate the exam.", "error");
     } finally {
       if (mounted.current) setGenerating(null);
@@ -445,7 +440,6 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
           <FullExamButton
             enabled={hasConfig}
             busy={generating === "FULL_EXAM"}
-            phase={fullExamPhase}
             disabled={!!generating}
             onRun={() => generateFullExam(false)}
             confirm={

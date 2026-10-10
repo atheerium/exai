@@ -52,6 +52,12 @@ One test file: `node --import tsx --test src/lib/guide.test.ts` (`npm test` runs
 
 **`GenContext.groundingText` is the switch.** Set → mock draws vocab/morphology/referent material from the passage and `validateCandidate` runs the linkage checks. Absent → per-section generation behaves exactly as before (theme corpus, no linkage check). Adding a new question family means deciding which of those two it belongs to.
 
+**Grounding is partial, per family.** VOCABULARY, MORPHOLOGY and COHESIVE_MARKERS are passage-grounded; QUESTIONS, TRUE_FALSE, PARAGRAPH_ID, PHONOLOGY, GRAMMAR and DISCOURSE are still unit-corpus derived and unverified. `EXAM.md` §9 carries the full table. Do not describe the exam as fully grounded.
+
+**LLM providers must receive the passage.** `groundingRule()` and `passageField()` in `provider.ts` are a pair: the instruction names the `"passage"` payload field, so removing the field silently returns the model to theme-level generation that `checkTaskLinkage` then rejects (422, nothing written). `provider-grounding.test.ts` asserts both at the transport boundary — do not delete it as "just transport tests".
+
+**Only the primary set is grounded.** Alternatives (`variant >= 1`) and `TASK_ALT` are generated without `groundingText`; the builder re-checks linkage when an alternative is applied rather than assuming it fits.
+
 Three pdfkit traps, all documented in `EXAM.md` section 3: `underline` on a continued run underlines the **whole line width** (so the passage is laid out word by word); `underline` + `lineBreak:false` with no `width` throws on a NaN coordinate; and Arabic must be shaped but never reversed.
 
 ## Landmines

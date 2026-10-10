@@ -11,16 +11,16 @@ import type { PendingConfirmKind } from "./builder";
  * The full-draft entry point: one button that builds passage, Part One, Text
  * Exploration and Writing in a single server round trip.
  *
- * Progress is honest about what it knows. The API does not stream per-section
- * events, so the client cannot say "Part One done" truthfully — it only knows a
- * run is in flight. So it shows the phases as a plan and marks the current one
- * active rather than asserting completion that never arrived. A bar that reaches
- * 100% and then fails is worse than an honest spinner.
+ * Progress is deliberately just a spinner. An earlier version showed the four
+ * phases with the current one marked active, but the API streams no per-section
+ * events, so the phase never advanced and the display was machinery around a
+ * constant — it implied progress reporting that did not exist. If per-section
+ * progress is ever wanted, the server has to emit it; faking it client-side is
+ * worse than admitting the wait.
  */
 export function FullExamButton({
   enabled,
   busy,
-  phase,
   disabled,
   onRun,
   confirm,
@@ -28,8 +28,6 @@ export function FullExamButton({
 }: {
   enabled: boolean;
   busy: boolean;
-  /** Current phase label, or null when idle. */
-  phase: string | null;
   disabled: boolean;
   onRun: () => void;
   confirm: { kind: PendingConfirmKind; hasAlternative: boolean } | null;
@@ -39,31 +37,12 @@ export function FullExamButton({
 
   if (!enabled) return null;
 
-  const phases = ["text", "partOne", "partTwo", "writing"];
-  const phaseIndex = phase ? phases.indexOf(phase) : -1;
-
   return (
     <>
-      <div className="flex flex-col items-end gap-1.5">
-        <Button type="button" onClick={onRun} disabled={disabled || busy}>
-          {busy ? <Loader2 className="animate-spin" /> : <Sparkles />}
-          {busy ? t("builder.fullExamRunning") : t("builder.fullExam")}
-        </Button>
-        {busy && (
-          <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
-            {phases.map((p, i) => {
-              const state =
-                phaseIndex < 0 ? "pending" : i < phaseIndex ? "done" : i === phaseIndex ? "active" : "pending";
-              return (
-                <li key={p} className={state === "active" ? "font-bold text-foreground" : undefined}>
-                  {state === "done" ? "✓ " : state === "active" ? "• " : ""}
-                  {t(`builder.fullExamPhase.${p}` as I18nKey)}
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </div>
+      <Button type="button" onClick={onRun} disabled={disabled || busy}>
+        {busy ? <Loader2 className="animate-spin" /> : <Sparkles />}
+        {busy ? t("builder.fullExamRunning") : t("builder.fullExam")}
+      </Button>
 
       {confirm && <ConfirmDialog kind={confirm.kind} hasAlternative={confirm.hasAlternative} onResolve={onResolve} />}
     </>

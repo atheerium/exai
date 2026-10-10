@@ -76,8 +76,11 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function collect(result: FullExamResult): FullExamResult {
-  return result;
+/** Narrowing helper: `unwrap` only returns null after pushing an issue. */
+function unwrap<T>(res: PromiseSettledResult<T>, section: FullExamSection, issues: FullExamResult["issues"]): T | null {
+  if (res.status === "fulfilled") return res.value;
+  issues.push({ section, messages: [`Could not generate this section: ${msg(res.reason)}`] });
+  return null;
 }
 
 /**
@@ -110,7 +113,7 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
   try {
     textCandidates = await withRetry(() => generateTextCandidates(baseCtx));
   } catch (e) {
-    return collect({ ok: false, issues: [{ section: "TEXT", messages: [`Could not generate the passage: ${msg(e)}`] }] });
+    return { ok: false, issues: [{ section: "TEXT", messages: [`Could not generate the passage: ${msg(e)}`] }] };
   }
 
   const primary = textCandidates[0];
@@ -118,7 +121,7 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
     length: baseCtx.length,
   });
   if (!textCheck.ok) {
-    return collect({ ok: false, issues: [{ section: "TEXT", messages: textCheck.issues }] });
+    return { ok: false, issues: [{ section: "TEXT", messages: textCheck.issues }] };
   }
 
   // The grounding text is the exact passage the teacher will print. Every
@@ -137,9 +140,9 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
     withRetry(() => generateWritingCandidates(ctx)),
   ]);
 
-  const partOneSets = await unwrap(partOneRes, "PART_ONE", issues);
-  const explorationSets = await unwrap(explorationRes, "TEXT_EXPLORATION", issues);
-  const writingCands = await unwrap(writingRes, "WRITING", issues);
+  const partOneSets = unwrap(partOneRes, "PART_ONE", issues);
+  const explorationSets = unwrap(explorationRes, "TEXT_EXPLORATION", issues);
+  const writingCands = unwrap(writingRes, "WRITING", issues);
 
   if (partOneSets) {
     const v = validateCandidate("PART_ONE", partOneSets[0], ctx.guide.marks.partOne, {
@@ -161,9 +164,9 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
   }
 
   // All-or-nothing: any issue at all aborts the whole run.
-  if (issues.length > 0) return collect({ ok: false, issues });
+  if (issues.length > 0) return { ok: false, issues };
 
-  return collect({
+  return {
     ok: true,
     issues: [],
     text: {
@@ -175,17 +178,7 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
     partOne: partOneSets!,
     textExploration: explorationSets!,
     writing: writingCands!.map((c) => ({ ...c, singleTopic: input.singleTopic })),
-  });
-}
-
-async function unwrap<T>(
-  res: PromiseSettledResult<T>,
-  section: FullExamSection,
-  issues: FullExamResult["issues"]
-): Promise<T | null> {
-  if (res.status === "fulfilled") return res.value;
-  issues.push({ section, messages: [`Could not generate this section: ${msg(res.reason)}`] });
-  return null;
+  };
 }
 
 function msg(e: unknown): string {

@@ -58,10 +58,6 @@ export const DICT = {
     "builder.text": "Text",
     "builder.fullExam": "Generate full exam",
     "builder.fullExamRunning": "Generating...",
-    "builder.fullExamPhase.text": "Text",
-    "builder.fullExamPhase.partOne": "Part One",
-    "builder.fullExamPhase.partTwo": "Text exploration",
-    "builder.fullExamPhase.writing": "Writing",
     "builder.fullExamConfirmTitle": "Replace this exam?",
     "builder.fullExamConfirmBody":
       "This exam already has content. Generating a full exam replaces the passage, all tasks and the writing topics with a new draft. Your current version is saved in the version history, so you can go back if you prefer.",
@@ -210,10 +206,6 @@ export const DICT = {
     "builder.text": "Texte",
     "builder.fullExam": "Générer l'examen complet",
     "builder.fullExamRunning": "Génération...",
-    "builder.fullExamPhase.text": "Texte",
-    "builder.fullExamPhase.partOne": "Partie Une",
-    "builder.fullExamPhase.partTwo": "Exploration du texte",
-    "builder.fullExamPhase.writing": "Production écrite",
     "builder.fullExamConfirmTitle": "Remplacer cet examen ?",
     "builder.fullExamConfirmBody":
       "Cet examen contient déjà du contenu. Générer un examen complet remplace le texte, toutes les tâches et les sujets de production par un nouveau brouillon. Votre version actuelle est conservée dans l'historique des versions, vous pourrez y revenir si vous préférez.",

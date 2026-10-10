@@ -551,6 +551,28 @@ statement?" is not decidable mechanically in the mock path; for LLM providers it
 rests on the model obeying the grounding clause. Do not describe the grounding
 module as proving answerability — it proves the referenced material is present.
 
+### Which task families are grounded today
+
+Grounding is per family, not global. Current state:
+
+| Family | Grounded? | How |
+|---|---|---|
+| Part Two VOCABULARY | yes | targets are passage words; corpus-known ones preferred for a real answer key |
+| Part Two MORPHOLOGY | yes | bases are passage words; row count follows the passage |
+| Part One COHESIVE_MARKERS | yes | `pickReferents` runs on the passage |
+| Part One QUESTIONS | **no** | still drawn from the unit corpus |
+| Part One TRUE_FALSE | **no** | still drawn from the unit corpus |
+| Part One PARAGRAPH_ID | **no** | paragraph numbers are not verified against the passage |
+| Part One TITLE_OR_IDEA | **no** | n/a — the title task is open-ended |
+| Part Two PHONOLOGY / GRAMMAR / DISCOURSE | **no** | still drawn from the unit corpus |
+
+The ungrounded rows are the honest residual gap: an item about a statement the
+passage never made is not answerable from the text, and no check catches it.
+Closing them means deriving comprehension items from passage sentences (and
+verifying PARAGRAPH_ID against real paragraph boundaries) — worth doing, but it
+is a separate change with its own validation rules. Do not describe the exam as
+fully passage-grounded until then.
+
 ### Full-exam generation must preserve this
 
 `generateFullExam` (`src/lib/generate/full-exam.ts`) generates the passage
@@ -565,6 +587,19 @@ A passage can be changed after questions exist, which silently unlinks them.
 The builder therefore asks before regenerating a passage or rewriting it once
 questions are present, and a full run over an exam with content requires an
 explicit `overwrite: true`.
+
+Two further paths can unlink an exam and are checked rather than prompted:
+
+- **Alternatives** are generated without the passage (only the primary set is
+  grounded), and switching the passage alternative moves the ground under the
+  questions. Every replacement re-runs `checkTaskLinkage` and warns when the
+  result no longer fits.
+- **Hand-editing the passage** raises a dismissible banner on both question
+  stages. Client-side and ephemeral; it re-arms on the next edit.
+
+Known limit: replacing a passage *alternative* is checked for lexical grounding
+only, so it will not catch a comprehension item whose claim is absent from the
+text (see the table above).
 
 ## 10. Verification
 
