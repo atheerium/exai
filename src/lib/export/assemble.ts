@@ -40,16 +40,40 @@ export interface ExportSection {
   topics: ExportTopic[];
 }
 
+export interface ExportHeader {
+  session: string | null;
+  examTitleAr: string;
+  subjectAr: string;
+  streamAr: string | null;
+  durationAr: string | null;
+  instructionsAr: string[];
+  topicLabelAr: string;
+}
+
 export interface ExportDocument {
   title: string;
   subtitle: string;
   meta: string[];
+  header: ExportHeader | null;
   sections: ExportSection[];
   generatedBy: string;
   structure: "bac" | "bem";
 }
 
 const pad2 = (n: number): string => String(n).padStart(2, "0");
+
+// The official papers print marks as "(15 pts)" flush right on the heading line.
+const pointsLabel = (n: number): string => `(${pad2(n)} pts)`;
+
+// Arabic duration, e.g. "3 hours" -> "03 سا 00 د". The paper prints the hour
+// and minute fields side by side, so they are split rather than concatenated.
+function durationAr(duration: string | undefined): string | null {
+  if (!duration) return null;
+  const hours = /(\d+)\s*hour/.exec(duration);
+  if (!hours) return null;
+  const h = pad2(Number(hours[1]));
+  return `${h} سا 00 د`;
+}
 
 export function assembleDocument(exam: ExamDto): ExportDocument {
   const grade = exam.config?.grade ?? "";
@@ -72,7 +96,23 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
   const marks = (type: "partOne" | "textExploration" | "writing") =>
     guide ? formatMarks(guide.marks[type]) : "";
   const bacMarks = (type: "partOne" | "textExploration" | "writing") =>
-    guide ? `${pad2(guide.marks[type])} pts` : "";
+    guide ? pointsLabel(guide.marks[type]) : "";
+
+  const streamAr = exam.config?.stream
+    ? `الشعبة: ${exam.config.stream}`
+    : null;
+
+  const header: ExportHeader | null = isBac
+    ? {
+        session: null,
+        examTitleAr: "امتحان بكالوريا التعليم الثانوي",
+        subjectAr: "اللغة الإنجليزية",
+        streamAr: streamAr,
+        durationAr: durationAr(guide?.streamInfo?.duration),
+        instructionsAr: ["على المترشح أن يخترأ أحد الموضوعين الآتيين :"],
+        topicLabelAr: "الموضوع الأول",
+      }
+    : null;
 
   const meta = [
     `Level: ${exam.config?.level === "middle" ? "Middle school" : "Secondary school"}`,
@@ -119,30 +159,31 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
       title: exam.title || "English Exam",
       subtitle: exam.config ? `English Examination — ${exam.config.grade.toUpperCase()}` : "English Examination",
       meta,
+      header,
       sections: [
         {
-          heading: guide?.headings?.partOne ?? "Part One: Reading",
-          marksLabel: `${pad2(umbrellaTotal)} pts`,
+          heading: guide?.headings?.partOne ?? "Part One: Reading.",
+        marksLabel: guide ? pointsLabel(umbrellaTotal) : "",
           text,
           sourceNote: sourceNote ?? undefined,
           tasks: [],
           topics: [],
         },
         {
-          heading: "A/ Comprehension",
+          heading: "A/ Comprehension.",
           marksLabel: bacMarks("partOne"),
           intro: "Read the text carefully and do the activities.",
           tasks: partOneTasks,
           topics: [],
         },
         {
-          heading: guide?.headings?.textExploration ?? "B/ Text Exploration",
+          heading: guide?.headings?.textExploration ?? "B/ Text Exploration.",
           marksLabel: bacMarks("textExploration"),
           tasks: p2Tasks,
           topics: [],
         },
         {
-          heading: guide?.headings?.writing ?? "Part Two: Written Expression",
+          heading: guide?.headings?.writing ?? "Part Two: Written Expression.",
           marksLabel: bacMarks("writing"),
           intro: topics.length >= 2 ? "Choose ONE of the following topics" : undefined,
           tasks: [],
@@ -162,6 +203,7 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
     title: exam.title || "English Exam",
     subtitle: exam.config ? `English Examination — ${exam.config.grade.toUpperCase()}` : "English Examination",
     meta,
+    header,
     sections: [
       {
         heading: partOneHeading,
