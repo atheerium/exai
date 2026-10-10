@@ -21,6 +21,16 @@ import { mergePatch } from "@/lib/merge-patch";
 
 export type SectionId = "params" | "text" | "partOne" | "partTwo" | "writing" | "preview";
 
+/** Destructive actions that need an explicit, translated confirmation. */
+export type PendingConfirmKind = "overwrite" | "regenText" | "rewrite";
+
+type PendingConfirm = {
+  kind: PendingConfirmKind;
+  confirm: () => void;
+  /** A second real choice, when one exists. */
+  alternative?: () => void;
+};
+
 const SECTIONS: { key: SectionId; labelKey: I18nKey }[] = [
   { key: "params", labelKey: "builder.parameters" },
   { key: "text", labelKey: "builder.text" },
@@ -36,7 +46,25 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
   const [generating, setGenerating] = React.useState<string | null>(null);
   /** Which section a full run is currently building, for progress display. */
   const [fullExamPhase, setFullExamPhase] = React.useState<string | null>(null);
-  const [confirmOverwrite, setConfirmOverwrite] = React.useState(false);
+  /**
+   * A destructive action awaiting confirmation. `confirm` is the primary
+   * choice; `alternative`, when present, is a second real option rather than a
+   * bare cancel (regenerating a passage offers "full draft" vs "keep my
+   * questions"). Native `window.confirm` was replaced because it is
+   * unstyleable, untranslated, and only ever offers OK/Cancel.
+   */
+  const [pendingConfirm, setPendingConfirm] = React.useState<PendingConfirm | null>(null);
+
+  function ask(kind: PendingConfirmKind, confirm: () => void, alternative?: () => void) {
+    setPendingConfirm({ kind, confirm, alternative });
+  }
+
+  function resolveConfirm(which: "confirm" | "alternative" | "cancel") {
+    const p = pendingConfirm;
+    setPendingConfirm(null);
+    if (!p || which === "cancel") return;
+    p[which]?.();
+  }
   const [saveState, setSaveState] = React.useState<"idle" | "saving" | "saved">("idle");
   const [versionsOpen, setVersionsOpen] = React.useState(false);
   const [activeSection, setActiveSection] = React.useState<SectionId>("params");
@@ -186,7 +214,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
         // 409 means the exam already has content: ask, do not guess. The
         // teacher's edits are worth more than one click of convenience.
         if (res.status === 409) {
-          setConfirmOverwrite(true);
+          ask("overwrite", () => void generateFullExam(true));
           return;
         }
         throw new Error(data.error || "Could not generate the exam.");
@@ -206,17 +234,20 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
   async function generate(type: "TEXT" | "PART_ONE" | "TEXT_EXPLORATION" | "WRITING" | "TASK_ALT" | "TOPIC_ALT", extra?: { taskId?: string; topicId?: string }) {
     if (generating) return;
     // Generating a new passage leaves every existing question pointing at the
-    // old one. That is exactly what the button below is for, so ask rather
+    // old one. That is exactly what the full-exam button is for, so ask rather
     // than let the exam drift out of alignment silently.
     if (type === "TEXT" && (hasPartOne || hasPartTwo)) {
-      const useFullExam = window.confirm(
-        "You already have questions built on the current passage. Generating a new passage will leave them misaligned.\n\nOK: generate a new full draft (recommended).\nCancel: generate only a new passage and keep your current questions."
-      );
-      if (useFullExam) {
-        await generateFullExam(true);
-        return;
-      }
+      ask("regenText", () => void generateSection(type, extra), () => void generateFullExam(true));
+      return;
     }
+    await generateSection(type, extra);
+  }
+
+  /** One per-section generation request; no confirmation logic of its own. */
+  async function generateSection(
+    type: "TEXT" | "PART_ONE" | "TEXT_EXPLORATION" | "WRITING" | "TASK_ALT" | "TOPIC_ALT",
+    extra?: { taskId?: string; topicId?: string }
+  ) {
     // Land pending edits before regenerating, so generation reads fresh content.
     flushSave();
     setGenerating(type);
@@ -301,11 +332,13 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     // against, so it silently unlinks them. Ask once the exam already has
     // tasks; a first draft has nothing to misalign.
     if (hasPartOne || hasPartTwo) {
-      const ok = window.confirm(
-        "Rewriting the passage will reword the text your questions were built on. They may no longer match.\n\nContinue? (You can regenerate each section afterwards.)"
-      );
-      if (!ok) return;
+      ask("rewrite", () => void runRewrite(target));
+      return;
     }
+    await runRewrite(target);
+  }
+
+  async function runRewrite(target: "simpler" | "harder") {
     setGenerating("REWRITE");
     try {
       const res = await apiFetch(`/api/exams/${exam.id}/generate`, {
@@ -384,12 +417,12 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
             phase={fullExamPhase}
             disabled={!!generating}
             onRun={() => generateFullExam(false)}
-            onOverwrite={() => {
-              setConfirmOverwrite(false);
-              void generateFullExam(true);
-            }}
-            confirmOpen={confirmOverwrite}
-            onCancelOverwrite={() => setConfirmOverwrite(false)}
+            confirm={
+              pendingConfirm
+                ? { kind: pendingConfirm.kind, hasAlternative: !!pendingConfirm.alternative }
+                : null
+            }
+            onResolve={resolveConfirm}
           />
           <VersionsButton onClick={() => setVersionsOpen(true)} />
           {saveState === "saving" && (

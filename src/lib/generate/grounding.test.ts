@@ -128,6 +128,16 @@ test("checkTaskLinkage grounds referent targets", () => {
   assert.deepEqual(checkTaskLinkage(good, passage), []);
 });
 
+test("passageVocabulary honours its limit across paragraph boundaries", () => {
+  // A limit checked inside a forEach callback would stop applying after the
+  // first paragraph, silently returning more than asked for.
+  const para = "alpha bravo charlie delta echo foxtrot.";
+  const passage = `${para}\n\n${para}`;
+  assert.equal(passageVocabulary(passage, 4).length, 4);
+  assert.equal(passageVocabulary(passage, 6).length, 6, "second paragraph still counts");
+  assert.ok(passageVocabulary(passage, 60).length <= 12);
+});
+
 test("checkTaskLinkage is a no-op without a passage", () => {
   // Backwards compatibility: per-part generation without grounding must not
   // start failing.

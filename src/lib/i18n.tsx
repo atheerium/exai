@@ -66,6 +66,15 @@ export const DICT = {
     "builder.fullExamConfirmBody":
       "This exam already has content. Generating a full exam replaces the passage, all tasks and the writing topics with a new draft. Your current version is saved in the version history, so you can go back if you prefer.",
     "builder.fullExamConfirmAction": "Replace with a new draft",
+    "builder.regenTextConfirmTitle": "Regenerate the passage?",
+    "builder.regenTextConfirmBody":
+      "Your questions were built on the current passage. A new passage leaves them pointing at text the student no longer has, so they will no longer match.",
+    "builder.regenTextConfirmKeep": "New passage, keep my questions",
+    "builder.regenTextConfirmRedo": "Regenerate the whole exam",
+    "builder.rewriteConfirmTitle": "Rewrite the passage?",
+    "builder.rewriteConfirmBody":
+      "Simplifying or hardening the passage rewords the sentences your questions were written against. They may no longer match the text.",
+    "builder.rewriteConfirmAction": "Rewrite anyway",
     "builder.passageEditedWarning":
       "The passage was edited after these questions were generated. Check they still match, or regenerate the section.",
     "builder.partOne": "Part One",
@@ -206,6 +215,15 @@ export const DICT = {
     "builder.fullExamConfirmBody":
       "Cet examen contient déjà du contenu. Générer un examen complet remplace le texte, toutes les tâches et les sujets de production par un nouveau brouillon. Votre version actuelle est conservée dans l'historique des versions, vous pourrez y revenir si vous préférez.",
     "builder.fullExamConfirmAction": "Remplacer par un nouveau brouillon",
+    "builder.regenTextConfirmTitle": "Régénérer le texte ?",
+    "builder.regenTextConfirmBody":
+      "Vos questions ont été construites à partir du texte actuel. Un nouveau texte les laisserait renvoyer à un texte que l'élève n'a plus, elles ne correspondraient donc plus.",
+    "builder.regenTextConfirmKeep": "Nouveau texte, garder mes questions",
+    "builder.regenTextConfirmRedo": "Régénérer l'examen complet",
+    "builder.rewriteConfirmTitle": "Réécrire le texte ?",
+    "builder.rewriteConfirmBody":
+      "Simplifier ou complexifier le texte réécrit les phrases sur lesquelles vos questions ont été construites. Elles ne correspondront peut-être plus au texte.",
+    "builder.rewriteConfirmAction": "Réécrire quand même",
     "builder.passageEditedWarning":
       "Le texte a été modifié après la génération de ces questions. Vérifiez qu'elles correspondent toujours, ou régénérez la section.",
     "builder.partOne": "Partie Une",

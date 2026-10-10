@@ -131,8 +131,11 @@ export function passageVocabulary(passage: string, limit = 40): PassageVocabItem
   const seen = new Set<string>();
   const out: PassageVocabItem[] = [];
 
-  paragraphs.forEach((paragraph, paragraphIndex) => {
-    for (const raw of paragraph.split(/\s+/)) {
+  // Labelled loop, not forEach: a `return` inside a forEach callback exits only
+  // that callback, so a limit check there would silently stop applying after
+  // the first paragraph.
+  outer: for (let paragraphIndex = 0; paragraphIndex < paragraphs.length; paragraphIndex++) {
+    for (const raw of paragraphs[paragraphIndex].split(/\s+/)) {
       const token = normaliseToken(raw);
       if (token.length < MIN_TARGET_LENGTH) continue;
       if (STOPWORDS.has(token)) continue;
@@ -140,9 +143,9 @@ export function passageVocabulary(passage: string, limit = 40): PassageVocabItem
       if (seen.has(token)) continue;
       seen.add(token);
       out.push({ word: raw.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, ""), paragraph: paragraphIndex });
-      if (out.length >= limit) return;
+      if (out.length >= limit) break outer;
     }
-  });
+  }
 
   return out;
 }
