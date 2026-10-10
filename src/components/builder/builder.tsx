@@ -15,6 +15,7 @@ import { TasksStage } from "./tasks-stage";
 import { WritingStage } from "./writing-stage";
 import { PreviewStage } from "./preview-stage";
 import { VersionsButton, VersionsModal } from "./versions-modal";
+import { FullExamButton } from "./full-exam-button";
 import { apiFetch } from "@/lib/api-client";
 import { mergePatch } from "@/lib/merge-patch";
 
@@ -33,6 +34,9 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
   const { t } = useI18n();
   const [exam, setExam] = React.useState<ExamDto>(initialExam);
   const [generating, setGenerating] = React.useState<string | null>(null);
+  /** Which section a full run is currently building, for progress display. */
+  const [fullExamPhase, setFullExamPhase] = React.useState<string | null>(null);
+  const [confirmOverwrite, setConfirmOverwrite] = React.useState(false);
   const [saveState, setSaveState] = React.useState<"idle" | "saving" | "saved">("idle");
   const [versionsOpen, setVersionsOpen] = React.useState(false);
   const [activeSection, setActiveSection] = React.useState<SectionId>("params");
@@ -158,8 +162,61 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     if (patch) void savePatch(patch, true);
   }
 
+  /**
+   * One request builds passage + Part One + Text Exploration + Writing.
+   *
+   * The server does the sequencing and the all-or-nothing write; this only
+   * relays it. `generating` is left as a single string so the per-part buttons
+   * disable while a full run is in flight — the API serialises nothing itself,
+   * so client-side gating is what stops a double submit becoming two runs.
+   */
+  async function generateFullExam(overwrite = false) {
+    if (generating) return;
+    flushSave();
+    setGenerating("FULL_EXAM");
+    setFullExamPhase("text");
+    try {
+      const res = await apiFetch(`/api/exams/${exam.id}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "FULL_EXAM", overwrite }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        // 409 means the exam already has content: ask, do not guess. The
+        // teacher's edits are worth more than one click of convenience.
+        if (res.status === 409) {
+          setConfirmOverwrite(true);
+          return;
+        }
+        throw new Error(data.error || "Could not generate the exam.");
+      }
+      setFullExamPhase(null);
+      setExam(data);
+      setActiveSection("preview");
+      toast("Full exam generated. Review it, then edit anything you want to change.", "success");
+    } catch (e: unknown) {
+      setFullExamPhase(null);
+      toast(e instanceof Error ? e.message : "Could not generate the exam.", "error");
+    } finally {
+      if (mounted.current) setGenerating(null);
+    }
+  }
+
   async function generate(type: "TEXT" | "PART_ONE" | "TEXT_EXPLORATION" | "WRITING" | "TASK_ALT" | "TOPIC_ALT", extra?: { taskId?: string; topicId?: string }) {
     if (generating) return;
+    // Generating a new passage leaves every existing question pointing at the
+    // old one. That is exactly what the button below is for, so ask rather
+    // than let the exam drift out of alignment silently.
+    if (type === "TEXT" && (hasPartOne || hasPartTwo)) {
+      const useFullExam = window.confirm(
+        "You already have questions built on the current passage. Generating a new passage will leave them misaligned.\n\nOK: generate a new full draft (recommended).\nCancel: generate only a new passage and keep your current questions."
+      );
+      if (useFullExam) {
+        await generateFullExam(true);
+        return;
+      }
+    }
     // Land pending edits before regenerating, so generation reads fresh content.
     flushSave();
     setGenerating(type);
@@ -240,6 +297,15 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
 
   async function rewrite(target: "simpler" | "harder") {
     if (generating) return;
+    // Rewriting the passage rewords the sentences the questions were written
+    // against, so it silently unlinks them. Ask once the exam already has
+    // tasks; a first draft has nothing to misalign.
+    if (hasPartOne || hasPartTwo) {
+      const ok = window.confirm(
+        "Rewriting the passage will reword the text your questions were built on. They may no longer match.\n\nContinue? (You can regenerate each section afterwards.)"
+      );
+      if (!ok) return;
+    }
     setGenerating("REWRITE");
     try {
       const res = await apiFetch(`/api/exams/${exam.id}/generate`, {
@@ -312,6 +378,19 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
           <span className="max-w-[220px] truncate font-medium sm:max-w-xs">{exam.title}</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <FullExamButton
+            enabled={hasConfig}
+            busy={generating === "FULL_EXAM"}
+            phase={fullExamPhase}
+            disabled={!!generating}
+            onRun={() => generateFullExam(false)}
+            onOverwrite={() => {
+              setConfirmOverwrite(false);
+              void generateFullExam(true);
+            }}
+            confirmOpen={confirmOverwrite}
+            onCancelOverwrite={() => setConfirmOverwrite(false)}
+          />
           <VersionsButton onClick={() => setVersionsOpen(true)} />
           {saveState === "saving" && (
             <span className="inline-flex items-center gap-1">
