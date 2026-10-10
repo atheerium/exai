@@ -10,6 +10,7 @@ export type EventName =
   | "text_generated"
   | "text_rewritten"
   | "text_alternative_selected"
+  | "full_exam_generated"
   | "part_one_generated"
   | "task_replaced"
   | "part_two_generated"

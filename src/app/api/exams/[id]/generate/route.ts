@@ -3,6 +3,7 @@ import { withRls, type DbClient } from "@/lib/db";
 import { requireUser, requireCsrf } from "@/lib/auth";
 import { loadExamDto, touchLastOpened } from "@/lib/serialize";
 import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, generateRewriteCandidates, validateCandidate, providerName } from "@/lib/generate";
+import { generateFullExam, FULL_EXAM_QUOTA_COST } from "@/lib/generate/full-exam";
 import { track } from "@/lib/events";
 import { captureRevision } from "@/lib/revisions";
 import { getGuide } from "@/data/guides";
@@ -102,10 +103,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await requireCsrf(req.headers);
     const user = await requireUser();
     const { id } = await params;
-    const body = (await req.json()) as { type: string; taskId?: string; topicId?: string; target?: "simpler" | "harder" };
+    const body = (await req.json()) as {
+      type: string;
+      taskId?: string;
+      topicId?: string;
+      target?: "simpler" | "harder";
+      /** FULL_EXAM only: required to replace an exam that already has content. */
+      overwrite?: boolean;
+    };
     const type = body.type;
     const provider = providerName();
-    const supportedTypes = ["TEXT", "PART_ONE", "TEXT_EXPLORATION", "WRITING", "REWRITE", "TASK_ALT", "TOPIC_ALT"];
+    const supportedTypes = ["TEXT", "PART_ONE", "TEXT_EXPLORATION", "WRITING", "REWRITE", "TASK_ALT", "TOPIC_ALT", "FULL_EXAM"];
 
     // Phase 1: short read tx — ownership, config, quota, context build, task/topic lookup
     const phase1 = await withRls(user.id, async (tx) => {
@@ -121,8 +129,41 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const todayCount = await tx.generation.count({
         where: { exam: { userId: user.id }, createdAt: { gte: startOfDay } },
       });
-      if (todayCount >= GENERATION_DAILY_LIMIT) {
-        return NextResponse.json({ error: "Generation limit reached for today." }, { status: 429 });
+      // A full exam is four provider calls, so it must be budgeted as four. If
+      // the remaining quota cannot cover the whole run we refuse BEFORE any
+      // call: a partial burn would spend quota on an exam that cannot finish.
+      const quotaNeeded = type === "FULL_EXAM" ? FULL_EXAM_QUOTA_COST : 1;
+      if (todayCount + quotaNeeded > GENERATION_DAILY_LIMIT) {
+        const remaining = Math.max(0, GENERATION_DAILY_LIMIT - todayCount);
+        return NextResponse.json(
+          {
+            error:
+              type === "FULL_EXAM" && remaining < FULL_EXAM_QUOTA_COST
+                ? `A full exam needs ${FULL_EXAM_QUOTA_COST} generations and only ${remaining} remain today.`
+                : "Generation limit reached for today.",
+          },
+          { status: 429 }
+        );
+      }
+
+      // Never silently clobber teacher work: a full run over an exam that
+      // already has content needs an explicit opt-in, whatever the caller.
+      if (type === "FULL_EXAM" && !body.overwrite) {
+        const existing = await tx.examSection.findFirst({
+          where: { examId: id, content: { not: "{}" } },
+          select: { id: true },
+        });
+        const hasTopicsOrTasks = await tx.task.count({ where: { section: { examId: id } } }) > 0
+          || (await tx.topic.count({ where: { section: { examId: id } } })) > 0;
+        if (existing || hasTopicsOrTasks) {
+          return NextResponse.json(
+            {
+              error: "This exam already has content. A full generation replaces it; resend with overwrite=true to confirm.",
+              code: "OVERWRITE_REQUIRED",
+            },
+            { status: 409 }
+          );
+        }
       }
 
       const ctx = buildContext({
@@ -159,6 +200,153 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (phase1 instanceof NextResponse) return phase1;
     const { exam, ctx, lookup } = phase1;
+
+    // ---- FULL_EXAM: orchestrate all four sections, then write once ----------
+    // Deliberately before the per-type branch below: a full run has its own
+    // failure semantics (all-or-nothing) and its own quota accounting, and
+    // threading it through the single-section Phase2Data union would mean
+    // either duplicating the write branches or weakening the guarantee.
+    if (type === "FULL_EXAM") {
+      const cfg = exam.config!;
+      const guide = ctx.guide;
+      const full = await generateFullExam({
+        level: cfg.level,
+        grade: cfg.grade,
+        stream: cfg.stream,
+        length: cfg.length,
+        unit: cfg.unit,
+        topic: cfg.topic,
+        examId: exam.id,
+        language: cfg.language,
+        teacherKeywords: cfg.teacherKeywords,
+        difficulty: cfg.difficulty,
+        singleTopic: !!guide.writing?.singleTopic,
+      });
+
+      // Nothing is written when generation fails: a half-built exam is worse
+      // than none, and the teacher cannot tell which sections are real. Quota
+      // rows are also skipped, so a failed run costs nothing.
+      if (!full.ok) {
+        const message = full.issues
+          .map((i) => `${i.section === "TEXT" ? "Text" : i.section.replace(/_/g, " ").toLowerCase()}: ${i.messages.join(" ")}`)
+          .join(" ");
+        return NextResponse.json({ error: message, issues: full.issues }, { status: 422 });
+      }
+
+      return await withRls(user.id, async (tx) => {
+        const writeText = sectionOf(exam.sections, "TEXT");
+        const textSection =
+          writeText ??
+          (await tx.examSection.create({
+            data: { examId: id, type: "TEXT", heading: sectionHeading(cfg.grade, "TEXT", cfg.language, cfg.stream), order: 1, content: "{}" },
+          }));
+        await tx.examSection.update({
+          where: { id: textSection.id },
+          data: {
+            content: JSON.stringify({
+              title: full.text!.title,
+              text: full.text!.text,
+              candidates: full.text!.candidates.map(textOnly),
+            }),
+          },
+        });
+        await persistSources(tx, id, textSection.id, [full.text!.source ?? null], false);
+
+        const writeTasks = async (kind: "PART_ONE" | "TEXT_EXPLORATION", sets: GeneratedTask[][]) => {
+          let section = sectionOf(exam.sections, kind);
+          if (!section) {
+            section = await tx.examSection.create({
+              data: {
+                examId: id,
+                type: kind,
+                heading: sectionHeading(cfg.grade, kind, cfg.language, cfg.stream),
+                order: kind === "PART_ONE" ? 2 : 3,
+                content: "{}",
+              },
+            });
+          }
+          await tx.task.deleteMany({ where: { sectionId: section.id } });
+          const primary = sets[0];
+          for (let i = 0; i < primary.length; i++) {
+            const task = primary[i] as GeneratedTask;
+            const candidates = sets.slice(1).map((s) => s[i]).filter(Boolean);
+            await tx.task.create({
+              data: {
+                sectionId: section.id,
+                skill: task.skill ?? null,
+                prompt: task.prompt,
+                instruction: task.instruction,
+                answer: task.answer ?? null,
+                marks: task.marks,
+                order: i,
+                family: task.family ?? null,
+                tableData: task.table ? JSON.stringify(task.table) : null,
+                candidates: JSON.stringify(candidates),
+              },
+            });
+          }
+        };
+        await writeTasks("PART_ONE", full.partOne!);
+        await writeTasks("TEXT_EXPLORATION", full.textExploration!);
+
+        let writingSection = sectionOf(exam.sections, "WRITING");
+        if (!writingSection) {
+          writingSection = await tx.examSection.create({
+            data: { examId: id, type: "WRITING", heading: sectionHeading(cfg.grade, "WRITING", cfg.language, cfg.stream), order: 4, content: "{}" },
+          });
+        }
+        await tx.topic.deleteMany({ where: { sectionId: writingSection.id } });
+        const wcands = full.writing!;
+        const singleTopic = wcands[0].singleTopic;
+        const guidedSets = wcands.map((c) => c.guided);
+        await tx.topic.create({
+          data: {
+            sectionId: writingSection.id,
+            kind: "GUIDED",
+            title: guidedSets[0].title,
+            situation: guidedSets[0].situation,
+            instruction: guidedSets[0].instruction,
+            keywords: guidedSets[0].keywords ?? null,
+            form: guidedSets[0].form,
+            marks: guidedSets[0].marks,
+            order: 0,
+            candidates: JSON.stringify(guidedSets.slice(1)),
+          },
+        });
+        // BEM guides take one topic only; writing them would produce a second
+        // prompt the guide has no marks for.
+        const freeSets = singleTopic ? [] : wcands.map((c) => c.free).filter(Boolean);
+        if (freeSets.length > 0 && freeSets[0]) {
+          await tx.topic.create({
+            data: {
+              sectionId: writingSection.id,
+              kind: "FREE",
+              title: freeSets[0].title,
+              situation: freeSets[0].situation,
+              instruction: freeSets[0].instruction,
+              keywords: null,
+              form: freeSets[0].form,
+              marks: freeSets[0].marks,
+              order: 1,
+              candidates: JSON.stringify(freeSets.slice(1)),
+            },
+          });
+        }
+
+        // Four quota rows: a full exam really is four provider calls. Logged
+        // only now, so a failed run consumes nothing.
+        for (const sectionType of ["TEXT", "PART_ONE", "TEXT_EXPLORATION", "WRITING"]) {
+          await tx.generation.create({ data: { examId: id, type: sectionType, provider, status: "OK" } });
+        }
+        await track("full_exam_generated", { userId: user.id, examId: id, meta: { provider } });
+        // One revision for the whole run, so history stays navigable.
+        await captureRevision(id, "Full exam generated", tx);
+        await tx.exam.update({ where: { id }, data: { status: "DRAFT" } });
+        await touchLastOpened(id, user.id, tx);
+        const dto = await loadExamDto(id, user.id, tx);
+        return NextResponse.json(dto);
+      });
+    }
 
     // Pre-checks that don't need a tx (data from Phase 1 read)
     if (type === "REWRITE") {
