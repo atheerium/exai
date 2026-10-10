@@ -23,6 +23,11 @@ interface Catalog {
   >;
 }
 
+const LEVEL_LABELS: Record<string, string> = {
+  middle: "Middle school",
+  secondary: "Secondary school",
+};
+
 export function ParametersStage({
   exam,
   collapsed,
@@ -169,10 +174,9 @@ export function ParametersStage({
           <Select value={level} onChange={(e) => setLevel(e.target.value)} required>
             <option value="">{t("builder.selectLevel")}</option>
             {Object.keys(catalog?.levels ?? {})
-              .filter((l) => l === "secondary")
               .map((l) => (
               <option key={l} value={l}>
-                Secondary school
+                {LEVEL_LABELS[l] ?? l}
               </option>
             ))}
           </Select>
