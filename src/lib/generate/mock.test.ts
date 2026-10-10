@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getGuide } from "../../data/guides";
+import { getGuide, GUIDES } from "../../data/guides";
 import {
   generateText,
   generateTextCandidates,
@@ -347,4 +347,24 @@ test("SkillRule tableRequired is set for MORPHOLOGY", () => {
   assert.ok(morphSkill?.tableRequired === true, "MORPHOLOGY should have tableRequired=true");
   const vocabSkill = bemGuide.textExploration.skills.find((s) => s.skill === "VOCABULARY");
   assert.ok(vocabSkill?.tableRequired === true, "VOCABULARY should have tableRequired=true");
+});
+
+test("generated tables leave the answer column empty for every grade and variant", () => {
+  // The student-facing paper must never ship the answer key inside a table cell.
+  // Column 0 is the given stimulus; every later column is what the student fills in.
+  for (const grade of Object.keys(GUIDES)) {
+    for (let variant = 0; variant < 3; variant++) {
+      const c = ctx({ grade, guide: getGuide(grade), seed: `exam:${grade}:u:t` });
+      const tasks = [...generatePartOne(c, variant), ...generateTextExploration(c, variant)];
+      for (const task of tasks) {
+        if (!task.table) continue;
+        const label = `${grade} v${variant} ${task.family ?? task.skill}`;
+        for (const row of task.table.rows) {
+          for (let ci = 1; ci < row.length; ci++) {
+            assert.equal(row[ci], "", `${label}: column ${ci} ("${task.table.headers[ci]}") must be blank, got "${row[ci]}"`);
+          }
+        }
+      }
+    }
+  }
 });

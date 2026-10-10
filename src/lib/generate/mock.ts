@@ -8,6 +8,7 @@
 import { getTheme, type Theme } from "@/data/themes";
 import type { Guide, PartOneRule, SkillRule } from "@/data/guides";
 import { countWords, Seeded } from "./rng";
+import { pickReferents } from "./referents";
 import type { GeneratedSource, GeneratedTask, GeneratedText, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 
 export interface MockContext {
@@ -247,7 +248,8 @@ function generatePartOnePrimary(rule: PartOneRule, theme: ReturnType<typeof getT
     if (needsTable) {
       task.table = {
         headers: ["Statement", "Answer"],
-        rows: sts.map((s) => [s.statement, s.truth ? "True" : "False"]),
+        // The answer column stays empty: students write True/False themselves.
+        rows: sts.map((s) => [s.statement, ""]),
       };
     }
     return task;
@@ -269,24 +271,27 @@ function generatePartOnePrimary(rule: PartOneRule, theme: ReturnType<typeof getT
     if (needsTable) {
       task.table = {
         headers: ["Idea", "Paragraph"],
-        rows: ideas.map((idea, i) => [idea, `Paragraph ${rng.int(5) + 1}`]),
+        // Paragraph numbers are the answer key, so the cell is left blank.
+        rows: ideas.map((idea) => [idea, ""]),
       };
     }
     return task;
   } else if (rule.family === "COHESIVE_MARKERS") {
-    const words = rng.take(theme.vocab.filter((v) => v.inText), itemCount);
+    // Targets must be referents with a noun antecedent (they, it, which, ...),
+    // never content words, so draw them from the passage itself.
+    const targets = pickReferents(themeBody(theme), itemCount);
     const task: GeneratedTask = {
       skill: "READING",
       family: "COHESIVE_MARKERS",
-      prompt: `Who or what do the underlined words refer to in the text?\n${words.map((w, i) => `${i + 1}. "${w.word.charAt(0).toUpperCase() + w.word.slice(1)}" (underlined)`).join("\n")}`,
+      prompt: `Who or what do the underlined words refer to in the text?\n${targets.map((w, i) => `${i + 1}. "${capitalise(w)}" (underlined)`).join("\n")}`,
       instruction,
-      answer: words.map((w, i) => `${i + 1}. ${w.word}`).join("\n"),
+      answer: targets.map((w, i) => `${i + 1}. ${w}`).join("\n"),
       marks: rule.marks,
     };
     if (needsTable) {
       task.table = {
         headers: ["Word", "Refers to"],
-        rows: words.map((w) => [w.word, "..."]),
+        rows: targets.map((w) => [w, ""]),
       };
     }
     return task;
@@ -348,7 +353,7 @@ function generatePartOneAlternate(rule: PartOneRule, theme: ReturnType<typeof ge
         marks: rule.marks,
         table: {
           headers: ["Question", "Answer"],
-          rows: qs.map((q) => [q.q, "..."]),
+          rows: qs.map((q) => [q.q, ""]),
         },
       };
     }
@@ -393,17 +398,17 @@ function generatePartOneAlternate(rule: PartOneRule, theme: ReturnType<typeof ge
   } else if (rule.family === "COHESIVE_MARKERS") {
     // Alternate: FILL_CHART — who/what do words refer to, presented as a chart
     const max = rule.constraints?.maxWords ?? 3;
-    const words = rng.take(theme.vocab.filter((v) => v.inText), max);
+    const targets = pickReferents(themeBody(theme), max);
     return {
       skill: "READING",
       family: "FILL_CHART",
-      prompt: `Complete the table showing what each underlined word refers to.\n${words.map((w, i) => `${i + 1}. "${w.word.charAt(0).toUpperCase() + w.word.slice(1)}" → ..........`).join("\n")}`,
+      prompt: `Complete the table showing what each underlined word refers to.\n${targets.map((w, i) => `${i + 1}. "${capitalise(w)}" (underlined)`).join("\n")}`,
       instruction: "Fill in the chart to show who or what each underlined word refers to.",
-      answer: words.map((w, i) => `${i + 1}. ${w.word}`).join("\n"),
+      answer: targets.map((w, i) => `${i + 1}. ${w}`).join("\n"),
       marks: rule.marks,
       table: {
         headers: ["Word", "Refers to"],
-        rows: words.map((w) => [w.word, "..."]),
+        rows: targets.map((w) => [w, ""]),
       },
     };
   } else {
@@ -459,7 +464,8 @@ function generateTextExplorationPrimary(skillRule: SkillRule, theme: ReturnType<
     if (skillRule.tableRequired) {
       task.table = {
         headers: ["Word", "Meaning"],
-        rows: words.map((w) => [w.word, wordDef(theme, w.word)]),
+        // The definition IS the answer for this matching task — never prefill it.
+        rows: words.map((w) => [w.word, ""]),
       };
     }
     return task;
@@ -480,7 +486,8 @@ function generateTextExplorationPrimary(skillRule: SkillRule, theme: ReturnType<
       marks: skillRule.marks,
       table: {
         headers: ["Word", "Noun", "Verb", "Adjective"],
-        rows: rows.map((r) => [r.base, r.noun, r.verb, r.adj]),
+        // Derived forms are the answers; only the base word is given.
+        rows: rows.map((r) => [r.base, "", "", ""]),
       },
     };
   } else if (skillRule.skill === "PHONOLOGY") {
@@ -542,7 +549,8 @@ function generateTextExplorationPrimary(skillRule: SkillRule, theme: ReturnType<
       const gaps = d.text.match(/___/g) || [];
       task.table = {
         headers: ["Gap", "Word"],
-        rows: d.answers.map((ans, i) => [String(i + 1), ans]),
+        // d.answers is the answer key — the Word column is left for the student.
+        rows: d.answers.map((_, i) => [String(i + 1), ""]),
       };
     }
     return task;
@@ -690,6 +698,14 @@ function generateTextExplorationAlternate(skillRule: SkillRule, theme: ReturnTyp
       };
     }
   }
+}
+
+const capitalise = (w: string): string => w.charAt(0).toUpperCase() + w.slice(1);
+
+// Every sentence a theme can contribute to a passage, so referent targets are
+// drawn from language the passage actually contains.
+function themeBody(theme: Theme): string {
+  return [...theme.lead, ...theme.body, ...theme.detail, ...theme.conclusion].join(" ");
 }
 
 function wordDef(theme: Theme, word: string): string {

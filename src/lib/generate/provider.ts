@@ -176,6 +176,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'Set 0 must use exactly these families. Sets 1 and 2 must use DIFFERENT task types for the same skills/marks ' +
         '(e.g. MCQ instead of open questions, YES/NO/Not-Given instead of True/False, matching instead of paragraph ID, ordering instead of title choice). ' +
         'For tasks with tableRequired=true, include a "table" field with headers and rows. ' +
+        'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         'Return {"sets":[{"tasks":[{"prompt","instruction","answer","marks","skill":"READING","family":"...","table":{"headers":[],"rows":[[]]}}]}]} with 3 different sets of tasks.',
       families,
     });
@@ -199,6 +200,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'Set 0 must use the standard families. Sets 1 and 2 must use DIFFERENT task types for the same skills/marks ' +
         '(e.g. synonym match instead of meaning, prefix/suffix instead of word family, stress pattern instead of sound class, choose correct form instead of rewrite, jumbled sentences instead of gap fill). ' +
         'For tasks with tableRequired=true, include a "table" field with headers and rows. ' +
+        'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         'Return {"sets":[{"tasks":[{"prompt","instruction","answer","marks","skill","family":"...","table":{"headers":[],"rows":[[]]}}]}]} with 3 different sets of tasks.',
       skills,
     });
