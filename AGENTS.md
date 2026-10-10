@@ -2,12 +2,25 @@
 
 Next.js 15 App Router + React 19 + TypeScript (strict) + Prisma/PostgreSQL (Supabase, pooled) + Tailwind v3. AI-assisted exam creation for Algerian English teachers. Every generation is a *proposal*; the teacher edits/approves. Docs: `README.md` (features), `PRODUCT.md` (users/brand/tone), `design.markdown` (**active** design spec), `DESIGN.md` (partly superseded), `Exaai_PRD_V2_Enterprise_Developer_Specification.md` (source of truth for scope).
 
+## `EXAM.md` is the single source of truth for the exam — UPDATE IT ALWAYS
+
+**Read `EXAM.md` before touching any exam-format, paper-layout or task-generation code.** It is organised by task and specifies everything needed to rebuild the exam builder: section order, headings, marks, official task wordings, item counts, typography, and the bold/italic/underline rules. If code and `EXAM.md` disagree, **`EXAM.md` is correct and the code is the bug**.
+
+**Whenever the user states a format, structure, wording, constraint or styling rule for the exam, you MUST write it into `EXAM.md` in the same change that implements it.** Do not defer it, do not summarise it away, and do not wait for a follow-up request — a rule that lives only in code is lost the next time the repo is rebuilt. Concretely:
+
+- A new or changed **task** goes in the section 8 pool table with all three columns: official wording, item constraint, rendering.
+- A rule that applies to **every** task gets its own cross-cutting section (as sections 1-7 do).
+- A **typography** change (bold, italic, underline, font, size, spacing) goes in the tables in section 3.
+- The file grows monotonically. Nothing is removed because an implementation detail changed — the rule stays, the code follows it.
+
+`AGENTS.md` describes the code; `EXAM.md` describes the exam. Both are required reading.
+
 ## Commands (all verified this session)
 
 | Command | Exit | Notes |
 |---|---|---|
-| `npm test` | 0 | **139 pass.** `node --import tsx --test` on **11 hardcoded paths** (`package.json:12`). No glob, no runner config, no DB or network needed. |
-| `npx tsc --noEmit` | 0 | **The only typecheck.** No `typecheck` script exists. |
+| `npm test` | 0 | **239 pass.** `node --import tsx --test` on **19 hardcoded paths** (`package.json:12`). No glob, no runner config, no DB or network needed. |
+| `npm run typecheck` | 0 | `rm -f tsconfig.tsbuildinfo && tsc --noEmit`. Prefer over bare `tsc`. |
 | `npm run build` | 0 | `next build`. Only place types are enforced in CI-like flow. |
 | `npm run lint` | **1** | **Trap — do not use as a gate.** See below. |
 | `npm run vercel-build` | — | `prisma generate && next build`. Vercel entrypoint. |
@@ -21,19 +34,31 @@ npx prisma db seed   # upserts 7 GuideConfig rows, one per GUIDES key
 npm run dev          # :3000
 ```
 
-Single test file: `node --import tsx --test src/lib/guide.test.ts`
+One test file: `node --import tsx --test src/lib/guide.test.ts` (`npm test` runs all 19 paths, 239 tests).
+
+## Exam paper layout
+
+`EXAM.md` is authoritative (see above). Code map:
+
+- `src/lib/export/assemble.ts` — content model: sections, headings, marks, topic choices. Never reads a task's `answer` field, so exports cannot leak the answer key.
+- `src/lib/export/paper.ts` — the **single layout source**. Flattens the content model into an ordered `PaperBlock[]` that PDF, DOCX and the builder preview all walk, so the three surfaces cannot drift. Also resolves referent `(§N)` refs.
+- `src/lib/export/pdf.ts` — renders blocks. Body is Times New Roman (`public/fonts/TimesNewRoman.ttf`, regular-only; bold/italic fall back to pdfkit's metric-compatible Standard Times).
+- `src/lib/export/arabic.ts` — Arabic shaping. pdfkit + Amiri shape correctly from presentation forms **alone**: do **not** reverse the shaped string.
+- `src/lib/generate/referents.ts` — referent rules for question 4 (pronoun classes + repetition-avoiding substitutes; content words rejected).
+
+Three pdfkit traps, all documented in `EXAM.md` section 3: `underline` on a continued run underlines the **whole line width** (so the passage is laid out word by word); `underline` + `lineBreak:false` with no `width` throws on a NaN coordinate; and Arabic must be shaped but never reversed.
 
 ## Landmines
 
 1. **`npm run lint` does not lint.** There is no `.eslintrc*` / `eslint.config.*`, and `eslint` + `eslint-config-next` are **not installed**. `next lint` (15.5.23, deprecated, gone in 16) drops into an *interactive* ESLint scaffold prompt and exits 1. Nothing is enforced by lint. No Prettier either. There is **no CI at all** (`.github/`, husky, pre-commit: all absent) — nothing catches regressions but the test suite and `tsc`.
-2. **Use npm. `pnpm-lock.yaml` is stale and will silently break an install.** `nodemailer`, `docx`, `iconv-lite`, `arabic-persian-reshaper`, `zod` are in `package.json` + `package-lock.json` but **absent from the pnpm lockfile** (Sep 19 vs Sep 24). `node_modules` is npm-installed (flat, 0 symlinks); `node_modules/.pnpm` and `.modules.yaml` are stale pnpm residue. `pnpm-workspace.yaml` contains literal unresolved placeholders (`allowBuilds: '@prisma/client': set this to true or false`). No `packageManager` field.
+2. **Use npm — the pnpm lockfiles are gone, and reintroducing one breaks deploys.** `pnpm-lock.yaml` and `pnpm-workspace.yaml` were deleted in `65e3c74` (2026-10-05): the pnpm lockfile predated five dependencies, so Vercel auto-detected pnpm and every production build died at `ERR_PNPM_OUTDATED_LOCKFILE`. `pnpm-workspace.yaml` also held literal unresolved `allowBuilds` placeholders. Still npm-managed (`package-lock.json`, flat `node_modules`); no `packageManager` field. **Do not commit `pnpm-lock.yaml` or `pnpm-workspace.yaml`** — either one makes Vercel pick pnpm and fail the install.
 3. **Row-level security is currently inert, and `rls.sql` is wired to nothing.** `prisma/rls.sql` holds ~47 policies over 14 tables but is referenced by **no npm script and no doc** — its own header says apply it manually via `psql -f prisma/rls.sql`. Even applied, it is bypassed: only `ENABLE` is used, not `FORCE`, and Prisma connects as the table-owning pooler role (`rls.sql:9-21`). **Real tenant isolation is the per-query `userId` where-clause.** Never drop one on the assumption RLS covers it.
-4. **Adding a `*.test.ts` does nothing** unless you also append its path to `scripts.test` in `package.json`. There is no glob, so a new test file is silently unrun. 11 files exist, 11 are listed — keep them equal.
+4. **Adding a `*.test.ts` does nothing** unless you also append its path to `scripts.test` in `package.json`. There is no glob, so a new test file is silently unrun. **19 files exist, 19 are listed** — and `src/test-registration.test.ts` fails the suite if that ever stops being true, so a mismatch cannot pass silently. Register the new file or `npm test` goes red.
 5. **`npm run dev` requires a live Supabase DB** — there is no local/offline mode. `.env.local` (gitignored) holds the real `DATABASE_URL`; `.env` does not exist. `.env.example` is the template.
-6. **Middle school is unreachable, by design.** `src/data/guides.ts` defines all 7 grades (`1am`–`4am` middle, `1as`–`3as` secondary) and the seed writes 7 `GuideConfig` rows, but `src/lib/guide.ts:75-77` throws `Grade level must be "secondary"` for any non-secondary level. The middle-school data is dormant — do not "fix" the throw assuming the data is ready.
+6. **Middle school is now LIVE (was dormant).** `src/data/guides.ts` defines all 7 grades (`1am`–`4am` middle, `1as`–`3as` secondary) and the seed writes 7 `GuideConfig` rows. The old `guide.ts` hard rejection of non-secondary levels was removed on 2026-10-05 after verifying the data end to end: all four middle grades resolve through `resolveRules`, generate clean candidates through the mock provider (Part One 7 marks / Text exploration 7 marks / Writing 6 marks, zero `validateCandidate` issues), and export through the `bem` branch of `assemble.ts`. BEM guides use `singleTopic: true`, so `builder.tsx` only requires one writing topic there. If you reintroduce a level restriction, verify against `assemble.test.ts`, which covers both the `bac` and `bem` layouts.
 7. **`DESIGN.md` contradicts the code.** It self-declares superseded by `design.markdown` ("where the two disagree, `design.markdown` wins"), yet its own token table still says `--radius: 0.75rem`, grey `--border`, blurred shadows. Live truth is `src/app/globals.css:26` `--radius: 0.25rem` and `tailwind.config.ts` hard offsets (`4px 4px 0 0 hsl(var(--foreground))`). **Follow `design.markdown`.**
 8. **Marks are per-guide and computed, not the hardcoded 7/8/5** the old docs imply. `validateCandidate` falls back to `7` (Part One) / `8` (Text exploration) only when `expectedMarks` is omitted (`generate/index.ts:149`); real totals come from the resolved guide (`guides.ts:1213` BEM = 7/7/6, `guides.ts:1256` computes BAC totals).
-9. **Working tree is massively dirty** (~140 files, +1975/−1035 on `main`, uncommitted). Expect failures that are pre-existing, not yours; check `git status` before blaming a change.
+9. **`main` is the working branch and is committed cleanly, but local `docs/` churn is common.** As of 2026-10-05 `main` is in sync with `origin/main` and the tree is clean after the commit-hygiene pass. It does *not* stay that way: `docs/` is repeatedly reshuffled (files moved to `docs/archived/`) and review PDFs/screenshots land there. **Run `git status` before blaming a change for being pre-existing.** Reference exam PDFs under `docs/dz-exam-templates/` and `docs/screenshot-*.png` are gitignored on purpose — they are copyrighted or throwaway, and the templates dir has moved between the root and `docs/` before, so keep both the root-anchored and `docs/` ignore rules.
 10. `iconv-lite` is an **unused dependency** — no `src/` import. Don't assume it encodes anything in the export path.
 
 ## Database

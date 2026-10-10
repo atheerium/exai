@@ -8,8 +8,9 @@ prisma/dev.db-journal
 .env
 .vercel
 
-# Local screenshots produced during UI review passes
+# Screenshots produced during UI review passes (root or docs/)
 /*.png
+docs/screenshot-*.png
 
 # Agent scratch: session state, run continuation, evidence artifacts
 /.omo/run-continuation/
@@ -18,5 +19,8 @@ prisma/dev.db-journal
 # Browser automation console logs
 /.playwright-mcp/
 
-# Third-party exam papers used as local reference only; not redistributed
+# Third-party exam papers used as local reference only; not redistributed.
+# Unanchored: this dir has moved between the repo root and docs/ before, and a
+# root-anchored rule silently stops matching when it does.
 /dz-exam-templates/
+docs/dz-exam-templates/
