@@ -11,6 +11,7 @@
 
 import { resolveRules } from "@/lib/guide";
 import { countWords } from "./rng";
+import { checkTaskLinkage, type LinkableTask } from "./grounding";
 import type { GenerationRequest } from "@/types";
 import * as mock from "./mock";
 import * as openai from "./openai";
@@ -31,6 +32,12 @@ export interface GenContext {
   language: string;
   teacherKeywords?: string | null;
   difficulty?: string | null;
+  /**
+   * The passage already generated for this exam. Set by the full-exam flow so
+   * task material is drawn from the printed text; absent for per-part
+   * generation, which keeps the theme-level behaviour.
+   */
+  groundingText?: string | null;
 }
 
 export function buildContext(input: {
@@ -44,6 +51,7 @@ export function buildContext(input: {
   language?: string;
   teacherKeywords?: string | null;
   difficulty?: string | null;
+  groundingText?: string | null;
 }): GenContext {
   const rules = resolveRules({
     level: input.level,
@@ -66,6 +74,7 @@ export function buildContext(input: {
     language: rules.language,
     teacherKeywords: input.teacherKeywords ?? null,
     difficulty: input.difficulty ?? null,
+    groundingText: input.groundingText ?? null,
   };
 }
 
@@ -122,7 +131,19 @@ export function validateCandidate(
   type: GenerationRequest["type"],
   payload: unknown,
   expectedMarks?: number,
-  opts?: { singleTopic?: boolean; guide?: ReturnType<typeof resolveRules>["guide"] | null; length?: number }
+  opts?: {
+    singleTopic?: boolean;
+    guide?: ReturnType<typeof resolveRules>["guide"] | null;
+    length?: number;
+    /**
+     * The passage the tasks must be answerable from. When set, the
+     * mechanically checkable linkage rules run: vocabulary/morphology targets
+     * and referent targets have to occur in this text, and answer cells have to
+     * be empty. See `generate/grounding.ts` for exactly what is and is not
+     * guaranteed — semantic answerability is NOT checked.
+     */
+    groundingText?: string;
+  }
 ): { ok: boolean; issues: string[] } {
   const issues: string[] = [];
   if (type === "TEXT") {
@@ -199,6 +220,15 @@ export function validateCandidate(
           // placeholder hooks for future teacher inputs (no behavior change until supplied)
           // rule.taskSpecificRules / rule.teacherStandardRules are intentionally empty until teacher supplies values
         }
+      }
+    }
+
+    // Linkage: every task must be answerable from the passage above it. Only
+    // enforced when a passage is supplied, so existing per-part generation
+    // keeps its current behaviour.
+    if (opts?.groundingText) {
+      for (const issue of checkTaskLinkage(tasks as unknown as LinkableTask[], opts.groundingText)) {
+        issues.push(issue);
       }
     }
   }

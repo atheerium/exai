@@ -77,7 +77,28 @@ export function basePrompt(ctx: GenContext): Record<string, unknown> {
   return base;
 }
 
-export const PARAGRAPH_NOTE =
+export /**
+ * The passage-grounding clause appended to task prompts.
+ *
+ * Only emitted when `ctx.groundingText` exists, i.e. when the caller has a real
+ * passage in hand. Without one the model is left free to use theme-level
+ * material, which is the pre-existing (per-part) behaviour.
+ *
+ * These are instructions, not guarantees. `generate/grounding.ts` mechanically
+ * enforces the lexically checkable subset afterwards; the requirement that a
+ * task is *semantically* answerable rests on the model obeying this text.
+ */
+function groundingRule(ctx: GenContext): string {
+  if (!ctx.groundingText) return "";
+  return (
+    "The passage is given above. Every task MUST be answerable from that passage alone: " +
+    "vocabulary and morphology targets must appear verbatim in it, referent targets (they, it, this, the former) must occur in it, " +
+    "and comprehension items must concern facts the passage actually states rather than general knowledge about the topic. " +
+    "Do NOT invent words or events that the passage does not contain. "
+  );
+}
+
+const PARAGRAPH_NOTE =
   " Write the passage as 3-5 coherent paragraphs separated by blank lines (\\n\\n).";
 
 export const SOURCE_NOTE =
@@ -173,6 +194,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
       marksTotal: ctx.guide.marks.partOne,
       request:
         'Generate reading-comprehension tasks on the passage topic with EXACTLY the families, marks, instructions, item counts, and table requirements below. ' +
+        groundingRule(ctx) +
         'Set 0 must use exactly these families. Sets 1 and 2 must use DIFFERENT task types for the same skills/marks ' +
         '(e.g. MCQ instead of open questions, YES/NO/Not-Given instead of True/False, matching instead of paragraph ID, ordering instead of title choice). ' +
         'For tasks with tableRequired=true, include a "table" field with headers and rows. ' +
@@ -196,7 +218,8 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
       marksTotal: ctx.guide.marks.textExploration,
       request:
         'Generate the five language tasks (vocabulary, morphology, phonology, grammar, discourse) with EXACTLY the skills, marks, instructions, and table requirements below. ' +
-        'Tasks may draw from the broader theme/content of the unit, not strictly constrained to the passage verbatim, while staying appropriate to level, skill and Ministry requirements. ' +
+        'Stay appropriate to level, skill and Ministry requirements. ' +
+        groundingRule(ctx) +
         'Set 0 must use the standard families. Sets 1 and 2 must use DIFFERENT task types for the same skills/marks ' +
         '(e.g. synonym match instead of meaning, prefix/suffix instead of word family, stress pattern instead of sound class, choose correct form instead of rewrite, jumbled sentences instead of gap fill). ' +
         'For tasks with tableRequired=true, include a "table" field with headers and rows. ' +

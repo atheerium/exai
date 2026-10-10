@@ -9,6 +9,7 @@ import { getTheme, type Theme } from "@/data/themes";
 import type { Guide, PartOneRule, SkillRule } from "@/data/guides";
 import { countWords, Seeded } from "./rng";
 import { pickReferents } from "./referents";
+import { passageVocabulary } from "./grounding";
 import type { GeneratedSource, GeneratedTask, GeneratedText, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 
 export interface MockContext {
@@ -21,6 +22,15 @@ export interface MockContext {
   seed: string;
   teacherKeywords?: string | null;
   difficulty?: string | null;
+  /**
+   * The passage already generated for this exam, when the caller has one.
+   *
+   * With it, task material is drawn from the printed text rather than the
+   * theme corpus, so vocabulary and referent items are answerable from the
+   * page. Absent it (per-part generation) the generators fall back to the
+   * theme corpus exactly as before.
+   */
+  groundingText?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +221,7 @@ export function generatePartOne(ctx: MockContext, variant = 0): GeneratedTask[] 
   for (const rule of rules) {
     if (variant === 0) {
       // Primary set: use today's families exactly
-      tasks.push(generatePartOnePrimary(rule, theme, rng));
+      tasks.push(generatePartOnePrimary(rule, theme, rng, ctx));
     } else {
       // Alternatives: use genuinely different task types with same marks
       tasks.push(generatePartOneAlternate(rule, theme, rng, variant));
@@ -220,7 +230,12 @@ export function generatePartOne(ctx: MockContext, variant = 0): GeneratedTask[] 
   return tasks;
 }
 
-function generatePartOnePrimary(rule: PartOneRule, theme: ReturnType<typeof getTheme>, rng: Seeded): GeneratedTask {
+function generatePartOnePrimary(
+  rule: PartOneRule,
+  theme: ReturnType<typeof getTheme>,
+  rng: Seeded,
+  ctx?: MockContext
+): GeneratedTask {
   const itemCount = rule.itemCount ?? rule.constraints?.maxStatements ?? rule.constraints?.maxQuestions ?? rule.constraints?.maxIdeas ?? rule.constraints?.maxWords ?? 4;
   const instruction = rule.exactWording ?? rule.instruction;
   const needsTable = rule.tableRequired ?? false;
@@ -278,8 +293,18 @@ function generatePartOnePrimary(rule: PartOneRule, theme: ReturnType<typeof getT
     return task;
   } else if (rule.family === "COHESIVE_MARKERS") {
     // Targets must be referents with a noun antecedent (they, it, which, ...),
-    // never content words, so draw them from the passage itself.
-    const targets = pickReferents(themeBody(theme), itemCount);
+    // never content words, so draw them from the passage itself. Prefer the
+    // grounding text: it is the passage the teacher will actually print, so the
+    // underlined words are guaranteed to appear on the page.
+    const groundingText = ctx?.groundingText ?? null;
+    const fromPassage = groundingText ? pickReferents(groundingText, itemCount) : [];
+    // A passage with no usable referent must not produce an empty item, so fall
+    // back to the theme corpus. The family is preserved either way: switching it
+    // would break the guide's exactWording check.
+    const targets = fromPassage.length > 0 ? fromPassage : pickReferents(themeBody(theme), itemCount);
+    if (targets.length === 0) {
+      throw new Error("No referent could be derived for the cohesive-markers task.");
+    }
     const task: GeneratedTask = {
       skill: "READING",
       family: "COHESIVE_MARKERS",
@@ -436,7 +461,7 @@ export function generateTextExploration(ctx: MockContext, variant = 0): Generate
 
   for (const skillRule of skills) {
     if (variant === 0) {
-      tasks.push(generateTextExplorationPrimary(skillRule, theme, rng));
+      tasks.push(generateTextExplorationPrimary(skillRule, theme, rng, ctx.groundingText));
     } else {
       tasks.push(generateTextExplorationAlternate(skillRule, theme, rng, variant));
     }
@@ -444,8 +469,84 @@ export function generateTextExploration(ctx: MockContext, variant = 0): Generate
   return tasks;
 }
 
-function generateTextExplorationPrimary(skillRule: SkillRule, theme: ReturnType<typeof getTheme>, rng: Seeded): GeneratedTask {
+/**
+ * Vocabulary/morphology targets for a task, taken from the passage when one is
+ * available and from the theme corpus otherwise.
+ *
+ * The fallback is reported rather than silent: `deriveVocabTargets` returns
+ * null when the passage cannot supply enough words, and the caller falls back
+ * to the corpus so generation degrades instead of crashing. The caller surfaces
+ * this as a validation issue (see `generateTextExplorationGroundingIssues`) so a
+ * teacher is told the exam is theme-level rather than passage-grounded.
+ */
+function deriveVocabTargets(passage: string | null | undefined, needed: number, rng: Seeded): string[] | null {
+  if (!passage) return null;
+  const words = passageVocabulary(passage, 60).map((v) => v.word);
+  if (words.length < needed) return null;
+  return rng.shuffle(words).slice(0, needed);
+}
+
+/**
+ * Word-family derivation for a grounded morphology row. Prefers the curated
+ * corpus family when the word is known (accurate answer key); otherwise
+ * returns empty strings so the row is honest about having no answer rather than
+ * inventing one.
+ */
+function groundedMorphFamily(words: string[], base: string, theme: ReturnType<typeof getTheme>) {
+  const key = base.toLocaleLowerCase().replace(/s$/, "");
+  const known = theme.vocab.find((v) => v.word.replace(/s$/, "") === key);
+  if (known) return { noun: known.family.noun ?? "", verb: known.family.verb ?? "", adjective: known.family.adjective ?? "" };
+  return { noun: "", verb: "", adjective: "" };
+}
+
+/**
+ * Non-empty when the passage could not supply all task targets, so the exam is
+ * answerable from the theme but not strictly from the printed text. Reported to
+ * the caller for inclusion in the 422 body / diagnostics.
+ */
+export function generateTextExplorationGroundingIssues(
+  ctx: MockContext,
+  fallbackUsed: boolean
+): string[] {
+  if (!ctx.groundingText) return [];
+  if (!fallbackUsed) return [];
+  return [
+    "The passage is too short to supply every vocabulary target, so some items fall back to unit-level vocabulary and are not strictly answerable from the text.",
+  ];
+}
+
+function generateTextExplorationPrimary(
+  skillRule: SkillRule,
+  theme: ReturnType<typeof getTheme>,
+  rng: Seeded,
+  groundingText?: string | null
+): GeneratedTask {
   if (skillRule.skill === "VOCABULARY") {
+    // Grounded path: targets are words the student can actually find in the
+    // passage, so "find the meaning" is answerable from the page.
+    const grounded = deriveVocabTargets(groundingText, 4, rng);
+    if (grounded) {
+      const task: GeneratedTask = {
+        skill: "VOCABULARY",
+        prompt: grounded
+          .map((w, i) => `${i + 1}. ${w.charAt(0).toUpperCase() + w.slice(1)} → ..........`)
+          .join("\n"),
+        instruction: `Find the meaning of each of the following words as they are used in the text. ${grounded
+          .map((w, i) => `${i + 1}) ${w}:`)
+          .join("  ")}`,
+        answer: grounded.map((w, i) => `${i + 1}. ${w}`).join("\n"),
+        marks: skillRule.marks,
+      };
+      if (skillRule.tableRequired) {
+        task.table = {
+          headers: ["Word (in the text)", "Meaning"],
+          // The meaning IS the answer — never prefill it.
+          rows: grounded.map((w) => [w, ""]),
+        };
+      }
+      return task;
+    }
+
     const words = rng.take(theme.vocab, 4);
     const task: GeneratedTask = {
       skill: "VOCABULARY",
@@ -470,6 +571,31 @@ function generateTextExplorationPrimary(skillRule: SkillRule, theme: ReturnType<
     }
     return task;
   } else if (skillRule.skill === "MORPHOLOGY") {
+    const groundedMorph = deriveVocabTargets(groundingText, 3, rng);
+    if (groundedMorph) {
+      const rows = groundedMorph.map((base) => ({
+        base,
+        // Derived forms are the answers, so the corpus family lookup is only
+        // meaningful for words it knows; otherwise the student supplies it.
+        family: groundedMorphFamily(groundedMorph, base, theme),
+      }));
+      return {
+        skill: "MORPHOLOGY",
+        family: "WORD_FAMILY",
+        prompt: rows.map((r, i) => `${i + 1}. "${r.base}" → ..........`).join("\n"),
+        instruction: skillRule.instruction,
+        answer: rows
+          .map((r, i) => `${i + 1}. ${r.base}: noun ${r.family.noun}, verb ${r.family.verb}, adjective ${r.family.adjective}`)
+          .join("\n"),
+        marks: skillRule.marks,
+        table: {
+          headers: ["Word", "Noun", "Verb", "Adjective"],
+          // Only the base word is given; every derived form is the answer.
+          rows: rows.map((r) => [r.base, "", "", ""]),
+        },
+      };
+    }
+
     const words = rng.take(theme.vocab, 3);
     const rows = words.map((w) => {
       const noun = w.family.noun ?? "";
