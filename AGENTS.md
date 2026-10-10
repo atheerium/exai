@@ -19,7 +19,7 @@ Next.js 15 App Router + React 19 + TypeScript (strict) + Prisma/PostgreSQL (Supa
 
 | Command | Exit | Notes |
 |---|---|---|
-| `npm test` | 0 | **239 pass.** `node --import tsx --test` on **19 hardcoded paths** (`package.json:12`). No glob, no runner config, no DB or network needed. |
+| `npm test` | 0 | **`node --import tsx --test` on hardcoded paths** (`package.json:12`). No glob, no runner config, no DB or network needed. |
 | `npm run typecheck` | 0 | `rm -f tsconfig.tsbuildinfo && tsc --noEmit`. **Must not run while `next build` runs** — see below. |
 | `npm run build` | 0 | `next build`. Only place types are enforced in CI-like flow. |
 | `npm run lint` | **1** | **Trap — do not use as a gate.** See below. |
@@ -34,7 +34,7 @@ npx prisma db seed   # upserts 7 GuideConfig rows, one per GUIDES key
 npm run dev          # :3000
 ```
 
-One test file: `node --import tsx --test src/lib/guide.test.ts` (`npm test` runs all 19 paths, 239 tests).
+One test file: `node --import tsx --test src/lib/guide.test.ts` (`npm test` runs every registered path).
 
 ## Exam paper layout
 
@@ -45,6 +45,12 @@ One test file: `node --import tsx --test src/lib/guide.test.ts` (`npm test` runs
 - `src/lib/export/pdf.ts` — renders blocks. Body is Times New Roman (`public/fonts/TimesNewRoman.ttf`, regular-only; bold/italic fall back to pdfkit's metric-compatible Standard Times).
 - `src/lib/export/arabic.ts` — Arabic shaping. pdfkit + Amiri shape correctly from presentation forms **alone**: do **not** reverse the shaped string.
 - `src/lib/generate/referents.ts` — referent rules for question 4 (pronoun classes + repetition-avoiding substitutes; content words rejected).
+- `src/lib/generate/grounding.ts` — **passage grounding** (`EXAM.md` section 9). `checkTaskLinkage` mechanically enforces that vocab/morphology and referent targets occur in the passage and that answer cells are empty.
+- `src/lib/generate/full-exam.ts` — one-shot draft. Generates the passage first, passes it as `groundingText`, then runs Part One + Text Exploration + Writing concurrently. **All-or-nothing**: any validation failure returns `ok: false` with nothing produced.
+
+**Grounding is not answerability.** `grounding.ts` proves the referenced material is *present*; whether the passage supports the *judgement* a task asks for is prompt-enforced only (`groundingRule` in `provider.ts`) and is not mechanically checkable. Do not describe it as a guarantee that a question is answerable.
+
+**`GenContext.groundingText` is the switch.** Set → mock draws vocab/morphology/referent material from the passage and `validateCandidate` runs the linkage checks. Absent → per-section generation behaves exactly as before (theme corpus, no linkage check). Adding a new question family means deciding which of those two it belongs to.
 
 Three pdfkit traps, all documented in `EXAM.md` section 3: `underline` on a continued run underlines the **whole line width** (so the passage is laid out word by word); `underline` + `lineBreak:false` with no `width` throws on a NaN coordinate; and Arabic must be shaped but never reversed.
 
@@ -53,7 +59,7 @@ Three pdfkit traps, all documented in `EXAM.md` section 3: `underline` on a cont
 1. **`npm run lint` does not lint.** There is no `.eslintrc*` / `eslint.config.*`, and `eslint` + `eslint-config-next` are **not installed**. `next lint` (15.5.23, deprecated, gone in 16) drops into an *interactive* ESLint scaffold prompt and exits 1. Nothing is enforced by lint. No Prettier either. There is **no CI at all** (`.github/`, husky, pre-commit: all absent) — nothing catches regressions but the test suite and `tsc`.
 2. **Use npm — the pnpm lockfiles are gone, and reintroducing one breaks deploys.** `pnpm-lock.yaml` and `pnpm-workspace.yaml` were deleted in `65e3c74` (2026-10-05): the pnpm lockfile predated five dependencies, so Vercel auto-detected pnpm and every production build died at `ERR_PNPM_OUTDATED_LOCKFILE`. `pnpm-workspace.yaml` also held literal unresolved `allowBuilds` placeholders. Still npm-managed (`package-lock.json`, flat `node_modules`); no `packageManager` field. **Do not commit `pnpm-lock.yaml` or `pnpm-workspace.yaml`** — either one makes Vercel pick pnpm and fail the install.
 3. **Row-level security is currently inert, and `rls.sql` is wired to nothing.** `prisma/rls.sql` holds ~47 policies over 14 tables but is referenced by **no npm script and no doc** — its own header says apply it manually via `psql -f prisma/rls.sql`. Even applied, it is bypassed: only `ENABLE` is used, not `FORCE`, and Prisma connects as the table-owning pooler role (`rls.sql:9-21`). **Real tenant isolation is the per-query `userId` where-clause.** Never drop one on the assumption RLS covers it.
-4. **Adding a `*.test.ts` does nothing** unless you also append its path to `scripts.test` in `package.json`. There is no glob, so a new test file is silently unrun. **19 files exist, 19 are listed** — and `src/test-registration.test.ts` fails the suite if that ever stops being true, so a mismatch cannot pass silently. Register the new file or `npm test` goes red.
+4. **Adding a `*.test.ts` does nothing** unless you also append its path to `scripts.test` in `package.json`. There is no glob, so a new test file is silently unrun. The count is deliberately **not** written here — it goes stale every time a test is added. `src/test-registration.test.ts` fails the suite whenever the registered list and the files on disk disagree, so `npm test` going red is the signal; you cannot get this wrong silently. Register the new file.
 5. **`npm run dev` requires a live Supabase DB** — there is no local/offline mode. `.env.local` (gitignored) holds the real `DATABASE_URL`; `.env` does not exist. `.env.example` is the template.
 6. **Middle school is now LIVE (was dormant).** `src/data/guides.ts` defines all 7 grades (`1am`–`4am` middle, `1as`–`3as` secondary) and the seed writes 7 `GuideConfig` rows. The old `guide.ts` hard rejection of non-secondary levels was removed on 2026-10-05 after verifying the data end to end: all four middle grades resolve through `resolveRules`, generate clean candidates through the mock provider (Part One 7 marks / Text exploration 7 marks / Writing 6 marks, zero `validateCandidate` issues), and export through the `bem` branch of `assemble.ts`. BEM guides use `singleTopic: true`, so `builder.tsx` only requires one writing topic there. If you reintroduce a level restriction, verify against `assemble.test.ts`, which covers both the `bac` and `bem` layouts.
 7. **`DESIGN.md` contradicts the code.** It self-declares superseded by `design.markdown` ("where the two disagree, `design.markdown` wins"), yet its own token table still says `--radius: 0.75rem`, grey `--border`, blurred shadows. Live truth is `src/app/globals.css:26` `--radius: 0.25rem` and `tailwind.config.ts` hard offsets (`4px 4px 0 0 hsl(var(--foreground))`). **Follow `design.markdown`.**

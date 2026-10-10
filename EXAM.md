@@ -509,11 +509,68 @@ Topic Two:                                            <- bold italic, UNDERLINED
 - BEM guides have a single topic (`singleTopic: true`), so `Topic One:` is the
   only label printed.
 
-## 9. Verification
+## 9. Passage grounding: every question must be answerable from the text
+
+A task that names a word the student cannot find in the passage, or asks about
+an event the passage never states, is broken no matter how well it follows the
+official format. Grounding is therefore a cross-cutting rule, not a per-task
+one.
+
+### Rule 1 — vocabulary and morphology targets occur in the passage
+
+Every word used as a target in a Part Two vocabulary or morphology task must be
+present in the passage the student is given. Targets are drawn from the passage's
+own content words (`passageVocabulary`), not from the unit corpus.
+
+Matching tolerates regular inflections: target `friend` matches `friends`,
+`friendly`, `friend's`. It does **not** use open-ended stemming — an unrelated
+word must never satisfy the check.
+
+### Rule 2 — referent targets occur in the passage
+
+The underlined pronoun must occur in the passage, per section 7. When a passage
+supplies no usable referent the item falls back to the unit corpus rather than
+printing an empty item, and the fallback is reported rather than silent.
+
+### Rule 3 — answer cells stay empty
+
+In every task table, column 0 is given material; every column after it is the
+student's answer and must be an empty string.
+
+### What is mechanically enforced, and what is not
+
+| Property | Enforced by | How |
+|---|---|---|
+| vocab/morphology target in passage | `src/lib/generate/grounding.ts` | `checkTaskLinkage` |
+| referent target in passage | `src/lib/generate/grounding.ts` | `checkTaskLinkage` |
+| answer cells empty | `src/lib/generate/grounding.ts` | `checkTaskLinkage` |
+| **that the question is semantically answerable** | **prompt only** | `groundingRule` in `provider.ts` |
+
+The last row is the honest limit. "Is the passage sufficient to *judge* this
+statement?" is not decidable mechanically in the mock path; for LLM providers it
+rests on the model obeying the grounding clause. Do not describe the grounding
+module as proving answerability — it proves the referenced material is present.
+
+### Full-exam generation must preserve this
+
+`generateFullExam` (`src/lib/generate/full-exam.ts`) generates the passage
+first and passes it as `groundingText` to every question generator, so a
+one-click draft is bound by the same rules as a per-section draft. The full run
+is **all-or-nothing**: any section failing validation aborts the whole run, so a
+partially grounded exam never reaches the teacher.
+
+### Stale alignment after edits
+
+A passage can be changed after questions exist, which silently unlinks them.
+The builder therefore asks before regenerating a passage or rewriting it once
+questions are present, and a full run over an exam with content requires an
+explicit `overwrite: true`.
+
+## 10. Verification
 
 ```bash
-npm test                # 239 tests, incl. paper, arabic and referents
-npx tsc --noEmit        # the only typecheck
+npm test                # every test, incl. paper, arabic, referents, grounding, full-exam
+npm run typecheck       # rm -f tsconfig.tsbuildinfo && tsc --noEmit
 npm run build           # types enforced in the build path too
 ```
 
@@ -530,6 +587,14 @@ changes, that test is what should fail first.
 
 `src/lib/export/arabic.test.ts` guards the Arabic shaping contract, in
 particular that the shaped string is not reversed.
+
+`src/lib/export/full-exam-paper.test.ts` guards that an exam persisted by a
+full run renders through `buildPaper` identically, for both the `bac` and `bem`
+layouts, and that no stored answer reaches a block.
+
+`src/lib/generate/grounding.test.ts` and `src/lib/generate/full-exam.test.ts`
+guard section 9: the linkage rules across all seven grades, determinism per
+exam id, and the BEM single-topic case.
 
 `src/lib/generate/referents.test.ts` guards the two referent rules of section 7
 (pronoun class, repetition-avoiding substitute), the rejection of content words,
