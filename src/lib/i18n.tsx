@@ -77,6 +77,9 @@ export const DICT = {
     "builder.rewriteConfirmAction": "Rewrite anyway",
     "builder.passageEditedWarning":
       "The passage was edited after these questions were generated. Check they still match, or regenerate the section.",
+    "builder.passageEditedDismiss": "Dismiss",
+    "builder.replacedWithDrift":
+      "Applied, but this alternative no longer matches the passage. Regenerate the section to re-align it.",
     "builder.partOne": "Part One",
     "builder.partTwo": "Text exploration",
     "builder.writing": "Written expression",
@@ -226,6 +229,9 @@ export const DICT = {
     "builder.rewriteConfirmAction": "Réécrire quand même",
     "builder.passageEditedWarning":
       "Le texte a été modifié après la génération de ces questions. Vérifiez qu'elles correspondent toujours, ou régénérez la section.",
+    "builder.passageEditedDismiss": "Fermer",
+    "builder.replacedWithDrift":
+      "Appliqué, mais cette alternative ne correspond plus au texte. Régénérez la section pour réaligner.",
     "builder.partOne": "Partie Une",
     "builder.partTwo": "Exploration de texte",
     "builder.writing": "Expression écrite",

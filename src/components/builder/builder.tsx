@@ -18,6 +18,7 @@ import { VersionsButton, VersionsModal } from "./versions-modal";
 import { FullExamButton } from "./full-exam-button";
 import { apiFetch } from "@/lib/api-client";
 import { mergePatch } from "@/lib/merge-patch";
+import { checkTaskLinkage } from "@/lib/generate/grounding";
 
 export type SectionId = "params" | "text" | "partOne" | "partTwo" | "writing" | "preview";
 
@@ -54,6 +55,12 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
    * unstyleable, untranslated, and only ever offers OK/Cancel.
    */
   const [pendingConfirm, setPendingConfirm] = React.useState<PendingConfirm | null>(null);
+  /**
+   * The teacher edited the passage after questions existed. Client-side and
+   * deliberately ephemeral: it is a "did you mean to?" hint, not exam data, and
+   * it re-arms on the next passage edit.
+   */
+  const [passageDrifted, setPassageDrifted] = React.useState(false);
 
   function ask(kind: PendingConfirmKind, confirm: () => void, alternative?: () => void) {
     setPendingConfirm({ kind, confirm, alternative });
@@ -295,10 +302,34 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setExam(data);
-      toast("Replaced", "success");
+      // Alternatives are generated without the passage (only the primary set is
+      // grounded), and switching the passage alternative moves the ground under
+      // the questions. Re-check rather than assume the new choice still fits.
+      const drift = linkageIssues(data as ExamDto);
+      if (drift.length > 0) {
+        setPassageDrifted(true);
+        toast(t("builder.replacedWithDrift"), "error");
+      } else {
+        toast("Replaced", "success");
+      }
     } catch (e: unknown) {
       toast(e instanceof Error ? e.message : "Could not replace.", "error");
     }
+  }
+
+  /**
+   * Lexical linkage issues between an exam's questions and its passage, using
+   * the same rule the generator enforces. Empty when everything lines up.
+   * Runs client-side on every replacement so the teacher is told immediately
+   * rather than discovering an unanswerable item on the printed paper.
+   */
+  function linkageIssues(e: ExamDto): string[] {
+    const passage = e.sections.find((s) => s.type === "TEXT")?.text;
+    if (!passage) return [];
+    const tasks = e.sections
+      .filter((s) => s.type === "PART_ONE" || s.type === "TEXT_EXPLORATION")
+      .flatMap((s) => s.tasks ?? []);
+    return checkTaskLinkage(tasks, passage);
   }
 
   async function refreshExam() {
@@ -533,6 +564,12 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
               onEdit={(patch) => {
                 scheduleSave(patch);
                 setExam((prev) => applySectionPatch(prev, patch));
+                // Hand-editing the passage moves the ground under any questions
+                // already built on it. Warn rather than silently misalign.
+                const editsPassage = (patch?.sections ?? []).some(
+                  (s: { text?: unknown }) => typeof s?.text === "string"
+                );
+                if (editsPassage && (hasPartOne || hasPartTwo)) setPassageDrifted(true);
               }}
               onGenerate={() => generate("TEXT")}
               onRewrite={rewrite}
@@ -575,6 +612,8 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
               onMoreAlternatives={(taskId) => generate("TASK_ALT", { taskId })}
               onSaveFavourite={saveFavourite}
               onApplied={refreshExam}
+              passageDrifted={passageDrifted}
+              onDismissDrift={() => setPassageDrifted(false)}
             />
           )}
         </section>
@@ -612,6 +651,8 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
               onMoreAlternatives={(taskId) => generate("TASK_ALT", { taskId })}
               onSaveFavourite={saveFavourite}
               onApplied={refreshExam}
+              passageDrifted={passageDrifted}
+              onDismissDrift={() => setPassageDrifted(false)}
             />
           )}
         </section>

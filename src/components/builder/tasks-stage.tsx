@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw, Info, Eye, EyeOff, Sparkles, Star, Pencil } from "lucide-react";
+import { RefreshCw, Info, Eye, EyeOff, Sparkles, Star, Pencil, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -97,6 +97,8 @@ export function TasksStage({
   onMoreAlternatives,
   onSaveFavourite,
   onApplied,
+  passageDrifted,
+  onDismissDrift,
 }: {
   kind: "PART_ONE" | "TEXT_EXPLORATION";
   exam: ExamDto;
@@ -108,6 +110,9 @@ export function TasksStage({
   onMoreAlternatives: (taskId: string) => void;
   onSaveFavourite: (taskId: string) => void;
   onApplied: () => void;
+  /** The passage was edited after these questions were written. */
+  passageDrifted?: boolean;
+  onDismissDrift?: () => void;
 }) {
   const { t } = useI18n();
   const guide = exam.config ? getGuide(exam.config.grade, exam.config.language ?? "en", exam.config.stream ?? undefined) : null;
@@ -146,6 +151,25 @@ export function TasksStage({
       <p className="text-sm text-muted-foreground">
         {kind === "PART_ONE" ? t("builder.partOneHelp") : t("builder.partTwoHelp")}
       </p>
+
+      {passageDrifted && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded border-2 border-foreground bg-accent p-3 text-sm"
+        >
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="flex-1">{t("builder.passageEditedWarning")}</p>
+          {onDismissDrift && (
+            <button
+              type="button"
+              onClick={onDismissDrift}
+              className="shrink-0 underline underline-offset-2"
+            >
+              {t("builder.passageEditedDismiss")}
+            </button>
+          )}
+        </div>
+      )}
 
       {tasks.length === 0 ? (
         <div className="rounded border-2 border-dashed border-foreground bg-card py-16 text-center">
