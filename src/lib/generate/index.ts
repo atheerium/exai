@@ -151,16 +151,28 @@ type GeneratorImpl = {
  */
 async function withChain<T>(run: (impl: GeneratorImpl) => Promise<T>): Promise<T> {
   const entries = chainFromEnv();
-  if (entries.length === 0) return run(mock);
+  if (entries.length === 0) {
+    // No provider key at all: run offline rather than fail, but SAY so. The mock
+    // writes generic test-double text, and a teacher seeing it has no way to
+    // know the difference without a log line. This is the one case where mock
+    // output is expected rather than a misconfiguration.
+    console.warn(
+      "[generate] No live provider configured (no GROQ_API_KEY / OPENROUTER_API_KEY / NVIDIA_API_KEY). " +
+        "Using the offline mock provider: passages are template-generated and will read as generic."
+    );
+    return run(mock);
+  }
 
   const { configs, skipped } = resolveChain(entries);
   if (configs.length === 0) {
     const detail = skipped.map((s) => `${s.entry.provider}: ${s.reason}`).join("; ");
+    // Never silently mock: the key is there, so the operator believes they have
+    // a model, and mock text would look like success while being a test double.
     throw new ChainError(
       "auth",
       "chain",
       entries.map((e) => e.model).join(","),
-      `No usable provider in AI_PROVIDER_CHAIN (${detail || "chain was empty"}).`
+      `No usable provider in the configured chain (${detail || "chain was empty"}).`
     );
   }
 

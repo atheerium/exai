@@ -843,6 +843,28 @@ Measured against live keys on 2026-10-11:
   Gemma on OpenRouter returns a ```json fence even when asked. `parseLooseJson`
   salvages that rather than failing a whole exam.
 
+### 12.3a Default chain (no configuration required)
+
+With `AI_PROVIDER_CHAIN` unset, any one of `GROQ_API_KEY`, `OPENROUTER_API_KEY`
+or `NVIDIA_API_KEY` selects the built-in chain. GPT-OSS leads, per user
+instruction (2026-10-11). No second config step, and an empty-string key counts
+as unset so the `KEY=""` placeholders in `.env.local` are safe.
+
+| Order | Entry | Why this position |
+|---|---|---|
+| 1 | `groq:openai/gpt-oss-120b` | The model to judge: 6/6 valid JSON with the reasoning cap, best free prose |
+| 2 | `groq:openai/gpt-oss-20b` | Same family, smaller; fallback not partner |
+| 3 | `groq:qwen/qwen3.8-27b` | Served on Groq free generally; blocked on some project keys |
+| 4 | `nvidia:nvidia/nemotron-3-ultra-550b-a55b` | 2/2 direct, but needs the large token budget the chain sets |
+| 5 | `openrouter:nvidia/nemotron-3-ultra-550b-a55b:free` | Last resort only; shared capacity, unreliable by nature |
+
+`AI_PROVIDER=mock` overrides everything, including when a key is present. That is
+what keeps the test suite offline — see `AGENTS.md`.
+
+**A blocked model must not stop the chain.** `gpt-oss-20b` and `qwen3.8-27b`
+both returned `403 blocked at the project level` on a key that otherwise worked.
+A 403 about the *model* is per-entry and advances; a 403 about the *key* is fatal.
+
 ### 12.4 What a live free-tier run actually exposed
 
 Everything above was verified against a live Groq key, not assumed. Running a

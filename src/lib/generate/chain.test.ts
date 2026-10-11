@@ -9,8 +9,10 @@ import {
   parseChain,
   resolveChain,
   chainFromEnv,
+  chainIsExplicit,
   classifyFailure,
   shouldAdvance,
+  DEFAULT_CHAIN,
   type ChainEntry,
   type EnvLike,
 } from "./chain";
@@ -90,6 +92,29 @@ test("classifyFailure separates auth from throttling", () => {
   assert.equal(classifyFailure(new Error("something else entirely")), "server");
 });
 
+test("classifyFailure separates a blocked MODEL from a bad KEY", () => {
+  // Measured live 2026-10-11: gpt-oss-20b answers 403 "blocked at the project
+  // level" while the key is fine and the next entry works. Classifying that as
+  // `auth` aborted the whole chain on exactly the case it exists to survive.
+  assert.equal(
+    classifyFailure(
+      new Error("AI provider error 403: The model `openai/gpt-oss-20b` is blocked at the project level.")
+    ),
+    "unavailable"
+  );
+  assert.equal(
+    classifyFailure(new Error("AI provider error 404: model not found: qwen/qwen9-999b")),
+    "unavailable"
+  );
+  assert.equal(
+    classifyFailure(new Error("This model is unavailable for free. The paid version is available now.")),
+    "unavailable"
+  );
+  // A genuine credential problem still stops the chain.
+  assert.equal(classifyFailure(new Error("AI provider error 403: invalid api key")), "auth");
+  assert.equal(classifyFailure(new Error("AI provider error 401: Unauthorized")), "auth");
+});
+
 test("advance policy: never advance past an auth or validation failure", () => {
   // Advancing on 401 turns one clear credential error into a confusing one and
   // burns the fallback quota while failing anyway.
@@ -98,6 +123,9 @@ test("advance policy: never advance past an auth or validation failure", () => {
   assert.equal(shouldAdvance("throttle"), true);
   assert.equal(shouldAdvance("server"), true);
   assert.equal(shouldAdvance("content"), true);
+  // A model that is blocked/retired is per-ENTRY: a different model is the
+  // entire reason a fallback chain exists.
+  assert.equal(shouldAdvance("unavailable"), true);
 });
 
 test("chainFromEnv prefers the chain over the legacy single provider", () => {
@@ -146,4 +174,59 @@ test("a full chain resolves end to end with all three keys present", () => {
     ],
     "each provider keeps its own default endpoint"
   );
+});
+// --- Default chain: a key alone is enough to go live ------------------------
+//
+// User instruction 2026-10-11: GPT-OSS is the model, and the chain should not
+// require a second config step to be remembered.
+
+test("a provider key alone selects the default chain, with no AI_PROVIDER set", () => {
+  // The whole point of the default chain: an operator who pasted a key wants a
+  // model. Requiring them to also set AI_PROVIDER=groq is the config step that
+  // silently leaves the app on mock.
+  const entries = chainFromEnv({ GROQ_API_KEY: "k" } satisfies EnvLike);
+  assert.equal(entries.length, DEFAULT_CHAIN.length);
+  assert.equal(entries[0].model, "openai/gpt-oss-120b", "GPT-OSS leads the chain");
+  assert.equal(entries[0].provider, "groq");
+});
+
+test("GPT-OSS leads the default chain", () => {
+  assert.equal(DEFAULT_CHAIN[0].model, "openai/gpt-oss-120b");
+  // The reasoning cap regex must cover both gpt-oss entries or the smaller one
+  // silently returns empty content when it is ever reached.
+  const { configs } = resolveChain([...DEFAULT_CHAIN], {
+    GROQ_API_KEY: "a",
+    NVIDIA_API_KEY: "c",
+    OPENROUTER_API_KEY: "b",
+  } satisfies EnvLike);
+  const gptOss = configs.filter((c) => /gpt-oss/.test(c.model));
+  assert.equal(gptOss.length, 2);
+  for (const c of gptOss) assert.equal(c.reasoningEffort, "low", `${c.model} must be capped`);
+});
+
+test("AI_PROVIDER=mock wins even when a key is exported in the shell", () => {
+  // Otherwise an operator who pinned the offline provider gets silently pushed
+  // onto a live API -- and the test suite, which runs with keys present in the
+  // developer's shell, would start making real network calls.
+  assert.deepEqual(chainFromEnv({ AI_PROVIDER: "mock", GROQ_API_KEY: "k" } satisfies EnvLike), []);
+});
+
+test("an empty-string key counts as unset, not as a configured provider", () => {
+  // `.env.local` ships `GROQ_API_KEY=""` as a paste placeholder; that must read
+  // as absent or the app would try the chain and fail on an empty token.
+  assert.deepEqual(
+    chainFromEnv({ GROQ_API_KEY: "", OPENROUTER_API_KEY: "  ", NVIDIA_API_KEY: "" } satisfies EnvLike),
+    []
+  );
+});
+
+test("no keys at all keeps the offline mock", () => {
+  assert.deepEqual(chainFromEnv({} satisfies EnvLike), []);
+  assert.deepEqual(chainFromEnv({ AI_PROVIDER: "" } satisfies EnvLike), []);
+});
+
+test("chainIsExplicit distinguishes operator intent from the default", () => {
+  assert.equal(chainIsExplicit({ AI_PROVIDER_CHAIN: "groq:m" } satisfies EnvLike), true);
+  assert.equal(chainIsExplicit({ AI_PROVIDER_CHAIN: "garbage" } satisfies EnvLike), false);
+  assert.equal(chainIsExplicit({ GROQ_API_KEY: "k" } satisfies EnvLike), false);
 });
