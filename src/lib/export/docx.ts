@@ -37,6 +37,13 @@ const FONT = "Times New Roman";
  */
 const PASSAGE_GAP_AFTER = 200;
 
+/**
+ * Table width as a percentage of the text block. Narrower than full width so a
+ * three-column affix chart is centred rather than spanning the page (user
+ * screenshot, 2026-10-11). PDF equivalent: TABLE_MAX_WIDTH in pdf.ts.
+ */
+const TABLE_WIDTH_PCT = 70;
+
 type RunOpts = {
   bold?: boolean;
   italics?: boolean;
@@ -202,10 +209,16 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
     });
 
   const drawTable = (table: PaperTable) => {
+    // Official style (user screenshot, 2026-10-11): table centred, headers bold
+    // italic and centred. PDF equivalent: TABLE_MAX_WIDTH in pdf.ts.
     const headerRow = new TableRow({
       tableHeader: true,
       children: table.headers.map(
-        (h) => new TableCell({ borders: GRID, children: [p(h, { size: 17, bold: true })] })
+        (h) =>
+          new TableCell({
+            borders: GRID,
+            children: [p(h, { size: 17, bold: true, italics: true, align: "center" })],
+          })
       ),
     });
     const dataRows = table.rows.map(
@@ -221,9 +234,13 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
         })
     );
     children.push(
+      new Paragraph({ spacing: { after: 0 }, children: [t("", { size: 2 })] })
+    );
+    children.push(
       new Table({
         rows: [headerRow, ...dataRows],
-        width: { size: 100, type: WidthType.PERCENTAGE },
+        width: { size: TABLE_WIDTH_PCT, type: WidthType.PERCENTAGE },
+        alignment: AlignmentType.CENTER,
         borders: GRID,
       })
     );

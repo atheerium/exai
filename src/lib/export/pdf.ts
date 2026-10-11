@@ -34,6 +34,11 @@ const GAP_LEADER = "................";
  * from here. DOCX equivalent: PASSAGE_GAP_AFTER in docx.ts.
  */
 const PARA_GAP = 0.55;
+/**
+ * Tables are centred and narrower than the text block (user screenshot,
+ * 2026-10-11). DOCX mirrors this with TABLE_WIDTH_PCT.
+ */
+const TABLE_MAX_WIDTH = 400;
 
 export async function renderPdf(docModel: ExportDocument): Promise<Buffer> {
   const doc = new PDFDocument({ size: "A4", margin: 56, bufferPages: true });
@@ -380,13 +385,19 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
 
   const drawTable = (table: PaperTable) => {
     const colCount = table.headers.length;
-    const colWidth = contentWidth / colCount;
     const padX = 5;
     const padY = 5;
-    const textWidth = colWidth - padX * 2;
     const minHeight = 20;
     const pageBottom = () => doc.page.height - doc.page.margins.bottom;
     let y = doc.y;
+
+    // Official style (user screenshot, 2026-10-11): the table is centred and
+    // narrower than the text block. It was previously left-aligned at full
+    // content width, which made a three-column affix chart span the whole page.
+    const tableWidth = Math.min(contentWidth, TABLE_MAX_WIDTH);
+    const x0 = left + (contentWidth - tableWidth) / 2;
+    const colWidth = tableWidth / colCount;
+    const textWidth = colWidth - padX * 2;
 
     const measure = (cells: string[], bold: boolean): number => {
       font(BODY - 1, bold);
@@ -404,9 +415,9 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
 
     doc.save().lineWidth(0.8).strokeColor("#000000");
     table.headers.forEach((h, ci) => {
-      const x = left + ci * colWidth;
+      const x = x0 + ci * colWidth;
       doc.rect(x, y, colWidth, headerH).stroke();
-      font(BODY - 1, true).fillColor("#000000").text(h, x + padX, y + padY, {
+      ital(BODY - 1, true).fillColor("#000000").text(h, x + padX, y + padY, {
         width: textWidth,
         align: "center",
       });
@@ -421,7 +432,7 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
         y = doc.y;
       }
       row.forEach((cell, ci) => {
-        const x = left + ci * colWidth;
+        const x = x0 + ci * colWidth;
         doc.rect(x, y, colWidth, h).stroke();
         font(BODY - 1).fillColor("#000000").text(cell || " ", x + padX, y + padY, { width: textWidth });
       });

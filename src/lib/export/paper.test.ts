@@ -240,60 +240,82 @@ test("buildPaper carries the BAC structure so renderers can add the Arabic heade
   assert.equal(bemGuide.structure, "bem");
 });
 
-test("buildPaper surfaces a table only when the task carries headers", () => {
-  const withTable = buildPaper(
-    assembleDocument(
-      exam({
-        sections: [
-          section({
-            id: "s",
-            type: "PART_ONE",
-            tasks: [
-              {
-                id: "t",
-                prompt: "1. One",
-                instruction: "Fill",
-                marks: 2,
-                order: 0,
-                manualEdited: false,
-                candidates: [],
-                table: { headers: ["A", "B"], rows: [["x", ""]] },
-              },
-            ],
-          }),
-        ],
-      })
-    )
-  );
-  const table = withTable.blocks.find((b) => b.kind === "table");
-  assert.ok(table && table.kind === "table");
-  assert.deepEqual(table.table.headers, ["A", "B"]);
+const taskWithTable = (skill: string | null, table: { headers: string[]; rows: string[][] }) => ({
+  id: "t",
+  prompt: "1. One",
+  instruction: "Fill",
+  marks: 2,
+  order: 0,
+  manualEdited: false,
+  candidates: [],
+  skill,
+  table,
+});
 
-  const emptyHeaders = buildPaper(
+test("Part One never renders a table, even when the stored task carries one", () => {
+  // User rule 2026-10-11: True/False and paragraph matching print sentences
+  // only. Exams saved before the rule still hold a table in the DTO, so this is
+  // a render-time strip, not a data migration.
+  const paper = buildPaper(
     assembleDocument(
       exam({
         sections: [
           section({
             id: "s",
             type: "PART_ONE",
-            tasks: [
-              {
-                id: "t",
-                prompt: "1. One",
-                instruction: "Fill",
-                marks: 2,
-                order: 0,
-                manualEdited: false,
-                candidates: [],
-                table: { headers: [], rows: [] },
-              },
-            ],
+            tasks: [taskWithTable(null, { headers: ["Statement", "Answer"], rows: [["A statement", "True"]] })],
           }),
         ],
       })
     )
   );
-  assert.equal(emptyHeaders.blocks.some((b) => b.kind === "table"), false);
+  assert.equal(paper.blocks.some((b) => b.kind === "table"), false);
+  assert.ok(paper.blocks.some((b) => b.kind === "task"), "the task itself still renders");
+});
+
+test("Part Two renders a table only for the tabular skills", () => {
+  const build = (skill: string) =>
+    buildPaper(
+      assembleDocument(
+        exam({
+          sections: [
+            section({
+              id: "s",
+              type: "TEXT_EXPLORATION",
+              tasks: [taskWithTable(skill, { headers: ["prefix", "root", "suffix"], rows: [["", "", ""]] })],
+            }),
+          ],
+        })
+      )
+    );
+
+  for (const skill of ["MORPHOLOGY", "PHONOLOGY"]) {
+    const p = build(skill);
+    const table = p.blocks.find((b) => b.kind === "table");
+    assert.ok(table && table.kind === "table", `${skill} keeps its table`);
+    assert.deepEqual(table.table.headers, ["prefix", "root", "suffix"]);
+  }
+
+  for (const skill of ["VOCABULARY", "DISCOURSE", "GRAMMAR", "READING"]) {
+    assert.equal(build(skill).blocks.some((b) => b.kind === "table"), false, `${skill} must not render a table`);
+  }
+});
+
+test("buildPaper ignores a table with no headers", () => {
+  const paper = buildPaper(
+    assembleDocument(
+      exam({
+        sections: [
+          section({
+            id: "s",
+            type: "TEXT_EXPLORATION",
+            tasks: [taskWithTable("MORPHOLOGY", { headers: [], rows: [] })],
+          }),
+        ],
+      })
+    )
+  );
+  assert.equal(paper.blocks.some((b) => b.kind === "table"), false);
 });
 
 test("buildPaper turns writing keywords into a notes list with a heading", () => {

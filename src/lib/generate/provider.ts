@@ -114,6 +114,25 @@ function passageField(ctx: GenContext): Record<string, unknown> {
   return ctx.groundingText ? { passage: ctx.groundingText } : {};
 }
 
+/**
+ * Format rules the model kept breaking (user instruction, 2026-10-11). Kept in
+ * the prompt as well as in code because the prompt is what the model actually
+ * reads; `export/tables.ts` is the enforcing authority, so a model that ignores
+ * this still fails validation rather than printing a stray chart.
+ */
+const PART_ONE_TABLE_RULE =
+  " Part One tasks NEVER carry a table, even when the rules above say tableRequired: " +
+  "print the sentences and let the answer key live on a separate sheet. ";
+
+/** Tables are allowlisted: morphology and phonology classification only. */
+const PART_TWO_TABLE_RULE =
+  " Only morphology (roots, prefixes, suffixes) and phonology classification tasks carry a table; " +
+  "vocabulary matching, discourse gap-fill and grammar tasks must NOT have one. ";
+
+/** Official choice labels are lowercase letters with a closing parenthesis. */
+const CHOICE_LABEL_RULE =
+  ' Multiple-choice options are labelled with a lowercase letter and a closing parenthesis -- "a)" "b)" "c)" "d)" -- one per line, never "a." or "A.". ';
+
 const PARAGRAPH_NOTE =
   " Write the passage as 3-5 coherent paragraphs separated by blank lines (\\n\\n).";
 
@@ -215,7 +234,9 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'Set 0 must use exactly these families. Sets 1 and 2 must use DIFFERENT task types for the same skills/marks ' +
         '(e.g. MCQ instead of open questions, YES/NO/Not-Given instead of True/False, matching instead of paragraph ID, ordering instead of title choice). ' +
         'For tasks with tableRequired=true, include a "table" field with headers and rows. ' +
+        PART_ONE_TABLE_RULE +
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
+        CHOICE_LABEL_RULE +
         'Return {"sets":[{"tasks":[{"prompt","instruction","answer","marks","skill":"READING","family":"...","table":{"headers":[],"rows":[[]]}}]}]} with 3 different sets of tasks.',
       families,
     });
@@ -241,7 +262,9 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'Set 0 must use the standard families. Sets 1 and 2 must use DIFFERENT task types for the same skills/marks ' +
         '(e.g. synonym match instead of meaning, prefix/suffix instead of word family, stress pattern instead of sound class, choose correct form instead of rewrite, jumbled sentences instead of gap fill). ' +
         'For tasks with tableRequired=true, include a "table" field with headers and rows. ' +
+        PART_TWO_TABLE_RULE +
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
+        CHOICE_LABEL_RULE +
         'Return {"sets":[{"tasks":[{"prompt","instruction","answer","marks","skill","family":"...","table":{"headers":[],"rows":[[]]}}]}]} with 3 different sets of tasks.',
       skills,
     });

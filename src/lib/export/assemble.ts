@@ -18,6 +18,9 @@ export interface ExportTask {
   instruction: string;
   prompt: string;
   marks: string;
+  /** Skill/family, so the table allowlist can decide without a guide lookup. */
+  skill?: string | null;
+  family?: string | null;
   table?: { headers: string[]; rows: string[][] } | null;
 }
 
@@ -31,6 +34,12 @@ export interface ExportTopic {
 }
 
 export interface ExportSection {
+  /**
+   * Which part of the paper this is. Carried through so renderers can apply the
+   * table allowlist (`tables.ts`), which is keyed on the section: Part A never
+   * carries a table.
+   */
+  sectionType: "TEXT" | "PART_ONE" | "TEXT_EXPLORATION" | "WRITING";
   heading: string;
   marksLabel: string;
   intro?: string;
@@ -130,6 +139,8 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
     instruction: t.instruction ?? "",
     prompt: t.prompt,
     marks: formatMarks(t.marks),
+    skill: t.skill ?? null,
+    family: t.family ?? null,
     table: t.table ?? null,
   }));
 
@@ -137,6 +148,8 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
     instruction: t.instruction ?? "",
     prompt: t.prompt,
     marks: formatMarks(t.marks),
+    skill: t.skill ?? null,
+    family: t.family ?? null,
     table: t.table ?? null,
   }));
 
@@ -162,6 +175,7 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
       header,
       sections: [
         {
+          sectionType: "TEXT",
           heading: guide?.headings?.partOne ?? "Part One: Reading.",
         marksLabel: guide ? pointsLabel(umbrellaTotal) : "",
           text,
@@ -170,6 +184,7 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
           topics: [],
         },
         {
+          sectionType: "PART_ONE",
           heading: "A/ Comprehension.",
           marksLabel: bacMarks("partOne"),
           intro: "Read the text carefully and do the activities.",
@@ -177,12 +192,14 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
           topics: [],
         },
         {
+          sectionType: "TEXT_EXPLORATION",
           heading: guide?.headings?.textExploration ?? "B/ Text Exploration.",
           marksLabel: bacMarks("textExploration"),
           tasks: p2Tasks,
           topics: [],
         },
         {
+          sectionType: "WRITING",
           heading: guide?.headings?.writing ?? "Part Two: Written Expression.",
           marksLabel: bacMarks("writing"),
           intro: topics.length >= 2 ? "Choose ONE of the following topics" : undefined,
@@ -206,6 +223,7 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
     header,
     sections: [
       {
+        sectionType: "PART_ONE",
         heading: partOneHeading,
         marksLabel: `${marks("partOne")} pts`,
         text,
@@ -214,12 +232,14 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
         topics: [],
       },
       {
+        sectionType: "TEXT_EXPLORATION",
         heading: textExplorationHeading,
         marksLabel: `${marks("textExploration")} pts`,
         tasks: p2Tasks,
         topics: [],
       },
       {
+        sectionType: "WRITING",
         heading: writingHeading,
         marksLabel: `${marks("writing")} pts`,
         tasks: [],

@@ -12,6 +12,7 @@
 import { resolveRules } from "@/lib/guide";
 import { countWords } from "./rng";
 import { checkTaskLinkage, type LinkableTask } from "./grounding";
+import { taskHasTable } from "@/lib/export/tables";
 import type { GenerationRequest } from "@/types";
 import * as mock from "./mock";
 import * as openai from "./openai";
@@ -183,9 +184,18 @@ export function validateCandidate(
           if (rule.exactWording && task.family === rule.family && task.instruction !== rule.exactWording) {
             issues.push(`Task ${i + 1} instruction must use exact wording: "${rule.exactWording}"`);
           }
-          // tableRequired
-          if (rule.tableRequired && (!task.table || task.table.headers.length === 0 || task.table.rows.length === 0)) {
-            issues.push(`Task ${i + 1} requires a table but none was provided.`);
+          // Tables: allowlisted by section and skill (user instruction
+          // 2026-10-11). Both directions are enforced — a missing table where
+          // one belongs, and a table where none does. The absent case is the
+          // important one: it is what stops a future change from quietly
+          // re-adding tables to tasks the official paper has none for.
+          const wantsTable = taskHasTable(type, task);
+          if (wantsTable) {
+            if (!task.table || task.table.headers.length === 0 || task.table.rows.length === 0) {
+              issues.push(`Task ${i + 1} requires a table but none was provided.`);
+            }
+          } else if (task.table) {
+            issues.push(`Task ${i + 1} must not carry a table; only tabular Part Two tasks may.`);
           }
           // itemCount where prescribed (Part One)
           if (rule.itemCount != null) {

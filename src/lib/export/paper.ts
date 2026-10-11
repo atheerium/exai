@@ -12,6 +12,7 @@
 
 import type { ExportDocument, ExportHeader, ExportTask, ExportTopic } from "./assemble";
 import { isReferentWord, paragraphIndexOf } from "@/lib/generate/referents";
+import { taskHasTable } from "./tables";
 
 export interface PaperTable {
   headers: string[];
@@ -35,6 +36,9 @@ export interface PaperTask {
   items: PaperItem[];
   wordList: string | null;
   table: PaperTable | null;
+  /** Carried for the table allowlist; not rendered. */
+  skill?: string | null;
+  family?: string | null;
 }
 export interface PaperTopic {
   label: string;
@@ -215,6 +219,8 @@ function toPaperTask(task: ExportTask, number: number): PaperTask {
     items,
     wordList: lead.find((l) => HYPHEN_LIST.test(l.trim())) ?? null,
     table: task.table && task.table.headers.length > 0 ? task.table : null,
+    skill: task.skill ?? null,
+    family: task.family ?? null,
   };
 }
 
@@ -278,7 +284,14 @@ export function buildPaper(doc: ExportDocument): Paper {
       const isReferentTask = task.items.some((i) => i.referent);
       blocks.push({ kind: "task", task });
       if (task.wordList) blocks.push({ kind: "wordList", words: task.wordList.split(/\s*-\s*/) });
-      if (task.table && !isReferentTask) blocks.push({ kind: "table", table: task.table });
+      // Tables are allowlisted by section and skill (user instruction,
+      // 2026-10-11): Part A never carries one, and Part B only for the tabular
+      // skills. Stripping here rather than migrating means exams saved before
+      // the rule print correctly too, with no data migration.
+      const allowed = taskHasTable(section.sectionType, task);
+      if (task.table && !isReferentTask && allowed) {
+        blocks.push({ kind: "table", table: task.table });
+      }
     });
 
     section.topics.forEach((topic, i) => blocks.push({ kind: "topic", topic: toPaperTopic(topic, i) }));

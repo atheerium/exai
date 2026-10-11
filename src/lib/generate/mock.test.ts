@@ -341,12 +341,18 @@ test("Bac sciences stream has correct itemCounts per stream variant", () => {
   assert.ok(!scGuide.partOne.find((r) => r.family === "TITLE_OR_IDEA"), "sciences should not have TITLE_OR_IDEA");
 });
 
-test("SkillRule tableRequired is set for MORPHOLOGY", () => {
+test("tableRequired follows the table allowlist, not the old blanket default", () => {
+  // User rule 2026-10-11: tables only for tabular Part Two tasks (morphology,
+  // phonology). Part A never carries one; vocabulary and discourse never do.
   const bemGuide = getGuide("4am");
-  const morphSkill = bemGuide.textExploration.skills.find((s) => s.skill === "MORPHOLOGY");
-  assert.ok(morphSkill?.tableRequired === true, "MORPHOLOGY should have tableRequired=true");
-  const vocabSkill = bemGuide.textExploration.skills.find((s) => s.skill === "VOCABULARY");
-  assert.ok(vocabSkill?.tableRequired === true, "VOCABULARY should have tableRequired=true");
+  const skill = (name: string) => bemGuide.textExploration.skills.find((s) => s.skill === name);
+  assert.equal(skill("MORPHOLOGY")?.tableRequired, true, "affix tables stay");
+  assert.equal(skill("PHONOLOGY")?.tableRequired, true, "classification tables stay");
+  assert.equal(skill("VOCABULARY")?.tableRequired, false, "no vocabulary matching chart");
+  assert.equal(skill("DISCOURSE")?.tableRequired, false, "no gap-fill chart");
+  for (const rule of bemGuide.partOne) {
+    assert.equal(rule.tableRequired, false, `Part One ${rule.family} must not require a table`);
+  }
 });
 
 test("generated tables leave the answer column empty for every grade and variant", () => {

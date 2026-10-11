@@ -10,6 +10,7 @@ import type { Guide, PartOneRule, SkillRule } from "@/data/guides";
 import { countWords, Seeded } from "./rng";
 import { pickReferents } from "./referents";
 import { occursInPassage, passageVocabulary } from "./grounding";
+import { rulePrescribesTable, taskHasTable } from "@/lib/export/tables";
 import type { GeneratedSource, GeneratedTask, GeneratedText, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 
 export interface MockContext {
@@ -238,7 +239,11 @@ function generatePartOnePrimary(
 ): GeneratedTask {
   const itemCount = rule.itemCount ?? rule.constraints?.maxStatements ?? rule.constraints?.maxQuestions ?? rule.constraints?.maxIdeas ?? rule.constraints?.maxWords ?? 4;
   const instruction = rule.exactWording ?? rule.instruction;
-  const needsTable = rule.tableRequired ?? false;
+  // Tables are allowlisted by section and skill (user instruction, 2026-10-11):
+// Part A never carries one. The guide flag is deliberately ignored here so a
+// legacy `tableRequired: true` on a Part One rule cannot reintroduce a chart the
+// official paper does not have.
+const needsTable = taskHasTable("PART_ONE", { family: rule.family });
 
   if (rule.family === "QUESTIONS") {
     const qs = rng.take(theme.questions, itemCount);
@@ -565,7 +570,7 @@ function generateTextExplorationPrimary(
           .join("\n"),
         marks: skillRule.marks,
       };
-      if (skillRule.tableRequired) {
+      if (rulePrescribesTable(skillRule)) {
         task.table = {
           headers: ["Word (in the text)", "Meaning"],
           // The meaning IS the answer — never prefill it.
@@ -590,7 +595,7 @@ function generateTextExplorationPrimary(
       answer: words.map((w, i) => `${i + 1}. ${w.word} = ${wordDef(theme, w.word)}`).join("\n"),
       marks: skillRule.marks,
     };
-    if (skillRule.tableRequired) {
+    if (rulePrescribesTable(skillRule)) {
       task.table = {
         headers: ["Word", "Meaning"],
         // The definition IS the answer for this matching task — never prefill it.
@@ -659,15 +664,21 @@ function generateTextExplorationPrimary(
       const map: Record<string, string> = { t: "/t/", d: "/d/", id: "/ɪd/" };
       return {
         skill: "PHONOLOGY",
+        family: "SOUND_CLASS",
         prompt: `Classify the following words according to the pronunciation of the final "-ed".\n${words
           .map((w) => w.edWord ?? w.word)
-          .join(" — ")}\n${groups.join(" | ")}`,
+          .join(" - ")}\n${groups.join(" | ")}`,
         instruction: skillRule.instruction,
         answer: groups
           .map((g) => `${g}: ${words.filter((w) => map[w.finalEd!] === g).map((w) => w.edWord ?? w.word).join(", ")}`)
           .filter((s) => !s.endsWith(": "))
           .join("\n"),
         marks: skillRule.marks,
+        table: {
+          headers: [...groups],
+          // Classification answers go in the body; the headers are the groups.
+          rows: [[...groups].map(() => ""), [...groups].map(() => "")],
+        },
       };
     } else {
       const words = rng.take(theme.vocab.filter((v) => v.word.endsWith("s") || v.word.endsWith("z")), 4).map((v) => v.word);
@@ -679,13 +690,18 @@ function generateTextExplorationPrimary(
         .map((v) => ({ word: v.word, pron: map[v.finalS] }));
       return {
         skill: "PHONOLOGY",
-        prompt: `Classify the following words according to the pronunciation of the final "-s".\n${list.join(" — ")}\n${groups.join(" | ")}`,
+        family: "SOUND_CLASS",
+        prompt: `Classify the following words according to the pronunciation of the final "-s".\n${list.join(" - ")}\n${groups.join(" | ")}`,
         instruction: skillRule.instruction,
         answer: groups
           .map((g) => `${g}: ${classified.filter((c) => c.pron === g).map((c) => c.word).join(", ")}`)
           .filter((s) => !s.endsWith(": "))
           .join("\n"),
         marks: skillRule.marks,
+        table: {
+          headers: [...groups],
+          rows: [[...groups].map(() => ""), [...groups].map(() => "")],
+        },
       };
     }
   } else if (skillRule.skill === "GRAMMAR") {
@@ -706,7 +722,7 @@ function generateTextExplorationPrimary(
       answer: d.options.filter((o) => d.answers.includes(o)).join(", "),
       marks: skillRule.marks,
     };
-    if (skillRule.tableRequired) {
+    if (rulePrescribesTable(skillRule)) {
       const gaps = d.text.match(/___/g) || [];
       task.table = {
         headers: ["Gap", "Word"],
