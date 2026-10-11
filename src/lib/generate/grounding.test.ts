@@ -203,3 +203,38 @@ test("checkTopicAnchoring is a no-op without anchors or paragraphs", () => {
   assert.deepEqual(checkTopicAnchoring("", { topic: "advertising" }), []);
   assert.deepEqual(checkTopicAnchoring("Any text at all here.", { topic: "" }), []);
 });
+
+test("checkTopicAnchoring accepts a content word of a long curriculum topic", () => {
+  // Found by running live exams on 2026-10-11: the topic the code receives is the
+  // CURRICULUM LABEL, not a short noun. Demanding "Exploring the ancient world"
+  // verbatim rejected four out of four generated passages, including good ones.
+  const passage = [
+    "Egyptian tombs belong to the ancient world, and archaeologists still read them as a map of how the dead expected to live.",
+    "Inscriptions on the walls name the ancient world the builders imagined, and each one records an offering to the gods.",
+    "Many visitors now see the ruins as a lesson about how ancient societies organised labour, water and food for centuries.",
+  ].join("\n\n");
+  assert.deepEqual(checkTopicAnchoring(passage, { topic: "Exploring the ancient world" }), []);
+});
+
+test("checkTopicAnchoring still rejects drift from a long curriculum topic", () => {
+  // The relaxation above must not swallow the case the check exists for.
+  const passage = [
+    "Traditional music in the Algerian south relies on rhythms passed down orally through generations of musicians.",
+    "Wedding celebrations gather the players, and drums announce each stage of the ceremony across several days.",
+    "Young performers now learn the same melodies from recordings, though elders insist the feel has since changed.",
+  ].join("\n\n");
+  const issues = checkTopicAnchoring(passage, { topic: "Exploring the ancient world" });
+  assert.equal(issues.length, 3, "no content word of the topic appears in any paragraph");
+});
+
+test("topic filler alone never anchors a paragraph", () => {
+  // "Exploring the ancient world" contains "exploring", "and", "being", "good".
+  // Anchoring on filler would accept literally any paragraph.
+  const passage = [
+    "Traditional music in the Algerian south relies on rhythms passed down orally through generations of musicians.",
+    "Exploring a good idea and being thorough with it are habits worth building in any classroom setting.",
+    "Wedding celebrations gather the players, and drums announce each stage of the ceremony across several days.",
+  ].join("\n\n");
+  const issues = checkTopicAnchoring(passage, { topic: "Exploring the ancient world" });
+  assert.equal(issues.length, 3, "exploring/good/and must not count as anchors");
+});

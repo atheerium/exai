@@ -843,7 +843,47 @@ Measured against live keys on 2026-10-11:
   Gemma on OpenRouter returns a ```json fence even when asked. `parseLooseJson`
   salvages that rather than failing a whole exam.
 
-### 12.4 One repair attempt, bounded
+### 12.4 What a live free-tier run actually exposed
+
+Everything above was verified against a live Groq key, not assumed. Running a
+real full exam found four defects that no unit test had:
+
+| Failure seen live | Cause | Fix |
+|---|---|---|
+| `AI output missing text candidates` | gpt-oss returned a **bare top-level array**, not `{"candidates":[...]}` | `candidateList()` accepts either |
+| `AI output missing task sets` | Same, for the `sets` schema | Key is resolved **per call site**, never guessed |
+| Every Part One task carried a table | Told tables are "never" used, the model still emitted one-row tables | Rule now says omit the `table` field **entirely** |
+| 429 on most sections | Three sections fired concurrently, each carrying the full passage, over Groq's 8000 TPM limit | Phase B is **sequential** |
+
+The `candidates`/`sets` split is the subtle one: hardcoding a single wrap key
+"fixed" the passage and then made Part One worse, because a bare array was
+wrapped as `candidates` and the `sets` lookup still missed.
+
+### 12.5 The passage is the reliable part; throughput is the binding constraint
+
+With the above fixed, the passage and Text Exploration generate cleanly against
+the live model, and the validator catches real content problems in Part One.
+
+**Throughput, not correctness, is what fails.** One full exam costs roughly
+7K tokens against Groq's free 8000 tokens-per-minute: **fewer than two exams per
+minute**, so back-to-back runs 429 regardless of code quality. A run that dies
+on 429 is a capacity signal, not a defect — do not "fix" it by changing prompts.
+
+Remaining known gaps on the free tier, stated rather than hidden:
+
+- Groq's own `json_validate_failed` (HTTP 400) occurs on some Part One requests.
+  The `failed_generation` payload is returned by the provider, not by us.
+- Prompt adherence is imperfect: word count drifts outside the ±20% band, and
+  item counts occasionally mismatch. The validator rejects these rather than
+  shipping them, which is the intended behaviour.
+
+### 12.6 Diagnose by shape, not by guess
+
+`shapeError()` names the keys the model actually returned and the list length.
+"A missing candidates" is identical for a prose reply, a wrong key, and two
+candidates instead of three — three different bugs with three different fixes.
+
+### 12.7 One repair attempt, bounded
 
 `repairPassage()` in `full-exam.ts` allows exactly **one** corrective call, and
 only for the passage, carrying the validator's own issue strings back to the

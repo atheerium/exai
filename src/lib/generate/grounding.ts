@@ -234,22 +234,64 @@ export function checkTopicAnchoring(
   const paragraphs = passage.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   if (paragraphs.length === 0) return issues;
 
-  const anchors = [opts.topic, ...(opts.keywords ?? "").split(/[,;/]/).map((k) => k.trim())].filter(
-    (a): a is string => !!a && a.length >= 2
-  );
-  if (anchors.length === 0) return issues;
-
   const minWords = opts.minWords ?? 12;
+  const topicAnchors = buildAnchors(opts.topic);
+  const keywordAnchors = (opts.keywords ?? "")
+    .split(/[,;/]/)
+    .map((k) => k.trim())
+    .filter((k) => k.length >= 2);
+
+  if (topicAnchors.length === 0 && keywordAnchors.length === 0) return issues;
+
   paragraphs.forEach((paragraph, i) => {
     const words = paragraph.split(/\s+/).filter(Boolean).length;
     if (words < minWords) return;
-    if (!anchors.some((a) => mentionsAnchor(paragraph, a))) {
+    // Filler-only matches are ignored: accepting "and" or "exploring" would
+    // anchor every paragraph, which is the failure this check exists to stop.
+    const anchored =
+      topicAnchors.some((forms) => forms.some((f) => mentionsAnchor(paragraph, f))) ||
+      keywordAnchors.some((k) => mentionsAnchor(paragraph, k));
+    if (!anchored) {
       issues.push(
         `Paragraph ${i + 1} does not mention "${opts.topic}" or any teacher keyword, so it is off-topic.`
       );
     }
   });
   return issues;
+}
+
+/**
+ * The forms of a topic that count as a mention: the whole phrase, then each of
+ * its content words individually.
+ *
+ * The topic the code receives is the CURRICULUM LABEL, not a short noun. Live on
+ * 2026-10-11 it was "Exploring the ancient world" and "Friendship and being a
+ * good friend". Requiring that phrase verbatim in every paragraph rejects
+ * perfectly good passages — a paragraph about ancient monuments does not contain
+ * the string "Exploring the ancient world", and a passage about friendship does
+ * not contain "Friendship and being a good friend". Four out of four live exams
+ * failed on exactly this, which is how the flaw surfaced.
+ *
+ * So a content word of the topic ("ancient", "world", "friendship") also anchors.
+ * That still rejects genuine drift: traditional music, rhythms and musicians
+ * contain no content word of either topic above.
+ *
+ * Filler is excluded deliberately — "and", "being", "good", "exploring" carry no
+ * topic meaning, and accepting them would anchor every paragraph.
+ */
+const TOPIC_FILLER = new Set([
+  "and", "being", "good", "exploring", "about", "with", "into", "from",
+  "their", "them", "they", "your", "yours", "more", "than", "when", "what",
+  "which", "while", "where", "does", "doing", "using", "through", "across",
+]);
+
+function buildAnchors(topic: string): string[][] {
+  const whole = topic.toLocaleLowerCase().trim();
+  if (!whole) return [];
+  const contentWords = whole
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length >= 4 && !TOPIC_FILLER.has(w) && !STOPWORDS.has(w));
+  return contentWords.length > 0 ? [[whole], ...contentWords.map((w) => [w])] : [[whole]];
 }
 
 /**

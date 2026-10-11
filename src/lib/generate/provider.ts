@@ -106,6 +106,35 @@ export async function chat(
  * there.
  */
 export function parseLooseJson(content: string): any {
+  return salvageJson(content);
+}
+
+/**
+ * Read a candidate list out of a reply, tolerating a bare top-level array.
+ *
+ * Models reliably wrap the list in the key the prompt named ("candidates" for
+ * passages, "sets" for tasks and topics) — but not always. Measured live on Groq
+ * 2026-10-11: `openai/gpt-oss-120b` returned a bare top-level ARRAY for both the
+ * passage and the Part One request, so every `.candidates` / `.sets` lookup was
+ * undefined and fully-formed, usable answers failed the whole exam.
+ *
+ * The key cannot be guessed in the parser — two schemas exist, and hardcoding
+ * one wrapped a Part One reply as `candidates` and then failed to find `sets`,
+ * which is strictly worse than the original bug. So each call site states the
+ * key it expects. Tolerating the array cannot swallow a real error: these
+ * schemas always require a keyed object, so a top-level array is never invalid.
+ */
+function candidateList(json: any, key: "candidates" | "sets"): unknown[] | null {
+  if (Array.isArray(json)) return json;
+  return Array.isArray(json?.[key]) ? json[key] : null;
+}
+
+/**
+ * Extract JSON from a reply that is *usually* pure JSON: fenced in a markdown
+ * block, wrapped in prose, or a bare array. Throws only when there is genuinely
+ * no JSON in the reply — salvage must not become silent acceptance of prose.
+ */
+function salvageJson(content: string): any {
   const raw = content.trim();
   try {
     return JSON.parse(raw);
@@ -121,11 +150,23 @@ export function parseLooseJson(content: string): any {
     // fall through
   }
 
-  const first = candidate.indexOf("{");
-  const last = candidate.lastIndexOf("}");
-  if (first >= 0 && last > first) {
+  // Take whichever JSON value starts EARLIER in the reply. Scanning only for
+  // braces first is wrong for a prose-wrapped array: in "Here you go:\n[{...}]"
+  // the inner {...} is found first and parsed as an object, silently yielding
+  // one element instead of the whole list.
+  const braceStart = candidate.indexOf("{");
+  const braceEnd = candidate.lastIndexOf("}");
+  const arrStart = candidate.indexOf("[");
+  const arrEnd = candidate.lastIndexOf("]");
+  const braceWins = braceStart >= 0 && braceEnd > braceStart && (arrStart < 0 || braceStart <= arrStart);
+  const arrWins = arrStart >= 0 && arrEnd > arrStart && !braceWins;
+
+  if (braceWins || arrWins) {
+    const slice = braceWins
+      ? candidate.slice(braceStart, braceEnd + 1)
+      : candidate.slice(arrStart, arrEnd + 1);
     try {
-      return JSON.parse(candidate.slice(first, last + 1));
+      return JSON.parse(slice);
     } catch {
       // fall through to the error below
     }
@@ -157,11 +198,21 @@ function coherenceNote(ctx: GenContext): string {
   const repair = ctx.repairOf
     ? ` Your previous attempt was rejected: ${ctx.repairOf}. Fix exactly that and change nothing else.`
     : "";
+  // The band is stated numerically, not just "about N words". Live on Groq
+  // 2026-10-11: told only "about 120 words", the model returned 156 and 172,
+  // and both were rejected against the ±20% band the validator actually
+  // enforces. A model cannot satisfy a rule it was never told numerically.
+  const minWords = Math.floor(ctx.length * 0.8);
+  const maxWords = Math.ceil(ctx.length * 1.2);
   return (
     ` Write EXACTLY ${paragraphs} paragraph${paragraphs === 1 ? "" : "s"}, separated by a blank line. ` +
-    `Every paragraph must stay on the topic "${ctx.topic}" or one named aspect of it: ` +
-    "do NOT switch to a different subject partway through, and do not introduce facts from an unrelated field. " +
-    "Open by introducing the topic, develop one aspect per paragraph, and close without introducing new facts. " +
+    `The whole passage must be between ${minWords} and ${maxWords} words: count your words and stay in that range. ` +
+    `The topic is "${ctx.topic}". ` +
+    "Name that topic, or a concrete aspect of it, explicitly in EVERY paragraph -- a paragraph that names " +
+    "neither the topic nor one of its concrete nouns (a place, a period, a material, an activity) is rejected. " +
+    "Stay on that topic throughout: do NOT switch to a different subject partway through, and do not introduce " +
+    "facts from an unrelated field. Open by introducing the topic, develop one aspect per paragraph, and close " +
+    "without introducing new facts. " +
     (ctx.teacherKeywords
       ? `Each paragraph must also relate to at least one of these teacher keywords: ${ctx.teacherKeywords}. `
       : "") +
@@ -234,13 +285,18 @@ function passageField(ctx: GenContext): Record<string, unknown> {
  * this still fails validation rather than printing a stray chart.
  */
 const PART_ONE_TABLE_RULE =
-  " Part One tasks NEVER carry a table, even when the rules above say tableRequired: " +
-  "print the sentences and let the answer key live on a separate sheet. ";
+  " Part One tasks NEVER carry a table: omit the \"table\" field ENTIRELY from every Part One task, " +
+  "do not emit an empty one, and do not set tableRequired. " +
+  "Write each item as a complete sentence or question with dotted blanks, and keep the correct answer only " +
+  "in the \"answer\" field. Live on Groq 2026-10-11: told only that tables are \"never\" used, the model still " +
+  "emitted a one-row table on every Part One task, which the validator rejects. Being told a rule is not the " +
+  "same as being told the exact field to omit. ";
 
 /** Tables are allowlisted: morphology and phonology classification only. */
 const PART_TWO_TABLE_RULE =
   " Only morphology (roots, prefixes, suffixes) and phonology classification tasks carry a table; " +
-  "vocabulary matching, discourse gap-fill and grammar tasks must NOT have one. ";
+  "vocabulary matching, discourse gap-fill and grammar tasks must omit the \"table\" field entirely, " +
+  "not an empty one. ";
 
 /** Official choice labels are lowercase letters with a closing parenthesis. */
 const CHOICE_LABEL_RULE =
@@ -273,7 +329,7 @@ export function parseSource(raw: any): GeneratedSource | null {
 }
 
 export function parseTaskSets(json: any, count: number, marksTotal: number): GeneratedTask[][] {
-  const sets = Array.isArray(json?.sets) ? json.sets : null;
+  const sets = candidateList(json, "sets");
   if (!sets || sets.length < 3) throw new Error("AI output missing task sets.");
   return sets.slice(0, 3).map((set: any) => {
     const tasks = Array.isArray(set?.tasks) ? set.tasks : [];
@@ -296,6 +352,27 @@ export function parseTaskSets(json: any, count: number, marksTotal: number): Gen
 
 export function keywordNote(ctx: GenContext): string {
   return ctx.teacherKeywords ? ` Incorporate these teacher keywords where appropriate: ${ctx.teacherKeywords}.` : "";
+}
+
+/**
+ * Describe what the model actually returned when the shape is wrong.
+ *
+ * "AI output missing text candidates" was useless in production: it is identical
+ * for a model that returned prose, one that returned the wrong key, and one that
+ * returned two candidates instead of three — and those need three different
+ * fixes. Names the keys present and the candidate count, which is enough to tell
+ * them apart from a log line without echoing exam content back.
+ */
+function shapeError(what: string, json: any, expected: number): string {
+  if (!json || typeof json !== "object") {
+    return `AI output was ${json === null ? "null" : typeof json}, expected an object with ${what}.`;
+  }
+  const keys = Object.keys(json);
+  const got = Array.isArray(json.candidates) ? json.candidates.length : 0;
+  return (
+    `AI output missing ${what}: got keys [${keys.join(", ") || "none"}]` +
+    ` and ${got}/${expected} candidates.`
+  );
 }
 
 /**
@@ -325,8 +402,8 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
       },
       { temperature: TEMPERATURE.prose }
     );
-    const candidates = Array.isArray(json?.candidates) ? json.candidates : null;
-    if (!candidates || candidates.length < 3) throw new Error("AI output missing text candidates.");
+    const candidates = candidateList(json, "candidates");
+    if (!candidates || candidates.length < 3) throw new Error(shapeError("text candidates", json, 3));
     return candidates
       .slice(0, 3)
       .map((c: any) => ({ title: String(c?.title ?? ""), text: String(c?.text ?? ""), source: parseSource(c?.source) }));
@@ -418,7 +495,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
       },
       { temperature: TEMPERATURE.prose }
     );
-    const candidates = Array.isArray(json?.candidates) ? json.candidates : null;
+    const candidates = candidateList(json, "candidates");
     if (!candidates || candidates.length < 3) throw new Error("AI output missing rewrite candidates.");
     return candidates
       .slice(0, 3)
@@ -445,7 +522,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         },
         { temperature: TEMPERATURE.structured }
       );
-      const sets = Array.isArray(json?.sets) ? json.sets : null;
+      const sets = candidateList(json, "sets");
       if (!sets || sets.length < 3) throw new Error("AI output missing writing sets.");
       return sets.slice(0, 3).map((set: any) => {
         const g = set?.guided;
@@ -478,7 +555,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
       },
       { temperature: TEMPERATURE.structured }
     );
-    const sets = Array.isArray(json?.sets) ? json.sets : null;
+    const sets = candidateList(json, "sets");
     if (!sets || sets.length < 3) throw new Error("AI output missing writing sets.");
     return sets.slice(0, 3).map((set: any) => {
       const g = set?.guided;

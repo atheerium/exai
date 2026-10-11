@@ -132,6 +132,15 @@ function repairContext(ctx: GenContext, issues: string[]): GenContext {
   };
 }
 
+/** `Promise.allSettled([p])` for one promise, so `unwrap` keeps one signature. */
+async function settle<T>(run: () => Promise<T>): Promise<PromiseSettledResult<T>> {
+  try {
+    return { status: "fulfilled", value: await run() };
+  } catch (reason) {
+    return { status: "rejected", reason };
+  }
+}
+
 /** Narrowing helper: `unwrap` only returns null after pushing an issue. */
 function unwrap<T>(res: PromiseSettledResult<T>, section: FullExamSection, issues: FullExamResult["issues"]): T | null {
   if (res.status === "fulfilled") return res.value;
@@ -220,16 +229,23 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
   const groundingText = primary.text;
   const ctx: GenContext = { ...baseCtx, groundingText };
 
-  // ---- Phase B: questions, concurrent ------------------------------------
-  // Each section validates independently; Promise.allSettled (not all) so one
-  // slow section cannot discard three good ones — we still fail overall, but
-  // the error names every section that was wrong, which is what the teacher
-  // needs to know.
-  const [partOneRes, explorationRes, writingRes] = await Promise.allSettled([
-    withRetry(() => generatePartOneCandidates(ctx)),
-    withRetry(() => generateTextExplorationCandidates(ctx)),
-    withRetry(() => generateWritingCandidates(ctx)),
-  ]);
+  // ---- Phase B: questions, SEQUENTIAL --------------------------------------
+  //
+  // This was `Promise.allSettled` and it could not work on the free tier. Each
+  // section carries the full passage as its prompt, so one section is already
+  // ~2-4K tokens; three at once plus the passage call exceed Groq's 8000
+  // tokens-per-minute limit and the run fails with a 429 (measured live
+  // 2026-10-11: 3 of 4 runs died on TPM, not on content).
+  //
+  // Each section is still settled independently and ALL of them still run, so
+  // one failure does not hide the others — the teacher still gets every section
+  // that was wrong named at once. Only the timing changed.
+  //
+  // A paid tier with a higher TPM can restore concurrency without touching this
+  // code: raise it there, and keep it here.
+  const partOneRes = await settle(() => withRetry(() => generatePartOneCandidates(ctx)));
+  const explorationRes = await settle(() => withRetry(() => generateTextExplorationCandidates(ctx)));
+  const writingRes = await settle(() => withRetry(() => generateWritingCandidates(ctx)));
 
   const partOneSets = unwrap(partOneRes, "PART_ONE", issues);
   const explorationSets = unwrap(explorationRes, "TEXT_EXPLORATION", issues);

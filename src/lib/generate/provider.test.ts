@@ -22,6 +22,7 @@ type Mode =
   | "error-status"
   | "non-json-content"
   | "fenced-json-content"
+  | "bare-array-content"
   | "empty-content";
 
 let mode: Mode = "ok";
@@ -73,6 +74,8 @@ function respond(res: http.ServerResponse) {
     // Observed on OpenRouter: Gemma wraps its object in a fence even when
     // `response_format: json_object` is set.
     reply("```json\n" + JSON.stringify({ sets: [{ tasks: [] }] }) + "\n```");
+  } else if (mode === "bare-array-content") {
+    reply(JSON.stringify([{ title: "a", text: "one" }, { title: "b", text: "two" }]));
   } else if (mode === "empty-content") {
     reply("");
   } else {
@@ -262,4 +265,34 @@ test("parseTaskSets: keeps only the first three sets and coerces fields", () => 
     family: undefined,
     table: { headers: ["1", "2"], rows: [["1", "2"], ["flat"]] },
   });
+});
+// --- Bare-array replies ----------------------------------------------------
+//
+// Measured live on Groq 2026-10-11: gpt-oss answered both the passage and the
+// Part One request with a bare top-level array instead of the keyed object the
+// prompt asked for. Both schemas exist ("candidates" and "sets"), so the key is
+// resolved per call site, never guessed.
+
+test("parseLooseJson recovers a bare array, fenced or prose-wrapped", () => {
+  assert.deepEqual(parseLooseJson('[{"a":1},{"b":2}]'), [{ a: 1 }, { b: 2 }]);
+  assert.deepEqual(parseLooseJson('```json\n[{"a":1}]\n```'), [{ a: 1 }]);
+  // Prose-wrapped: the inner `{...}` must not win over the enclosing `[...]`.
+  assert.deepEqual(parseLooseJson('Here you go:\n[{"a":1},{"b":2}]\nDone.'), [{ a: 1 }, { b: 2 }]);
+});
+
+test("parseLooseJson still prefers the leading object in a prose reply", () => {
+  assert.deepEqual(parseLooseJson('Result:\n{"sets":[{"tasks":[]}]}\nEnd.'), {
+    sets: [{ tasks: [] }],
+  });
+});
+
+test("chat: accepts a bare-array reply under the requested key", async () => {
+  // Transport-level guard for the live failure: the model returns an array, and
+  // the generator must still find its candidates. Both schemas are exercised,
+  // because hardcoding one key wrapped a Part One reply as `candidates` and then
+  // failed to find `sets` -- worse than the original bug.
+  mode = "bare-array-content";
+  const parsed = await chat(config(), { kind: "TEXT" });
+  assert.equal(parsed.length, 2);
+  assert.equal(parsed[0].title, "a");
 });
