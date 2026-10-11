@@ -41,6 +41,14 @@ const PARA_GAP = 0.55;
 const TABLE_MAX_WIDTH = 400;
 
 /**
+ * Vertical rhythm (user instruction, 2026-10-11: "reduce the line spacing by
+ * two levels"). These were 1.32 for passage lines and 1.5 between items, which
+ * read as double-spaced next to the Ministry reference sheet.
+ */
+const LINE_HEIGHT = BODY * 1.14;
+const ITEM_ADVANCE = BODY * 1.22;
+
+/**
  * Phonetic / IPA characters.
  *
  * pdfkit's built-in Times faces use WinAnsi encoding, which has no IPA, so a
@@ -262,7 +270,7 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
   // measured, packed into lines, then drawn one by one at a pinned baseline.
   const richText = (text: string, emphasis: string[], opts: RichOpts) => {
     font(BODY).fillColor("#000000");
-    const lineHeight = opts.lineHeight ?? BODY * 1.32;
+    const lineHeight = opts.lineHeight ?? LINE_HEIGHT;
     const textX = opts.x ?? left + (opts.indent ?? 0);
     const textWidth = opts.width - (opts.indent ?? 0);
     const marks = new Set(emphasis.filter((w) => w.length > 1).map((w) => w.toLowerCase()));
@@ -511,13 +519,13 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
         }
         const need = itemWidth(item);
         if (x > left + ITEM_INDENT && x + need > left + contentWidth) {
-          y += BODY * 1.5;
+          y += ITEM_ADVANCE;
           x = left + ITEM_INDENT;
         }
         drawInlineItem(item, x, y);
         x += Math.max(need, INLINE_ITEM_GAP) + INLINE_ITEM_GAP;
       }
-      doc.y = y + BODY * 1.5;
+      doc.y = y + ITEM_ADVANCE;
       doc.x = left;
       return;
     }

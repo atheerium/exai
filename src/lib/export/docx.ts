@@ -38,6 +38,17 @@ const FONT = "Times New Roman";
 const PASSAGE_GAP_AFTER = 200;
 
 /**
+ * Exact line spacing, in twentieths of a point, applied to body text.
+ *
+ * Left unset, Word sizes lines from the font's own metrics and the passage
+ * renders looser than the PDF next to the Ministry reference sheet (user
+ * instruction, 2026-10-11: "reduce the line spacing by two levels"). Pinning it
+ * here makes the DOCX rhythm match PDF's LINE_HEIGHT instead of depending on
+ * whichever font the reader machine substitutes.
+ */
+const LINE_SPACING = 250;
+
+/**
  * Table width as a percentage of the text block. Narrower than full width so a
  * three-column affix chart is centred rather than spanning the page (user
  * screenshot, 2026-10-11). PDF equivalent: TABLE_MAX_WIDTH in pdf.ts.
@@ -102,7 +113,7 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
               ? AlignmentType.JUSTIFIED
               : undefined,
       indent: opts.indent ? { left: opts.indent } : undefined,
-      spacing: { after: opts.after ?? 100 },
+      spacing: { after: opts.after ?? 100, line: LINE_SPACING, lineRule: "auto" },
       children: [
         t(text, {
           bold: opts.bold,
@@ -135,7 +146,7 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
 
     return new Paragraph({
       alignment: AlignmentType.JUSTIFIED,
-      spacing: { after: PASSAGE_GAP_AFTER },
+      spacing: { after: PASSAGE_GAP_AFTER, line: LINE_SPACING, lineRule: "auto" },
       children: runs(parts),
     });
   };
@@ -198,14 +209,17 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
 
   const itemParagraph = (item: PaperItem) =>
     new Paragraph({
+      // Hanging indent so wrapped option text lines up under the option itself,
+      // but the label and its text are separated by exactly ONE space: a tab
+      // stop here jumped ~0.22in and read as a gap (user instruction,
+      // 2026-10-11).
       indent: { left: INDENT + 320, hanging: 320 },
-      spacing: { after: 80 },
+      spacing: { after: 40 },
       children: [
-        t(`${item.label}\t`),
+        t(`${item.label} `, { bold: true }),
         t(item.text),
         ...(item.gap ? [t(`  ${GAP_LEADER}`)] : []),
       ],
-      tabStops: [{ type: "left" as const, position: INDENT + 320 }],
     });
 
   const drawTable = (table: PaperTable) => {

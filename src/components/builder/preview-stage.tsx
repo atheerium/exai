@@ -83,7 +83,7 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                 {block.paragraphs.map((paragraph, pi) => (
                   // No first-line indent (user rule 2026-10-11); the whitespace
                   // between paragraphs carries the separation, as in the PDF.
-                  <p key={pi} className="text-justify text-[15px] leading-relaxed mt-4 first:mt-0">
+                  <p key={pi} className="mt-4 text-justify text-[15px] leading-snug first:mt-0">
                     <Underlined text={paragraph} emphasis={block.emphasis} />
                   </p>
                 ))}
@@ -99,19 +99,22 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
 
           case "task":
             return (
-              <div key={bi} className="mt-5">
+              <div key={bi} className="mt-3">
                 <p className="text-[15px] font-bold italic">
                   <span className="not-italic">{block.task.number}.</span> {block.task.instruction}
                 </p>
                 {block.task.lead.map((line, li) => (
-                  <p key={li} className="mt-1 pl-8 text-[15px] leading-relaxed">
+                  <p key={li} className="mt-0.5 pl-8 text-[15px] leading-snug">
                     {line}
                   </p>
                 ))}
                 {block.task.items.map((item) => (
-                  <p key={item.label} className="mt-1 flex gap-2 pl-8 text-[15px] leading-relaxed">
-                    <span className="w-5 shrink-0 font-bold">{item.label}</span>
-                    <span className="flex-1">
+                  <p key={item.label} className="pl-8 text-[15px] leading-snug">
+                    {/* Label and text are separated by exactly one space; a fixed
+                        width plus a flex gap read as a wide column (user
+                        instruction 2026-10-11). */}
+                    <span className="font-bold">{item.label}</span>{" "}
+                    <span>
                       {item.text}
                       {item.gap && (
                         <span className="whitespace-nowrap">{" . . . . . . . . . . . . . . . . . ."}</span>
@@ -155,7 +158,7 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
               <div key={bi} className="mt-6">
                 <p className="text-[15px] font-bold">{block.topic.label}</p>
                 {block.topic.lines.map((line, li) => (
-                  <p key={li} className="mt-1 pl-8 text-[15px] leading-relaxed">
+                  <p key={li} className="mt-0.5 pl-8 text-[15px] leading-snug">
                     {line}
                   </p>
                 ))}
