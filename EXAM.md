@@ -905,7 +905,47 @@ Remaining known gaps on the free tier, stated rather than hidden:
 "A missing candidates" is identical for a prose reply, a wrong key, and two
 candidates instead of three — three different bugs with three different fixes.
 
-### 12.7 One repair attempt, bounded
+### 12.7 A family is a task (Part One)
+
+Captured live from Groq on 2026-10-11. Asked for
+`{"sets":[{"tasks":[…]}]}`, the model returned a **family-keyed object** instead:
+
+```json
+{"TRUE_FALSE":[{"statement":"…","answer":"T"}, …],
+ "QUESTIONS":[{"question":"…","answer":"…"}, …],
+ "PARAGRAPH_ID":[{"idea":"…","paragraph":1}, …],
+ "COHESIVE_MARKERS":[{"underlined":"they","reference":"local languages"}, …]}
+```
+
+One array per family, a different field name per family, and 4+3+4+3 = **14
+items** where 4 were expected. That is the origin of
+`AI output has 14 tasks (expected 4)`: three sets flattened into one list.
+
+The rule that fixes both directions:
+
+> **A family is a task.** Its `itemCount` is how many items that task prints,
+> not how many tasks exist.
+
+| Shape returned | Recovery | Where |
+|---|---|---|
+| `{"FAMILY":[…]}` | `assembleFromFamilyKeyed` — walk the guide, take each family's `itemCount` | `provider.ts` |
+| `{"sets":[{"tasks":[14]}]}` | `regroupByFamily` — collapse one-item tasks back into 4 family tasks | `provider.ts` |
+
+Both use the **guide** as the authority: family order, `itemCount`, marks and
+skill all come from `guides.ts`, never from the reply. Both refuse a partial
+reply — every guide family must be present and every item must yield text —
+because shipping a section with a blank is worse than returning nothing.
+
+`COHESIVE_MARKERS` needs its own mapping: its items carry `(underlined,
+reference)` and no text field at all, so the printed blank is built in code
+(`referentItem`). Mapping it through the generic text-field lookup makes every
+referent item look corrupt, which is exactly what happened.
+
+The prompt now states the container literally, including *"Do NOT key the output
+by family name"*, and spells out counts (`TRUE_FALSE (exactly 4 item(s), 2
+marks)`). Told only "EXACTLY the item counts below", the model does not bind.
+
+### 12.8 One repair attempt, bounded
 
 `repairPassage()` in `full-exam.ts` allows exactly **one** corrective call, and
 only for the passage, carrying the validator's own issue strings back to the

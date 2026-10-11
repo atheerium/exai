@@ -1,5 +1,4 @@
 import { test, before, after } from "node:test";
-import { candidateList as listFor } from "./provider";
 import assert from "node:assert/strict";
 import http from "node:http";
 import {
@@ -7,6 +6,7 @@ import {
   parseLooseJson,
   parseSource,
   parseTaskSets,
+  candidateList as listFor,
   TEMPERATURE,
   createCompatibleGenerators,
   type ProviderConfig,
@@ -362,4 +362,156 @@ test("chat: retries a JSON validation failure at most once", async () => {
   const before = requests;
   await assert.rejects(() => chat(config(), { kind: "PART_ONE" }), /AI provider error 400/);
   assert.equal(requests - before, 2, "exactly one retry, never a loop");
+});
+
+// --- Family-keyed replies ---------------------------------------------------
+//
+// Captured live from Groq on 2026-10-11. Asked for {"sets":[{"tasks":[…]}]}, the
+// model returned one array per FAMILY, using a different field name per family.
+// 4+3+4+3 = 14 items, which is where "AI output has 14 tasks (expected 4)" came
+// from: three sets flattened into one list.
+
+const FAMILIES = [
+  { family: "TRUE_FALSE", marks: 2, itemCount: 4, instruction: "Say if true or false." },
+  { family: "QUESTIONS", marks: 2, itemCount: 3, instruction: "Answer the questions." },
+  { family: "PARAGRAPH_ID", marks: 1.5, itemCount: 4, instruction: "Which paragraph?" },
+  { family: "COHESIVE_MARKERS", marks: 1.5, itemCount: 3, instruction: "What does it refer to?" },
+];
+
+const CAPTURED = {
+  TRUE_FALSE: [
+    { statement: "Ruins show how cities were organised.", answer: "T" },
+    { statement: "Local words never translate.", answer: "T" },
+    { statement: "Museums show daily life.", answer: "T" },
+    { statement: "Exact dates are given.", answer: "F" },
+  ],
+  QUESTIONS: [
+    { question: "What do archaeologists study?", answer: "Ruins" },
+    { question: "Why do words resist translation?", answer: "Cultural nuance" },
+    { question: "What do museums display?", answer: "Objects" },
+  ],
+  PARAGRAPH_ID: [
+    { idea: "Idea one.", paragraph: 1 },
+    { idea: "Idea two.", paragraph: 1 },
+    { idea: "Idea three.", paragraph: 1 },
+    { idea: "Idea four.", paragraph: 2 },
+  ],
+  COHESIVE_MARKERS: [
+    { underlined: "they", reference: "local languages" },
+    { underlined: "objects", reference: "museums" },
+    { underlined: "it", reference: "passage" },
+  ],
+};
+
+test("parseTaskSets recovers a family-keyed reply using the guide as authority", () => {
+  const sets = parseTaskSets(CAPTURED, 4, 7, FAMILIES);
+  assert.equal(sets.length, 3, "the 3-alternatives contract is preserved");
+  // 14 ITEMS become 4 TASKS: a family is a task, its itemCount is how many
+  // items that task prints. That is the whole point of the adapter.
+  const tasks = sets[0];
+  assert.equal(tasks.length, 4);
+
+  // Family order follows the GUIDE, not the reply's key order.
+  assert.deepEqual(tasks.map((t) => t.family), ["TRUE_FALSE", "QUESTIONS", "PARAGRAPH_ID", "COHESIVE_MARKERS"]);
+  // Marks come from the guide, never from the model.
+  assert.equal(tasks.reduce((a, t) => a + t.marks, 0), 7);
+
+  // Items are numbered inside the task, as the mock and normal path do.
+  assert.equal(
+    tasks[0].prompt,
+    "1. Ruins show how cities were organised.\n2. Local words never translate.\n3. Museums show daily life.\n4. Exact dates are given."
+  );
+  assert.equal(tasks[0].answer, "1. T\n2. T\n3. T\n4. F");
+  // The per-family field names are mapped.
+  assert.match(tasks[1].prompt, /^1\. What do archaeologists study\?/);
+  // A referent family has no prompt field at all; the blank is built in code.
+  assert.match(tasks[3].prompt, /1\. The underlined word "they" refers to \.+?/);
+  assert.match(tasks[3].answer ?? "", /local languages/);
+});
+
+test("parseTaskSets rejects a family-keyed reply with a missing family", () => {
+  const partial = { ...CAPTURED };
+  delete (partial as Record<string, unknown>).QUESTIONS;
+  assert.throws(() => parseTaskSets(partial, 4, 7, FAMILIES), /task sets/);
+});
+
+test("parseTaskSets rejects a family-keyed reply with a corrupt entry", () => {
+  // The captured COHESIVE_MARKERS value was not a list of objects at all.
+  const corrupt = { ...CAPTURED, COHESIVE_MARKERS: { underlined: "they", reference: "x", 2: "objects" } };
+  assert.throws(() => parseTaskSets(corrupt, 4, 7, FAMILIES), /task sets/);
+});
+
+test("parseTaskSets rejects a referent item missing its target", () => {
+  // An empty blank the teacher would have to fix is worse than a rejection.
+  const broken = { ...CAPTURED, COHESIVE_MARKERS: [{ underlined: "they" }, { underlined: "o", reference: "y" }] };
+  assert.throws(() => parseTaskSets(broken, 4, 7, FAMILIES), /task sets/);
+});
+
+test("parseTaskSets ignores unknown keys when deciding it is family-keyed", () => {
+  // An object with a key that is not a guide family is a different reply, and
+  // must not be assembled into a partial exam.
+  const unrelated = { TRUE_FALSE: CAPTURED.TRUE_FALSE, somethingElse: [{}] };
+  assert.throws(() => parseTaskSets(unrelated, 4, 7, FAMILIES), /task sets/);
+});
+
+test("a correctly-shaped reply still takes the normal path", () => {
+  const good = {
+    sets: [0, 1, 2].map(() => ({
+      tasks: FAMILIES.map((f) => ({
+        prompt: "x", instruction: "y", answer: "z", marks: f.marks, skill: "READING", family: f.family,
+      })),
+    })),
+  };
+  const sets = parseTaskSets(good, 4, 7, FAMILIES);
+  assert.equal(sets.length, 3);
+  assert.equal(sets[0].length, 4);
+});
+
+// --- Flattened task lists ---------------------------------------------------
+//
+// Same defect as the family-keyed reply, wrapped differently: the model emits ONE
+// task per ITEM instead of one per family. Captured live 2026-10-11 as
+// "AI output has 14 tasks (expected 4)" -- 4+3+4+3 items inside a single set.
+
+function flattenedSet() {
+  return {
+    sets: [0, 1, 2].map(() => ({
+      tasks: [
+        ...CAPTURED.TRUE_FALSE.map((t: any) => ({ prompt: t.statement, answer: t.answer, marks: 0.5, skill: "READING", family: "TRUE_FALSE" })),
+        ...CAPTURED.QUESTIONS.map((t: any) => ({ prompt: t.question, answer: t.answer, marks: 2 / 3, skill: "READING", family: "QUESTIONS" })),
+        ...CAPTURED.PARAGRAPH_ID.map((t: any) => ({ prompt: t.idea, answer: String(t.paragraph), marks: 0.375, skill: "READING", family: "PARAGRAPH_ID" })),
+        ...CAPTURED.COHESIVE_MARKERS.map((t: any) => ({ prompt: t.underlined, answer: t.reference, marks: 0.5, skill: "READING", family: "COHESIVE_MARKERS" })),
+      ],
+    })),
+  };
+}
+
+test("parseTaskSets regroups a flattened list into one task per family", () => {
+  const sets = parseTaskSets(flattenedSet(), 4, 7, FAMILIES);
+  const tasks = sets[0];
+  assert.equal(tasks.length, 4, "14 items collapse to 4 family tasks");
+  assert.deepEqual(tasks.map((t) => t.family), ["TRUE_FALSE", "QUESTIONS", "PARAGRAPH_ID", "COHESIVE_MARKERS"]);
+  assert.equal(tasks.reduce((a, t) => a + t.marks, 0), 7);
+  assert.equal(tasks[0].prompt.split("\n").length, 4);
+  assert.match(tasks[0].prompt, /^Ruins show how cities were organised\./);
+});
+
+test("regrouping is refused when the item count does not match the guide", () => {
+  // A list that is neither `count` tasks nor exactly the guide's total is some
+  // other reply. It must still fail, not be sliced into something plausible.
+  const wrong = { sets: [0, 1, 2].map(() => ({ tasks: [{ prompt: "a" }, { prompt: "b" }, { prompt: "c" }] })) };
+  assert.throws(() => parseTaskSets(wrong, 4, 7, FAMILIES), /has 3 tasks \(expected 4\)/);
+});
+
+test("a correctly grouped reply is never regrouped", () => {
+  const good = {
+    sets: [0, 1, 2].map(() => ({
+      tasks: FAMILIES.map((f) => ({
+        prompt: "1. x\n2. y", instruction: "i", answer: "1. a", marks: f.marks, skill: "READING", family: f.family,
+      })),
+    })),
+  };
+  const tasks = parseTaskSets(good, 4, 7, FAMILIES)[0];
+  assert.equal(tasks.length, 4);
+  assert.equal(tasks[0].prompt, "1. x\n2. y", "prompts must be left exactly as written");
 });

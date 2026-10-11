@@ -329,6 +329,28 @@ const PART_TWO_TABLE_RULE =
 const CHOICE_LABEL_RULE =
   ' Multiple-choice options are labelled with a lowercase letter and a closing parenthesis -- "a)" "b)" "c)" "d)" -- one per line, never "a." or "A.". ';
 
+/**
+ * The exact output container, stated literally.
+ *
+ * Captured live 2026-10-11: asked for `{"sets":[{"tasks":[…]}]}`, gpt-oss replied
+ * with a family-keyed object instead (`{"TRUE_FALSE":[…], "QUESTIONS":[…]}`),
+ * which is why a run failed with "14 tasks (expected 4)". `parseTaskSets` now
+ * recovers that shape, but telling the model the container explicitly is what
+ * stops the drift in the first place — the same lesson as stating the word band
+ * numerically rather than as "about N words".
+ */
+const TASK_SET_SCHEMA_NOTE =
+  ' Return the JSON object exactly in this shape: {"sets":[{"tasks":[TASK,…]}]} with exactly 3 sets. ' +
+  "Every task is a flat object with the keys: prompt, instruction, answer, marks, skill (the value \"READING\"), " +
+  "family. Do NOT key the output by family name, do NOT return one array per family, and do NOT nest items " +
+  "under a family key. Each family contributes exactly the number of items listed in its itemCount, as separate " +
+  "task objects inside the tasks array, in the order the families were given.";
+
+/** `family (exactly N items, M marks)` — the counts, spelled out. */
+function familyCountNote(families: TaskFamilySpec[]): string {
+  return families.map((f) => `${f.family} (exactly ${f.itemCount} item(s), ${f.marks} marks)`).join(", ");
+}
+
 const PARAGRAPH_NOTE =
   " Write the passage as 3-5 coherent paragraphs separated by blank lines (\\n\\n).";
 
@@ -355,11 +377,180 @@ export function parseSource(raw: any): GeneratedSource | null {
   };
 }
 
-export function parseTaskSets(json: any, count: number, marksTotal: number): GeneratedTask[][] {
-  const sets = candidateList(json, "sets");
-  if (!sets || sets.length < 3) throw new Error("AI output missing task sets.");
+/**
+ * Fields a model uses for the item text, per family.
+ *
+ * Captured live 2026-10-11: asked for a flat `{prompt, instruction, answer}`
+ * task, the model answered with a family-keyed object using a different field per
+ * family -- `statement` for TRUE_FALSE, `question` for QUESTIONS, `idea` for
+ * PARAGRAPH_ID. The content was correct and usable; only the field names
+ * differed, so they are mapped here rather than thrown away.
+ */
+const ITEM_TEXT_FIELDS = ["prompt", "statement", "question", "idea", "item", "sentence", "text"];
+
+/**
+ * Build a referent task from the model's `{underlined, reference}` pair.
+ *
+ * Returns `{}` when the pair is incomplete, which makes the caller bail out
+ * rather than emit a blank line the teacher would have to fix.
+ */
+function referentItem(item: any): Partial<GeneratedTask> {
+  const underlined = String(item?.underlined ?? "").trim();
+  const reference = String(item?.reference ?? "").trim();
+  if (!underlined || !reference) return {};
+  return {
+    prompt: `The underlined word "${underlined}" refers to ...........`,
+    answer: reference,
+  };
+}
+
+function itemText(item: any): string {
+  for (const field of ITEM_TEXT_FIELDS) {
+    const v = item?.[field];
+    if (typeof v === "string" && v.trim()) return v;
+  }
+  return "";
+}
+
+/**
+ * Rebuild `sets` from a family-keyed reply, or return null if it is not one.
+ *
+ * Captured live 2026-10-11 (raw payload in `EXAM.md` §12.8): gpt-oss ignored the
+ * requested `{"sets":[{"tasks":[…]}]}` and returned
+ * `{"TRUE_FALSE":[…], "QUESTIONS":[…], …}` instead — one array per family, each
+ * holding exactly that family's `itemCount` items. 4+3+4+3 = 14, which is where
+ * "AI output has 14 tasks (expected 4)" came from: the three sets were flattened
+ * into one list.
+ *
+ * The guide is the authority here, not the model: the families are walked in
+ * guide order, each family's own `itemCount` items are taken, and marks/skill are
+ * copied from the guide rather than read from the reply. That keeps the
+ * "if it can be computed, it must not be generated" rule intact.
+ *
+ * Returns null — rather than a half-built set — unless EVERY guide family is
+ * present as a non-empty array. A partial reply is rejected, not silently
+ * shipped with a missing section.
+ */
+function assembleFromFamilyKeyed(json: any, families: TaskFamilySpec[]): unknown[] | null {
+  if (!json || typeof json !== "object" || Array.isArray(json)) return null;
+  const keys = Object.keys(json);
+  if (keys.length === 0) return null;
+  // Every key must be a known family, or this is some other reply entirely.
+  const names = new Set(families.map((f) => f.family));
+  if (!keys.every((k) => names.has(k))) return null;
+
+  const tasks: GeneratedTask[] = [];
+  for (const spec of families) {
+    const items = json[spec.family];
+    if (!Array.isArray(items) || items.length === 0) return null;
+    const used = items.slice(0, spec.itemCount ?? 1);
+
+    // ONE task per family, with that family's items numbered inside it — the
+    // same shape the mock and the normal path produce. This is the detail that
+    // makes 14 items become 4 tasks: a family is a task, its itemCount is how
+    // many items that task prints, not how many tasks exist.
+    const prompts: string[] = [];
+    const answers: string[] = [];
+    for (const [i, item] of used.entries()) {
+      const n = `${i + 1}. `;
+      // A referent item is (pronoun, target), not (prompt, answer): the captured
+      // reply gives `underlined` + `reference` and the printed blank has to be
+      // built from them here, in code. Resolved FIRST, because these items have
+      // no `prompt` field at all and would otherwise look corrupt.
+      const referent = spec.family === "COHESIVE_MARKERS" ? referentItem(item) : null;
+      const text = referent ? referent.prompt! : itemText(item);
+      if (!text) return null; // a genuine corrupt entry
+      prompts.push(n + text);
+      const raw = referent ? referent.answer : item?.answer ?? item?.solution ?? item?.correctAnswer;
+      if (raw !== undefined && raw !== null && raw !== "") answers.push(n + String(raw));
+    }
+
+    tasks.push({
+      prompt: prompts.join("\n"),
+      instruction: spec.instruction ?? "",
+      answer: answers.length ? answers.join("\n") : undefined,
+      marks: spec.marks,
+      skill: "READING",
+      family: spec.family,
+    });
+  }
+  // The model returns ONE family-keyed reply per call. Presenting it as three
+  // identical sets keeps the "3 alternatives" contract without inventing
+  // content. Wrapped in the same `{tasks}` shape the normal path produces so
+  // both routes share one downstream parser.
+  return [tasks, tasks, tasks].map((t) => ({ tasks: t }));
+}
+
+export interface TaskFamilySpec {
+  family: string;
+  marks: number;
+  instruction?: string;
+  exactWording?: string | null;
+  /** Optional: a guide rule may omit it, and the family then counts as 1 item. */
+  itemCount?: number;
+  tableRequired?: boolean;
+}
+
+/**
+ * Regroup a flattened task list back into one task per family.
+ *
+ * The exam structure is `count` tasks, one per guide family, each printing its
+ * own `itemCount` items. Models reliably get this wrong by emitting ONE task per
+ * ITEM instead: captured live 2026-10-11, Part One came back with 14 tasks where
+ * 4 were expected (4+3+4+3), all 14 inside a single set. That is the same defect
+ * as the family-keyed reply, just wrapped differently, and it is the direct cause
+ * of the "AI output has 14 tasks (expected 4)" failure.
+ *
+ * Regrouping is positional and driven by the guide: family 1's `itemCount`
+ * tasks are merged, then family 2's, and so on. The guide's itemCounts sum to
+ * exactly the expected total, so the merge either consumes the list precisely or
+ * does not apply at all — a list of any other length is returned untouched and
+ * still fails the count check, rather than being sliced into something plausible.
+ */
+function regroupByFamily(tasks: GeneratedTask[], families: TaskFamilySpec[], count: number): GeneratedTask[] {
+  if (tasks.length === count) return tasks;
+  const expected = families.reduce((n, f) => n + (f.itemCount ?? 1), 0);
+  if (tasks.length !== expected || tasks.length <= count) return tasks;
+
+  const out: GeneratedTask[] = [];
+  let i = 0;
+  for (const spec of families) {
+    const take = tasks.slice(i, i + (spec.itemCount ?? 1));
+    i += spec.itemCount ?? 1;
+    const first = take[0];
+    out.push({
+      ...first,
+      prompt: take.map((t) => t.prompt).filter(Boolean).join("\n"),
+      // Only one of the items may carry an answer, otherwise the teacher sees the
+      // same mark repeated itemCount times.
+      answer: take.map((t) => t.answer).find((a) => a !== undefined),
+      marks: spec.marks,
+      skill: first.skill ?? "READING",
+      family: spec.family,
+      instruction: spec.instruction ?? first.instruction ?? "",
+      table: take.find((t) => t.table)?.table,
+    });
+  }
+  return out;
+}
+
+export function parseTaskSets(
+  json: any,
+  count: number,
+  marksTotal: number,
+  families?: TaskFamilySpec[]
+): GeneratedTask[][] {
+  let sets = candidateList(json, "sets");
+  if ((!sets || sets.length < 3) && families) {
+    const assembled = assembleFromFamilyKeyed(json, families);
+    if (assembled) sets = assembled;
+  }
+  if (!sets || sets.length < 3) {
+    throw new Error(shapeError("task sets", json, 3));
+  }
   return sets.slice(0, 3).map((set: any) => {
-    const tasks = Array.isArray(set?.tasks) ? set.tasks : [];
+    const raw = Array.isArray(set?.tasks) ? set.tasks : [];
+    const tasks = families ? regroupByFamily(raw, families, count) : raw;
     if (tasks.length !== count) throw new Error(`AI output has ${tasks.length} tasks (expected ${count}).`);
     const total = tasks.reduce((s: number, t: any) => s + Number(t?.marks ?? 0), 0);
     if (Math.abs(total - marksTotal) > 0.05) throw new Error(`AI task marks total ${total} (expected ${marksTotal}).`);
@@ -460,12 +651,13 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         PART_ONE_TABLE_RULE +
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
-        'Return {"sets":[{"tasks":[{"prompt","instruction","answer","marks","skill":"READING","family":"...","table":{"headers":[],"rows":[[]]}}]}]} with 3 different sets of tasks.',
+        `Each family must contribute exactly this many items: ${familyCountNote(families)}. ` +
+        TASK_SET_SCHEMA_NOTE,
       families,
       },
       { temperature: TEMPERATURE.structured }
     );
-    return parseTaskSets(json, ctx.guide.partOne.length, ctx.guide.marks.partOne);
+    return parseTaskSets(json, ctx.guide.partOne.length, ctx.guide.marks.partOne, families);
   }
 
   async function generateTextExplorationCandidates(ctx: GenContext) {
@@ -492,7 +684,8 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         PART_TWO_TABLE_RULE +
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
-        'Return {"sets":[{"tasks":[{"prompt","instruction","answer","marks","skill","family":"...","table":{"headers":[],"rows":[[]]}}]}]} with 3 different sets of tasks.',
+        `Produce exactly ${ctx.guide.textExploration.skills.length} task objects, one per skill, in the order given. ` +
+        TASK_SET_SCHEMA_NOTE,
       skills,
         },
         { temperature: TEMPERATURE.structured }
