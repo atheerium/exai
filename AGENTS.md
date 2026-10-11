@@ -66,6 +66,7 @@ One test file: `node --import tsx --test src/lib/guide.test.ts` (`npm test` runs
 - **Print `item.label` verbatim** — `letterLabel()` already emits `a)`; appending a separator prints `a))`.
 - **The passage has no title** unless `showTitle` is set (default false).
 - **IPA symbols must use `faceFor()`** in `pdf.ts`. pdfkit's built-in Times faces are WinAnsi and print `ɪ` as `&¦Bð`; this was only caught by rasterising a real PDF, so after any font or phonology change, run `npx tsx scripts/render-check.ts` and look at the pages.
+- **Option label → text is exactly one space** in all three surfaces. DOCX used a 0.22in tab stop and the preview a 1.25rem label box; both read as a wide column. Line rhythm lives in `LINE_HEIGHT` / `ITEM_ADVANCE` (PDF) and `LINE_SPACING` (DOCX, pinned because Word otherwise derives lines from the substituted font).
 
 Three pdfkit traps, all documented in `EXAM.md` section 3: `underline` on a continued run underlines the **whole line width** (so the passage is laid out word by word); `underline` + `lineBreak:false` with no `width` throws on a NaN coordinate; and Arabic must be shaped but never reversed.
 

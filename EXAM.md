@@ -633,6 +633,22 @@ vertical space:
 The passage stays justified. Tune the two constants together against a real
 render; they express one rhythm.
 
+### 10.2a Line spacing and the label/text gap
+
+Set against the Ministry reference sheet on 2026-10-11: the previous rhythm read
+as double-spaced, and option labels sat far from their text.
+
+| Property | Value | Note |
+|---|---|---|
+| PDF passage lines | `LINE_HEIGHT` = `BODY * 1.14` | was `1.32` |
+| PDF item advance | `ITEM_ADVANCE` = `BODY * 1.22` | was `1.5` |
+| DOCX line spacing | `LINE_SPACING` pinned | left to Word it followed the substituted font's metrics, so DOCX drifted from PDF |
+| Label → text | **exactly one space**, all three surfaces | DOCX used a 0.22in tab stop; the preview used a 1.25rem label box plus a 0.5rem flex gap |
+
+The PDF was already correct on the label gap; DOCX and the preview were the
+offenders. Verify with `npx tsx scripts/render-check.ts`, then unzip the DOCX and
+confirm there are no `<w:tab/>` elements.
+
 ### 10.3 Times New Roman
 
 | Surface | Face |
@@ -654,6 +670,7 @@ its own parenthesis to a label that already ended in a period).
 - `letterLabel()` in `paper.ts` emits `a)`, `b)`, `c)`, `d)` and is the single
   source; renderers print `item.label` **verbatim** and never append a separator.
 - The label is bold on all three surfaces.
+- Exactly **one space** separates the label from its text (see 10.2a).
 - `validateCandidate`'s `choiceCount` check matches `/^[a-d]\)/`, so generated
   options are held to this form automatically.
 
