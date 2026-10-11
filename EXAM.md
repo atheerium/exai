@@ -601,7 +601,119 @@ Known limit: replacing a passage *alternative* is checked for lexical grounding
 only, so it will not catch a comprehension item whose claim is absent from the
 text (see the table above).
 
-## 10. Verification
+## 10. Paper format rules
+
+Set by direct user instruction on 2026-10-11, from a review of the rendered
+exam. These are format rules, not preferences: the official Algerian papers do
+not vary on them.
+
+### 10.1 No passage title unless the teacher opts in
+
+The official papers print the passage with no title. Every generated text used to
+carry one.
+
+- `showTitle` on the TEXT section content, **default false**, toggled in the Text
+  stage (`builder.showPassageTitle`).
+- `assemble.ts` gates `ExportSection.text.title` on the flag. Preview, PDF and
+  DOCX follow from the content model, so they cannot disagree.
+- The title is still generated and stored, so turning the toggle on needs no
+  regeneration.
+
+### 10.2 Paragraphs are separated by whitespace, never indented
+
+No first-line indent on passage paragraphs. The separation between them is
+vertical space:
+
+| Surface | Value |
+|---|---|
+| PDF | `PARA_GAP` in `pdf.ts` (line units) |
+| DOCX | `PASSAGE_GAP_AFTER` in `docx.ts` (twentieths of a point) |
+| Preview | `mt-4` with `first:mt-0` |
+
+The passage stays justified. Tune the two constants together against a real
+render; they express one rhythm.
+
+### 10.3 Times New Roman
+
+| Surface | Face |
+|---|---|
+| PDF | `public/fonts/TimesNewRoman.ttf` (verified: family name table reads "Times New Roman"), with Times-Bold/Italic/BI for bold and italic |
+| DOCX | `FONT` in `docx.ts`, applied by the single `t()` run factory |
+| Preview | `@font-face` "ExaaiExamFont" scoped to `.print-block`, from the same TTF |
+
+Two traps: **no DOCX run may be built outside `t()`** (DOCX previously set no
+font at all and rendered Calibri), and **Arabic runs must bypass `t()`** and name
+Amiri, because Times New Roman has no Arabic glyphs. The app UI keeps its own
+sans stack; only the paper is Times New Roman.
+
+### 10.4 Choice labels are lowercase `a)`, bold
+
+Never `a.` and never `A.` (previously printed as `A.)`, because the PDF appended
+its own parenthesis to a label that already ended in a period).
+
+- `letterLabel()` in `paper.ts` emits `a)`, `b)`, `c)`, `d)` and is the single
+  source; renderers print `item.label` **verbatim** and never append a separator.
+- The label is bold on all three surfaces.
+- `validateCandidate`'s `choiceCount` check matches `/^[a-d]\)/`, so generated
+  options are held to this form automatically.
+
+### 10.5 Tables are allowlisted, never default
+
+**Part A never carries a table.** True/False and paragraph matching print the
+sentences only; the answer key lives on a separate sheet, which is what 90% of
+teachers use (this sheet is not the one students write on).
+
+**Part B carries a table only for inherently tabular tasks:**
+
+| Task | Table |
+|---|---|
+| Morphology — roots, prefixes, suffixes | yes |
+| Phonology — classification of final `-s` / `-ed`, syllable work | yes |
+| Vocabulary — meaning, synonyms | **no** |
+| Discourse — gap fill | **no** |
+| Grammar | **no** |
+
+`src/lib/export/tables.ts` is the single authority (`taskHasTable`,
+`rulePrescribesTable`), consumed by generation, validation and rendering.
+
+Three consequences to keep in mind:
+
+1. **Validation enforces both directions.** A missing table where one belongs is a
+   failure; so is a table where none does. The second case is the important one —
+   it is what stops tables creeping back.
+2. **Rendering strips disallowed tables.** Exams saved before this rule still hold
+   a table in the DTO, and `paper.ts` drops it at render time. There is no data
+   migration (user decision, 2026-10-11: strip, don't migrate).
+3. **The guide flags were realigned** so data and rule agree: Part One
+   `tableRequired` cleared, VOCABULARY and DISCOURSE set to false, PHONOLOGY set
+   to true. Adding a skill to `TABULAR_SKILLS` is a spec change — update this
+   table in the same commit.
+
+### 10.6 Official table style
+
+From the user's reference sheet:
+
+- table **centred**, narrower than the text block (`TABLE_MAX_WIDTH` in PDF,
+  `TABLE_WIDTH_PCT` in DOCX) — not full content width;
+- header row **bold italic, centred** (`prefix | root | suffix`);
+- the word list **centred above** the table, separated by hyphens;
+- task stem in the `N- {instruction}` form, bold italic;
+- answer cells empty, with a fixed visible height so empty rows still show.
+
+### 10.7 Prompt-level enforcement
+
+The same rules appear in the generation prompts (`provider.ts`), because the
+prompt is what the model reads:
+
+- `PART_ONE_TABLE_RULE` — Part One never carries a table, even when the rule
+  object says `tableRequired`;
+- `PART_TWO_TABLE_RULE` — tables only for morphology and phonology;
+- `CHOICE_LABEL_RULE` — lowercase `a)`–`d)`, one per line.
+
+These are instructions; `export/tables.ts` and `validateCandidate` are the
+enforcement. A model that ignores the prompt still fails validation.
+
+## 11. Verification
 
 ```bash
 npm test                # every test, incl. paper, arabic, referents, grounding, full-exam

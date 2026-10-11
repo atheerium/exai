@@ -58,6 +58,13 @@ One test file: `node --import tsx --test src/lib/guide.test.ts` (`npm test` runs
 
 **Only the primary set is grounded.** Alternatives (`variant >= 1`) and `TASK_ALT` are generated without `groundingText`; the builder re-checks linkage when an alternative is applied rather than assuming it fits.
 
+**Paper format rules live in `EXAM.md` section 10** (user instruction, 2026-10-11) and are enforced in code, not just documented. Four traps there that will bite you:
+
+- **Tables are allowlisted** via `src/lib/export/tables.ts` — Part A never, Part B only morphology/phonology. `validateCandidate` enforces **both directions**, so a stray `task.table =` outside the allowlist **fails the suite by design**. Do not "fix" the validator to make it pass; that is the bug.
+- **No DOCX run outside `t()`** — the single run factory that pins Times New Roman. A bare `new TextRun` silently renders Calibri. Arabic runs are the one exception (they name Amiri; TNR has no Arabic glyphs).
+- **Print `item.label` verbatim** — `letterLabel()` already emits `a)`; appending a separator prints `a))`.
+- **The passage has no title** unless `showTitle` is set (default false).
+
 Three pdfkit traps, all documented in `EXAM.md` section 3: `underline` on a continued run underlines the **whole line width** (so the passage is laid out word by word); `underline` + `lineBreak:false` with no `width` throws on a NaN coordinate; and Arabic must be shaped but never reversed.
 
 ## Landmines

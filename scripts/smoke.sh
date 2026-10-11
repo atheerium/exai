@@ -465,7 +465,16 @@ for sec in (p1,p2):
       if not m: continue
       w_=m.group(1).strip().lower()
       assert w_ in low, f'unguarded target {w_!r} not in passage'
-print('full exam: all four sections, marks 7/7, targets grounded in the passage')"
+# Format rules (user instruction 2026-10-11, EXAM.md section 10): Part A never
+# carries a table, Part B tables only for morphology/phonology, and the passage
+# prints no title unless the teacher opts in.
+for task in p1['tasks']:
+  assert not task.get('table'), 'Part A task must not carry a table'
+for task in p2['tasks']:
+  if task.get('skill') not in ('MORPHOLOGY','PHONOLOGY'):
+    assert not task.get('table'), str(task.get('skill')) + ' must not carry a table'
+assert not t.get('textTitle'), 'passage title must not print by default'
+print('full exam: all four sections, marks 7/7, grounded targets, no stray tables, no passage title')"
 
 echo "== full exam refuses to clobber without overwrite (409) =="
 CODE=$(curl -s -b "$JAR" -o /tmp/overwrite.json -w "%{http_code}" -X POST "$BASE/api/exams/$E8/generate" -H "Content-Type: application/json" -d '{"type":"FULL_EXAM"}')
