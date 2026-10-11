@@ -20,6 +20,7 @@ Next.js 15 App Router + React 19 + TypeScript (strict) + Prisma/PostgreSQL (Supa
 | Command | Exit | Notes |
 |---|---|---|
 | `npm test` | 0 | **`node --import tsx --test` on hardcoded paths** (`package.json:12`). No glob, no runner config, no DB or network needed. |
+| `npx tsx scripts/render-check.ts` | 0 | Writes a full generated exam to `/tmp/opencode/examcheck/exam.pdf`, **no DB needed**. Rasterise with `pdftoppm` to eyeball format rules. |
 | `npm run typecheck` | 0 | `rm -f tsconfig.tsbuildinfo && tsc --noEmit`. **Must not run while `next build` runs** — see below. |
 | `npm run build` | 0 | `next build`. Only place types are enforced in CI-like flow. |
 | `npm run lint` | **1** | **Trap — do not use as a gate.** See below. |
@@ -64,6 +65,7 @@ One test file: `node --import tsx --test src/lib/guide.test.ts` (`npm test` runs
 - **No DOCX run outside `t()`** — the single run factory that pins Times New Roman. A bare `new TextRun` silently renders Calibri. Arabic runs are the one exception (they name Amiri; TNR has no Arabic glyphs).
 - **Print `item.label` verbatim** — `letterLabel()` already emits `a)`; appending a separator prints `a))`.
 - **The passage has no title** unless `showTitle` is set (default false).
+- **IPA symbols must use `faceFor()`** in `pdf.ts`. pdfkit's built-in Times faces are WinAnsi and print `ɪ` as `&¦Bð`; this was only caught by rasterising a real PDF, so after any font or phonology change, run `npx tsx scripts/render-check.ts` and look at the pages.
 
 Three pdfkit traps, all documented in `EXAM.md` section 3: `underline` on a continued run underlines the **whole line width** (so the passage is laid out word by word); `underline` + `lineBreak:false` with no `width` throws on a NaN coordinate; and Arabic must be shaped but never reversed.
 
