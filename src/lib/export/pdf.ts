@@ -40,6 +40,32 @@ const PARA_GAP = 0.55;
  */
 const TABLE_MAX_WIDTH = 400;
 
+/**
+ * Phonetic / IPA characters.
+ *
+ * pdfkit's built-in Times faces use WinAnsi encoding, which has no IPA, so a
+ * phonetic symbol rendered there comes out as a wrong glyph: the classification
+ * header "/ɪd/" printed as "/&¦Bð" until this was caught in a rasterised PDF.
+ * The bundled TNR file *does* cover ɪ ʃ ʒ ə ʌ æ ŋ, so any text containing a
+ * phonetic character must use a file-backed face and lose the bold/italic
+ * synthetic variant rather than print nonsense.
+ *
+ * Limitation that remains: the bundled font has no θ (U+03B8) or ː (U+02D0), and
+ * Amiri covers even less of IPA. A phonology task using those symbols needs a
+ * font with wider phonetic coverage; until one is bundled, they will fall back.
+ */
+const PHONETIC = /[\u0250-\u02AF\u02B0-\u02FF\u1D00-\u1D7F]/;
+
+/**
+ * Pick a face for `text`: a file-backed face when it carries phonetic symbols,
+ * otherwise the requested synthetic bold/italic variant.
+ */
+const faceFor = (text: string, bold: boolean, italic: boolean): string => {
+  if (!PHONETIC.test(text)) return italic ? (bold ? BOLD_ITALIC : ITALIC) : bold ? BOLD : REGULAR;
+  // REGULAR is the only face here with IPA coverage; Amiri has less, not more.
+  return REGULAR;
+};
+
 export async function renderPdf(docModel: ExportDocument): Promise<Buffer> {
   const doc = new PDFDocument({ size: "A4", margin: 56, bufferPages: true });
   const paper = buildPaper(docModel);
@@ -345,7 +371,7 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
   const drawInlineItem = (item: PaperItem, x: number, y: number): number => {
     font(BODY, true).fillColor("#000000").text(`${item.label}`, x, y, { lineBreak: false });
     const labelW = doc.widthOfString(`${item.label} `);
-    font(BODY).fillColor("#000000").text(item.text, x + labelW, y, { lineBreak: false });
+    doc.font(faceFor(item.text, false, false)).fontSize(BODY).fillColor("#000000").text(item.text, x + labelW, y, { lineBreak: false });
 
     let cursor = x + labelW + doc.widthOfString(item.text);
     if (item.ref) {
@@ -366,7 +392,7 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
 
     const labelWidth = doc.widthOfString(`${item.label} `);
     const body = item.ref ? `${item.text} ${item.ref}` : item.text;
-    font(BODY).fillColor("#000000").text(item.text, left + ITEM_INDENT + labelWidth, y, {
+    doc.font(faceFor(item.text, false, false)).fontSize(BODY).fillColor("#000000").text(item.text, left + ITEM_INDENT + labelWidth, y, {
       width: contentWidth - ITEM_INDENT - labelWidth,
     });
 
@@ -400,9 +426,13 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     const textWidth = colWidth - padX * 2;
 
     const measure = (cells: string[], bold: boolean): number => {
-      font(BODY - 1, bold);
       let tallest = 0;
-      for (const cell of cells) tallest = Math.max(tallest, doc.heightOfString(cell || " ", { width: textWidth }));
+      for (const cell of cells) {
+        // Measure in the face the cell will actually be drawn in, or phonetic
+        // cells wrap against the wrong metrics.
+        doc.font(faceFor(cell || " ", bold, false)).fontSize(BODY - 1);
+        tallest = Math.max(tallest, doc.heightOfString(cell || " ", { width: textWidth }));
+      }
       return Math.max(minHeight, tallest + padY * 2);
     };
 
@@ -417,7 +447,7 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     table.headers.forEach((h, ci) => {
       const x = x0 + ci * colWidth;
       doc.rect(x, y, colWidth, headerH).stroke();
-      ital(BODY - 1, true).fillColor("#000000").text(h, x + padX, y + padY, {
+      doc.font(faceFor(h, true, true)).fontSize(BODY - 1).fillColor("#000000").text(h, x + padX, y + padY, {
         width: textWidth,
         align: "center",
       });
@@ -434,7 +464,8 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
       row.forEach((cell, ci) => {
         const x = x0 + ci * colWidth;
         doc.rect(x, y, colWidth, h).stroke();
-        font(BODY - 1).fillColor("#000000").text(cell || " ", x + padX, y + padY, { width: textWidth });
+        const body = cell || " ";
+        doc.font(faceFor(body, false, false)).fontSize(BODY - 1).fillColor("#000000").text(body, x + padX, y + padY, { width: textWidth });
       });
       y += h;
     });
