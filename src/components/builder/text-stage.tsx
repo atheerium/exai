@@ -117,6 +117,18 @@ export function TextStage({
               onChange={(e) => onEdit({ sections: [{ id: section.id, textTitle: e.target.value }] })}
               className="font-semibold"
             />
+            {/* The official paper prints no passage title (user rule
+                2026-10-11). The title stays editable so the teacher can turn the
+                toggle on instead of regenerating. */}
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={section.showTitle === true}
+                onChange={(e) => onEdit({ sections: [{ id: section.id, showTitle: e.target.checked }] })}
+                className="h-4 w-4 accent-[hsl(var(--primary))]"
+              />
+              {t("builder.showPassageTitle")}
+            </label>
             <Textarea
               value={section.text ?? ""}
               onChange={(e) => onEdit({ sections: [{ id: section.id, text: e.target.value }] })}

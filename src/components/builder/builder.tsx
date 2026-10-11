@@ -769,6 +769,7 @@ function applySectionPatch(exam: ExamDto, patch: Record<string, unknown>): ExamD
     if (!target) continue;
     if (typeof sec.text === "string") target.text = sec.text;
     if (typeof sec.textTitle === "string") target.textTitle = sec.textTitle;
+    if ("showTitle" in sec) target.showTitle = sec.showTitle === true;
     if ("sourceIndex" in sec) {
       target.sourceIndex = sec.sourceIndex === null ? null : Number(sec.sourceIndex);
     }

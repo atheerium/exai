@@ -95,10 +95,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           if (!sec.id) continue;
           const section = await tx.examSection.findFirst({ where: { id: sec.id, examId: id } });
           if (!section) continue;
-          if (typeof sec.text === "string" || typeof sec.textTitle === "string" || "sourceIndex" in sec) {
+          if (typeof sec.text === "string" || typeof sec.textTitle === "string" || "showTitle" in sec || "sourceIndex" in sec) {
             const content = section.content ? JSON.parse(section.content) : {};
             if (typeof sec.text === "string") content.text = String(sec.text).slice(0, 30000);
             if (typeof sec.textTitle === "string") content.title = String(sec.textTitle).slice(0, 500);
+            // Title printing is opt-in (user rule 2026-10-11).
+            if ("showTitle" in sec) content.showTitle = sec.showTitle === true;
             if ("sourceIndex" in sec) {
               content.sourceIndex = sec.sourceIndex === null ? null : Number(sec.sourceIndex);
             }

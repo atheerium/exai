@@ -99,6 +99,9 @@ const paper = buildPaper(
           type: "TEXT",
           text: "First paragraph here.\n\nSecond paragraph here. They said which was fair.",
           textTitle: "The title",
+          // Opt in so the fixture exercises the printed-title path; production
+          // sections default to no title (user rule 2026-10-11).
+          showTitle: true,
           sourceIndex: 0,
         }),
         section({

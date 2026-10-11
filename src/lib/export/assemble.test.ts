@@ -98,13 +98,28 @@ test("assembleDocument keeps the passage and its citation on the umbrella sectio
     exam({
       config: secondaryConfig("1as"),
       sources: [{ title: "The Last Lesson", isExternal: false }],
-      sections: [section({ id: "s-text", type: "TEXT", text: "The body", textTitle: "A short text" })],
+      sections: [section({ id: "s-text", type: "TEXT", text: "The body", textTitle: "A short text", showTitle: true })],
     })
   );
   assert.equal(doc.sections[0].text?.body, "The body");
   assert.equal(doc.sections[0].text?.title, "A short text");
   assert.equal(doc.sections[0].sourceNote, "Adapted from The Last Lesson");
   assert.equal(doc.sections[1].text, undefined);
+});
+
+test("the passage title is suppressed unless the teacher opts in", () => {
+  // User rule 2026-10-11: the official papers carry no passage title.
+  const withTitle = (showTitle?: boolean) =>
+    assembleDocument(
+      exam({
+        config: secondaryConfig("1as"),
+        sections: [section({ id: "s-text", type: "TEXT", text: "The body", textTitle: "A short text", showTitle })],
+      })
+    ).sections.find((s) => s.text?.body)?.text?.title;
+
+  assert.equal(withTitle(undefined), undefined, "absent flag means no title");
+  assert.equal(withTitle(false), undefined);
+  assert.equal(withTitle(true), "A short text", "opt-in prints it");
 });
 
 test("assembleDocument credits the source the teacher selected via sourceIndex", () => {

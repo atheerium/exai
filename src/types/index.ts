@@ -54,6 +54,12 @@ export interface SectionDto {
   order: number;
   text?: string | null;
   textTitle?: string | null;
+  /**
+   * Whether the passage title is printed. Default false (user rule,
+   * 2026-10-11): the official papers carry no passage title, so the teacher has
+   * to opt in.
+   */
+  showTitle?: boolean;
   previousText?: string | null;
   previousTitle?: string | null;
   sourceIndex?: number | null; // index into ExamDto.sources — the citation the teacher chose

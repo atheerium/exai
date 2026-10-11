@@ -163,7 +163,10 @@ export function assembleDocument(exam: ExamDto): ExportDocument {
   }));
 
   const text = textSec?.text
-    ? { title: textSec.textTitle ?? undefined, body: textSec.text }
+    // No title on the paper unless the teacher opted in (user rule,
+    // 2026-10-11). The title is still generated and stored, so switching the
+    // toggle on later needs no regeneration.
+    ? { title: textSec.showTitle ? textSec.textTitle ?? undefined : undefined, body: textSec.text }
     : undefined;
 
   if (isBac) {

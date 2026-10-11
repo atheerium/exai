@@ -9,6 +9,8 @@ interface SectionContent {
   title?: string | null;
   previousText?: string | null;
   previousTitle?: string | null;
+  /** Teacher opted in to printing the passage title (user rule 2026-10-11). */
+  showTitle?: boolean;
   candidates?: unknown[];
   sourceIndex?: number | null;
 }
@@ -100,6 +102,7 @@ export async function examToDto(exam: any): Promise<ExamDto> {
       order: s.order,
       text: content.text ?? null,
       textTitle: content.title ?? null,
+      showTitle: content.showTitle === true,
       previousText: content.previousText ?? null,
       previousTitle: content.previousTitle ?? null,
       candidates: content.candidates ?? [],
