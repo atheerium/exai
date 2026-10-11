@@ -374,3 +374,45 @@ test("generated tables leave the answer column empty for every grade and variant
     }
   }
 });
+
+
+// --- Passage shape: paragraph count and topic anchoring ---------------------
+//
+// The mock is the offline test double, so it has to honour the same contract the
+// real provider does. If it drifts, every test that exercises the validator via
+// the mock silently stops covering the rule.
+
+test("mock passages honour the teacher's paragraph count exactly", () => {
+  for (const count of [3, 4] as const) {
+    const text = generateText(ctx({ paragraphCount: count }), 0).text;
+    const actual = text.split(/\n{2,}/).filter((p) => p.trim()).length;
+    assert.equal(actual, count, `asked for ${count} paragraphs`);
+  }
+});
+
+test("mock passages name their topic in every paragraph", () => {
+  // The theme corpus is topic-neutral, so without anchoring three of four
+  // paragraphs read as an unrelated essay stapled to the topic.
+  const topic = "digital literacy";
+  const text = generateText(ctx({ topic }), 0).text;
+  const paragraphs = text.split(/\n{2,}/).filter((p) => p.trim());
+  assert.ok(paragraphs.length >= 3);
+  for (const [i, p] of paragraphs.entries()) {
+    assert.match(
+      p.toLocaleLowerCase(),
+      new RegExp(topic, "i"),
+      `paragraph ${i + 1} does not mention the topic`
+    );
+  }
+});
+
+test("mock topic anchoring keeps the passage inside the length band", () => {
+  // Anchors add words after the trim, so the trim reserves room for them. This
+  // asserts the reservation works rather than trusting the constant.
+  for (const count of [3, 4] as const) {
+    const text = generateText(ctx({ paragraphCount: count }), 0).text;
+    const words = text.split(/\s+/).filter(Boolean).length;
+    const max = Math.ceil(150 * 1.2);
+    assert.ok(words <= max, `anchored ${count}-paragraph passage has ${words} words, ceiling ${max}`);
+  }
+});

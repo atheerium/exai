@@ -23,6 +23,8 @@ export interface MockContext {
   seed: string;
   teacherKeywords?: string | null;
   difficulty?: string | null;
+  /** Passage paragraphs, 3 or 4 (teacher choice, default 3). */
+  paragraphCount?: number;
   /**
    * The passage already generated for this exam, when the caller has one.
    *
@@ -42,18 +44,44 @@ const MIN_PARAGRAPHS = 3;
 const MAX_PARAGRAPHS = 5;
 const SENTENCES_PER_PARAGRAPH = 3;
 
-export function toParagraphs(sentences: string[]): string {
-  if (sentences.length <= MIN_PARAGRAPHS) return sentences.join(" ");
-  const wanted = Math.min(
-    MAX_PARAGRAPHS,
-    Math.max(MIN_PARAGRAPHS, Math.round(sentences.length / SENTENCES_PER_PARAGRAPH))
-  );
-  const perParagraph = Math.ceil(sentences.length / wanted);
-  const paragraphs: string[] = [];
-  for (let i = 0; i < sentences.length; i += perParagraph) {
-    paragraphs.push(sentences.slice(i, i + perParagraph).join(" "));
+/**
+ * Assemble sentences into `wantedCount` paragraphs.
+ *
+ * `wantedCount` is the teacher's explicit choice and is honoured EXACTLY when
+ * there are enough sentences to fill it: a 4-paragraph passage when 3 was asked
+ * for is a different artefact, not a near miss, and validateCandidate rejects
+ * it. Fewer sentences than paragraphs is the only case that cannot be honoured,
+ * and there it returns what it can rather than padding with filler.
+ *
+ * SENTENCES ARE DISTRIBUTED EVENLY, not chunked by a fixed stride. Chunking by
+ * `ceil(n / wanted)` silently under-delivers: 9 sentences at 3 per paragraph is
+ * 3 paragraphs, not the 4 that were asked for. The remainder is spread one
+ * sentence at a time across the leading paragraphs instead.
+ */
+export function toParagraphs(sentences: string[], wantedCount?: number): string {
+  if (wantedCount === undefined && sentences.length <= MIN_PARAGRAPHS) return sentences.join(" ");
+  const wanted =
+    wantedCount ??
+    Math.min(
+      MAX_PARAGRAPHS,
+      Math.max(MIN_PARAGRAPHS, Math.round(sentences.length / SENTENCES_PER_PARAGRAPH))
+    );
+  return splitEvenly(sentences, wanted).join("\n\n");
+}
+
+/** Split into exactly `count` non-empty groups, spreading any remainder evenly. */
+function splitEvenly(sentences: string[], count: number): string[] {
+  const groups = Math.max(1, Math.min(count, sentences.length));
+  const base = Math.floor(sentences.length / groups);
+  const remainder = sentences.length % groups;
+  const out: string[] = [];
+  let i = 0;
+  for (let g = 0; g < groups; g++) {
+    const size = base + (g < remainder ? 1 : 0);
+    out.push(sentences.slice(i, i + size).join(" "));
+    i += size;
   }
-  return paragraphs.join("\n\n");
+  return out;
 }
 
 export function splitParagraphs(text: string): string[] {
@@ -178,19 +206,80 @@ export function generateText(ctx: MockContext, variant = 0): GeneratedText {
 
   // validateCandidate() (src/lib/generate/index.ts) rejects anything outside
   // the guide's ±20% length band, so trim to fit before the teacher sees it.
-  const maxWords = Math.ceil(ctx.length * 1.2);
+  //
+  // The budget must leave room for the topic anchors added in
+  // `anchorParagraphs`, which run AFTER this trim. Counting them up front is
+  // what keeps the passage inside the band: trimming to exactly the ceiling and
+  // then appending ~10 words per unanchored paragraph pushed it over by ~14.
+  const anchorReserve = countAnchorWords(resolved.map((p) => fill(p.text)), topic, ctx.paragraphCount);
+  const maxWords = Math.ceil(ctx.length * 1.2) - anchorReserve;
   for (let i = resolved.length - 1; i >= 0 && wordCount() > maxWords; i--) {
     if (!resolved[i].keep) resolved.splice(i, 1);
   }
 
-  // Pad with an extra body sentence if below target length.
+  // Pad with an extra body sentence if below target length. A padded sentence can
+  // only add an anchor, never remove one, so the reserve stays valid.
   while (wordCount() < ctx.length - 15) {
     resolved.push({ text: body[rng.int(body.length)], keep: false });
   }
 
-  const text = toParagraphs(resolved.map((p) => fill(p.text)));
+  const sentences = resolved.map((p) => fill(p.text));
+  const text = anchorParagraphs(sentences, topic, ctx.paragraphCount);
   const title = theme.title.replace(/\{topic\}/g, titleCaseTopic(topic));
   return { title, text, words: countWords(text), source: mockSource(ctx) };
+}
+
+/**
+ * How many words the topic anchors will add to a passage built from `sentences`.
+ *
+ * Measured, not estimated from the longest template: each paragraph is checked
+ * for the phrase and only the ones without it contribute, so the trim reserves
+ * exactly what will be appended. Over-reserving is harmless (the passage is
+ * merely shorter); under-reserving pushes it outside the ±20% band.
+ */
+function countAnchorWords(sentences: string[], topic: string, wantedCount?: number): number {
+  const needle = topic.toLocaleLowerCase().trim();
+  if (!needle) return 0;
+  const paragraphs = toParagraphs(sentences, wantedCount).split(/\n{2,}/).filter(Boolean);
+  return paragraphs.filter((p) => !p.toLocaleLowerCase().includes(needle)).length * ANCHOR_WORD_BUDGET;
+}
+
+/** Generous per-anchor cost: template wording plus the topic phrase itself. */
+const ANCHOR_WORD_BUDGET = 12;
+
+/**
+ * Assemble the passage and name the topic in every paragraph that would drift.
+ *
+ * The theme corpus is topic-neutral by design — `lead` carries the `{topic}`
+ * slot and `body`/`detail`/`conclusion` are generic sentences that read well
+ * under any title. That is fine for a corpus and wrong for a passage: the
+ * validator (and the real provider's prompt, and the reported bug this fixes)
+ * require every paragraph to stay on its topic, and three of four paragraphs
+ * were previously topic-free.
+ *
+ * `checkTopicAnchoring` in grounding.ts uses word-boundary phrase containment,
+ * so the whole phrase must appear, not a prefix of it.
+ */
+function anchorParagraphs(sentences: string[], topic: string, wantedCount?: number): string {
+  const needle = topic.toLocaleLowerCase().trim();
+  const paragraphs = toParagraphs(sentences, wantedCount)
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (!needle) return paragraphs.join("\n\n");
+
+  return paragraphs
+    .map((paragraph, i) => {
+      if (paragraph.toLocaleLowerCase().includes(needle)) return paragraph;
+      // First and last keep the lead-in / lead-out shape; a middle paragraph gets
+      // a connecting clause, which is what the "one aspect per paragraph" arc wants.
+      if (i === 0) {
+        return `When people talk about ${needle}, ${paragraph.charAt(0).toLocaleLowerCase()}${paragraph.slice(1)}`;
+      }
+      if (i === paragraphs.length - 1) return `${paragraph} That is why ${needle} matters.`;
+      return `${paragraph} The same point shapes ${needle} in practice.`;
+    })
+    .join("\n\n");
 }
 
 function titleCaseTopic(topic: string): string {

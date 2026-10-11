@@ -177,6 +177,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         language: exam.config.language,
         teacherKeywords: exam.config.teacherKeywords ?? null,
         difficulty: exam.config.difficulty ?? null,
+        paragraphCount: exam.config.paragraphCount,
       });
 
       let lookup: { task?: any; topic?: any } = {};
@@ -368,7 +369,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const candidates = await generateTextCandidates(ctx);
       const issues: string[] = [];
       for (const c of candidates) {
-        const v = validateCandidate("TEXT", { text: c.text, title: c.title }, undefined, { length: ctx.length });
+        const v = validateCandidate("TEXT", { text: c.text, title: c.title }, undefined, {
+          length: ctx.length,
+          paragraphCount: ctx.paragraphCount,
+          topic: ctx.topic,
+          teacherKeywords: ctx.teacherKeywords,
+        });
         if (!v.ok) issues.push(...v.issues);
       }
       if (issues.length > 0) {
@@ -405,7 +411,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
       const issues: string[] = [];
       for (const c of rewriteResult) {
-        const v = validateCandidate("TEXT", { text: c.text, title: c.title }, undefined, { length: ctx.length });
+        const v = validateCandidate("TEXT", { text: c.text, title: c.title }, undefined, {
+          length: ctx.length,
+          paragraphCount: ctx.paragraphCount,
+          topic: ctx.topic,
+          teacherKeywords: ctx.teacherKeywords,
+        });
         if (!v.ok) issues.push(...v.issues);
       }
       if (issues.length > 0) {

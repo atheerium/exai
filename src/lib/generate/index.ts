@@ -55,6 +55,15 @@ export interface GenContext {
    * 2026-11); offered as 3 or 4 because the arc is lead → aspects → close.
    */
   paragraphCount?: number;
+  /**
+   * Set only on a repair attempt: the validator's own complaints about the
+   * previous reply, verbatim. Undefined on a first call.
+   *
+   * Re-rolling the same prompt at the same temperature tends to reproduce the
+   * same mistake, so one corrective call is allowed. See `repairPassage` in
+   * full-exam.ts for why it is bounded at one attempt.
+   */
+  repairOf?: string;
 }
 
 export function buildContext(input: {

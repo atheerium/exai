@@ -88,6 +88,12 @@ Three pdfkit traps, all documented in `EXAM.md` section 3: `underline` on a cont
 
 - `prisma/schema.prisma:9` `provider = "postgresql"`; `DATABASE_URL` is a Supabase pooled URL (`?pgbouncer=true&statement_cache_size=0`). Supabase Auth/Storage are unused — auth is custom bcrypt + DB sessions.
 - **No migration history.** Use `prisma db push`, never `prisma migrate`. Default Prisma generator output (no `output` override), no `previewFeatures`/`binaryTargets`.
+- **`prisma db push` hangs against this DB, and `db execute` silently no-ops.** Its diff engine never returned (15+ min, killed) even though TCP to the pooler on 6543 is open and fine. `prisma db execute --stdin/--file` exits **0 without applying anything** — it must not be trusted as evidence a column exists. For a single additive column, run it through the client and then **verify by querying `information_schema`**:
+  ```bash
+  export DATABASE_URL="$(grep '^DATABASE_URL=' .env.local | cut -d= -f2- | tr -d '\"' | tr -d "'")"
+  # prisma.$executeRawUnsafe('ALTER TABLE ...'), then $queryRawUnsafe('SELECT ... FROM information_schema.columns ...')
+  ```
+  `DATABASE_URL` lives in `.env.local`, which Prisma does not read — it only reads `.env`, so a bare `npx prisma ...` fails with `P1012: Environment variable not found`. `.env.local` also cannot be `source`d (the pooled URL contains a bare `&`). Export it as above.
 - `prisma/seed.ts` upserts one `GuideConfig` per `GUIDES` key (7 total) with `version`/`sourceRef` governance metadata. Rule payloads live in code (`src/data/guides.ts`), not in that table.
 - `src/lib/db.ts` raises transaction timeouts to 30s (Supabase cold RTT) and retries transient errors (`withDbRetry`, 2 retries) — the Prisma 5s default caused "Transaction already closed".
 - `withRls(userId, fn)` sets `SET LOCAL app.current_user_id` **inside** `prisma.$transaction`, because bare `SET LOCAL` outside a transaction is a no-op on pooled pgbouncer. It uses `$executeRawUnsafe` with manual `'`-escaping — don't "clean" that up. Two callers intentionally stay on the global client: `track()` (fire-and-forget analytics) and `restoreRevision()` (manages its own transaction, so it **cannot** nest inside `withRls`; its caller checks ownership first).
@@ -107,10 +113,28 @@ Three pdfkit traps, all documented in `EXAM.md` section 3: `underline` on a cont
 
 ## AI generation
 
-- `src/lib/generate/index.ts` is the facade. **The API layer must never import `mock`/`openai`/`groq` directly** — `impl()` switches on `AI_PROVIDER` (default `mock`, deterministic, seeded, no API key). `openai`/`groq` share `provider.ts` (chat helper, prompt builder, parser) and each honor `*_API_KEY`, `*_MODEL`, `*_BASE_URL`.
+- `src/lib/generate/index.ts` is the facade. **The API layer must never import `mock`/`openai`/`groq` directly** — every generation goes through `withChain()`, which resolves the provider chain (empty chain ⇒ `mock`, deterministic, seeded, no API key) and builds the LLM generators from `provider.ts` (chat helper, prompt builder, parser). `openai`/`groq` are legacy single-provider entry points kept for the `AI_PROVIDER` path and each honor `*_API_KEY`, `*_MODEL`, `*_BASE_URL`.
 - `buildContext()` resolves rules via `src/lib/guide.ts` and derives a deterministic `seed` from `examId:grade:unit:topic`.
 - `validateCandidate()` is the gate before any candidate reaches the teacher: marks totals, `exactWording`, `tableRequired`, `itemCount`, and BAC constraints (`gapCount`, `utteranceCount`, `choiceCount`, `solvedExampleRow`). Only re-run for the standard case — `generate/index.ts:200` notes `taskSpecificRules`/`teacherStandardRules` are **intentionally empty until a teacher supplies values**.
-- `GenContext` now carries `difficulty` and `teacherKeywords` (bias generation); `provider.ts` caps every fetch at **30s** via `AbortController`.
+- `GenContext` now carries `difficulty`, `teacherKeywords`, `paragraphCount` and `repairOf` (bias generation); `provider.ts` caps every fetch at **30s** via `AbortController`.
+- `src/lib/generate/chain.ts` owns the **fallback chain** (`AI_PROVIDER_CHAIN`, comma-separated `provider:model`), resolved per call by `withChain()` in `index.ts`. The advance policy is deliberately asymmetric: **advance** on 429/5xx/timeout/unusable reply, **stop** on 401/403 (a credential error is not fixed by trying a different key) and on validation failure (a different model has no more knowledge of this exam's guide rules). Legacy `AI_PROVIDER` still works when the chain is unset; `mock` still yields an empty chain, so the offline default is untouched.
+- **Free-tier model rosters rot quarterly — verify against a live key before trusting any model string.** Measured 2026-10-11: Groq free serves only `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b` (all `meta-llama/*` chat models removed 2026-08-16). `groq.ts` shipped defaulting to the dead `llama-3.3-70b-versatile`; fixed, and pinned by a test.
+- **Reasoning models return EMPTY content unless reasoning is capped.** gpt-oss with `response_format: json_object`: **0/6** succeeded uncapped (Groq reported `Failed to validate JSON`), **6/6** with `reasoning_effort: low` (~25 reasoning tokens). `chain.ts` applies this automatically to `gpt-oss` IDs; the transport always sends `max_tokens` (default 4000). `provider.test.ts` asserts both at the wire — do not delete those assertions.
+- `parseLooseJson()` salvages fenced or prose-wrapped JSON. `response_format` is honoured by Groq and NVIDIA but **not reliably by OpenRouter** (Gemma returns a ```json fence even when asked), and the free tier serves the same model inconsistently minutes apart. Salvage must stay narrow: it still throws when there is genuinely no JSON.
+- Temperature is **split**: `TEMPERATURE.prose` (0.7) for passages and rewrites, `TEMPERATURE.structured` (0.2) for tasks, tables and topics — a task that must emit `a) b) c)` on every retry should not sample. It is an argument to `chat()`, **never** a key in the prompt object, or it is serialised into the user message.
+
+### Passage shape (also `EXAM.md` §12)
+
+- `paragraphCount` is a **teacher choice of 3 or 4, default 3** (`ALLOWED_PARAGRAPH_COUNTS` / `normaliseParagraphCount` in `guide.ts`). Constants live in `guide.ts`, not `generate/`, because `generate/index.ts` imports `guide.ts` — moving them creates a cycle. `validateCandidate` enforces the count **exactly** only when the caller passes it; REWRITE and alternatives pass nothing and are unaffected.
+- `checkTopicAnchoring()` (grounding.ts) rejects any paragraph naming neither the topic nor a teacher keyword. It guarantees **anchoring, not coherence** — one token naming the topic does not make the paragraph on-subject. Never describe the passage as fully coherent on this evidence.
+- That check uses its own phrase-aware matcher (`mentionsAnchor`), **not** `occursInPassage`. The latter is single-token with inflections, correct for a vocabulary target or referent but structurally unable to match a multi-word topic like "digital literacy" — routing anchors through it silently reports every paragraph off-topic. `checkTaskLinkage` must keep single-token semantics.
+- `repairPassage()` (`full-exam.ts`) allows **exactly one** corrective call, passage only, carrying the validator's issue strings back verbatim. Distinct from `withRetry()`, which only covers transport failures. When the repair fails it returns the **original** issues, never the repair's symptom. Do not "improve" this into a loop.
+
+### Mock is a test double, not a second-class citizen
+
+`mock.ts` must honour the **same contract** as the real providers: exact paragraph count and a topic named in every paragraph (`anchorParagraphs`, with `countAnchorWords` reserving length budget *before* the ±20% trim, or the anchors push the passage out of band). The theme corpus is topic-neutral by design, so without anchoring three of four paragraphs read as an unrelated essay stapled to the topic. If the mock drifts, every test exercising a validator rule through it silently stops covering that rule.
+
+`toParagraphs()` distributes sentences **evenly**, spreading the remainder across leading paragraphs. Chunking by a fixed `ceil(n / wanted)` stride silently under-delivers: 9 sentences at 3 per paragraph yields 3 paragraphs, not the 4 asked for.
 
 ## Export
 

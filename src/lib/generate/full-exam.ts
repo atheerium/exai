@@ -63,6 +63,8 @@ export interface FullExamInput {
   difficulty?: string | null;
   /** BEM guides take one writing topic; BAC guides take two. */
   singleTopic: boolean;
+  /** Passage paragraphs, 3 or 4 (teacher choice, default 3). */
+  paragraphCount?: number;
 }
 
 /** Retries a provider call once on a transient failure. Bounded on purpose. */
@@ -74,6 +76,60 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
       throw first;
     });
   }
+}
+
+/**
+ * One repair attempt, carrying the validator's own complaints back to the model.
+ *
+ * `withRetry` above only helps with TRANSPORT failures (429, timeout). A
+ * validation failure is different: the model answered, and the answer was
+ * wrong. Re-rolling the same prompt at the same temperature usually reproduces
+ * the same mistake, so instead the exact issue strings are appended — the
+ * validator already speaks in terms a teacher reads, e.g. "Generated text has 2
+ * paragraph(s) instead of 3" or "Paragraph 2 does not mention ... off-topic".
+ *
+ * Bounded at ONE attempt, and only for the passage. Two reasons:
+ *   - A prompt that must satisfy a validator becomes a conversation, and a
+ *     conversation with a free-tier model costs more tokens than it saves.
+ *   - The failure the repair cannot fix (a topic that has no good 3-paragraph
+ *     treatment) must still surface to the teacher rather than being papered
+ *     over by repeated sampling.
+ *
+ * If the repair fails, the ORIGINAL issues are returned, not the repair's: the
+ * teacher should see the real problem, not a downstream symptom of the retry.
+ */
+async function repairPassage(
+  generate: (issues: string[]) => Promise<GeneratedTextCandidate[]>,
+  validate: (c: GeneratedTextCandidate) => { ok: boolean; issues: string[] },
+  baseIssues: string[]
+): Promise<{ candidates: GeneratedTextCandidate[] | null; issues: string[] }> {
+  try {
+    const repaired = await generate(baseIssues);
+    const candidate = repaired[0];
+    const check = candidate ? validate(candidate) : { ok: false, issues: ["no passage returned"] };
+    // The whole list is returned, not just the primary: the alternatives offered
+    // in the replacement panel must come from the SAME call, or the panel would
+    // offer passages unrelated to the one that passed validation.
+    if (check.ok) return { candidates: repaired, issues: [] };
+    return { candidates: null, issues: baseIssues };
+  } catch {
+    // Never surface a transport error in place of a real validation issue.
+    return { candidates: null, issues: baseIssues };
+  }
+}
+
+/**
+ * The corrective prompt for a single repair attempt.
+ *
+ * Deliberately terse. The provider already owns the exam instructions, the
+ * schema and the teacher parameters; this adds only what the validator found
+ * wrong, so the model is not re-reading the whole specification mid-conversation.
+ */
+function repairContext(ctx: GenContext, issues: string[]): GenContext {
+  return {
+    ...ctx,
+    repairOf: issues.join(" | "),
+  };
 }
 
 /** Narrowing helper: `unwrap` only returns null after pushing an issue. */
@@ -103,25 +159,60 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
     language: input.language ?? undefined,
     teacherKeywords: input.teacherKeywords,
     difficulty: input.difficulty,
+    paragraphCount: input.paragraphCount,
   });
 
   // ---- Phase A: the passage -------------------------------------------------
   // Validated on its own before anything else runs: a passage outside the
   // length band would make every downstream question ungroundable, so there is
   // no point spending three more provider calls on it.
-  let textCandidates: GeneratedTextCandidate[];
+  const validatePassage = (c: GeneratedTextCandidate) =>
+    validateCandidate("TEXT", { text: c.text, title: c.title }, undefined, {
+      length: baseCtx.length,
+      // The two passage-shape rules. Both are checked here, before any question
+      // is generated: a passage with the wrong paragraph count or a drifting one
+      // would waste three more model calls on questions nobody can answer well.
+      paragraphCount: baseCtx.paragraphCount,
+      topic: baseCtx.topic,
+      teacherKeywords: baseCtx.teacherKeywords,
+    });
+
+  let primary: GeneratedTextCandidate | undefined;
+  // The alternatives offered in the replacement panel. Tracked separately from
+  // `primary` so a repair attempt swaps both together: keeping alternatives from
+  // a rejected attempt alongside a repaired primary would offer the teacher
+  // passages that already failed validation.
+  let alternatives: GeneratedTextCandidate[] = [];
   try {
-    textCandidates = await withRetry(() => generateTextCandidates(baseCtx));
+    const textCandidates = await withRetry(() => generateTextCandidates(baseCtx));
+    const first = textCandidates[0];
+    const check = first ? validatePassage(first) : { ok: false, issues: ["no passage returned"] };
+
+    if (check.ok) {
+      primary = first;
+      alternatives = textCandidates.slice(1);
+    } else {
+      // The prompt already states the paragraph count and the one-topic rule, so
+      // a miss here is usually a near miss worth one corrective call.
+      const repaired = await withRetry(() =>
+        repairPassage(
+          (issues) => generateTextCandidates(repairContext(baseCtx, issues)),
+          validatePassage,
+          check.issues
+        )
+      );
+      if (!repaired.candidates) {
+        return { ok: false, issues: [{ section: "TEXT", messages: repaired.issues }] };
+      }
+      primary = repaired.candidates[0];
+      alternatives = repaired.candidates.slice(1);
+    }
   } catch (e) {
     return { ok: false, issues: [{ section: "TEXT", messages: [`Could not generate the passage: ${msg(e)}`] }] };
   }
 
-  const primary = textCandidates[0];
-  const textCheck = validateCandidate("TEXT", { text: primary?.text, title: primary?.title }, undefined, {
-    length: baseCtx.length,
-  });
-  if (!textCheck.ok) {
-    return { ok: false, issues: [{ section: "TEXT", messages: textCheck.issues }] };
+  if (!primary) {
+    return { ok: false, issues: [{ section: "TEXT", messages: ["no passage returned"] }] };
   }
 
   // The grounding text is the exact passage the teacher will print. Every
@@ -172,7 +263,7 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
     text: {
       title: primary.title,
       text: groundingText,
-      candidates: textCandidates.slice(1),
+      candidates: alternatives,
       source: primary.source,
     },
     partOne: partOneSets!,

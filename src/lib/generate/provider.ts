@@ -154,6 +154,9 @@ export const TEMPERATURE = {
  */
 function coherenceNote(ctx: GenContext): string {
   const paragraphs = ctx.paragraphCount ?? 3;
+  const repair = ctx.repairOf
+    ? ` Your previous attempt was rejected: ${ctx.repairOf}. Fix exactly that and change nothing else.`
+    : "";
   return (
     ` Write EXACTLY ${paragraphs} paragraph${paragraphs === 1 ? "" : "s"}, separated by a blank line. ` +
     `Every paragraph must stay on the topic "${ctx.topic}" or one named aspect of it: ` +
@@ -161,7 +164,8 @@ function coherenceNote(ctx: GenContext): string {
     "Open by introducing the topic, develop one aspect per paragraph, and close without introducing new facts. " +
     (ctx.teacherKeywords
       ? `Each paragraph must also relate to at least one of these teacher keywords: ${ctx.teacherKeywords}. `
-      : "")
+      : "") +
+    repair
   );
 }
 
@@ -178,6 +182,11 @@ export function basePrompt(ctx: GenContext): Record<string, unknown> {
   };
   if (ctx.teacherKeywords) base.teacherKeywords = ctx.teacherKeywords;
   if (ctx.difficulty) base.difficulty = ctx.difficulty;
+  if (ctx.paragraphCount) base.paragraphCount = ctx.paragraphCount;
+  // Sent only on a repair attempt, and named for what it is: the exact strings
+  // the validator produced. The model has no other way to know which of its own
+  // constraints it broke.
+  if (ctx.repairOf) base.repairOf = ctx.repairOf;
   return base;
 }
 

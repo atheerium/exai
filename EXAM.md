@@ -763,3 +763,96 @@ exam id, and the BEM single-topic case.
 `src/lib/generate/referents.test.ts` guards the two referent rules of section 7
 (pronoun class, repetition-avoiding substitute), the rejection of content words,
 and the paragraph lookup.
+
+`src/lib/generate/chain.test.ts` guards section 12.3-12.4: chain parsing and
+resolution, the advance policy (never advance past auth or validation), and a
+pin on the dead `meta-llama` default. It is pure functions over env-shaped input
+and makes **no network calls** — that holds for the whole suite.
+
+`src/lib/generate/provider.test.ts` asserts the wire fields of section 12.3 at
+the transport boundary: `reasoning_effort` is sent for gpt-oss and **absent**
+otherwise, `max_tokens` is always generous, and the temperature split (0.7 prose
+/ 0.2 structured) reaches the request without leaking into the prompt.
+
+`src/lib/generate/mock.test.ts` guards section 12.1-12.2 on the mock provider.
+The mock is the offline test double: if it drifts from the real contract, every
+test that exercises a validator rule through the mock silently stops covering
+it.
+
+## 12. Passage shape and model roster
+
+Set by user instruction and by live measurement on 2026-10-11.
+
+### 12.1 One topic across every paragraph
+
+A generated passage opened on advertising, moved to ancient monuments, then
+traditional music, then archaeologists. Four paragraphs, four subjects: the
+result reads as four unrelated texts stapled together, and the questions have no
+stable referent.
+
+Enforced in two places, because one alone is not enough:
+
+| Half | Where | What it does |
+|---|---|---|
+| Instruction | `coherenceNote()` in `provider.ts` | States the paragraph count, names the topic, and requires the arc lead → aspects → close |
+| Mechanical | `checkTopicAnchoring()` in `grounding.ts` | Rejects any paragraph that mentions neither the topic nor a teacher keyword |
+
+**What this guarantees: anchoring, not coherence.** Every paragraph names the
+topic somewhere. It does **not** prove a paragraph develops it — one token
+mentioning the topic does not make the rest of the paragraph on-subject. Do not
+describe the passage as fully coherent on this evidence.
+
+Two deliberate exemptions, both to avoid false rejections on good passages:
+
+- **Short paragraphs** (under 12 words) are skipped. A one-sentence closer that
+  merely refers back is normal prose, not drift.
+- **Matching is by whole phrase**, not stem or prefix, so "digital literacy"
+  cannot be anchored by a paragraph that merely contains "digital".
+
+### 12.2 Paragraph count is a teacher choice: 3 or 4, default 3
+
+- `paragraphCount` on `ExamConfig` (`Int @default(3)`), chosen in Parameters
+  (`builder.paragraphs`), validated by `validateConfigInputs`.
+- Only **3** and **4** are offered. The passage arc is lead → aspects → close;
+  other counts do not produce a well-formed paper.
+- `normaliseParagraphCount()` clamps anything else to 3 rather than throwing.
+  Silently turning a teacher's explicit choice into a hard error would be worse
+  than the default.
+- `validateCandidate("TEXT", ...)` enforces the count **exactly** when the caller
+  passes it: a 4-paragraph passage when 3 was asked for is a different artefact,
+  not a near miss. Callers with no teacher choice (REWRITE, alternatives) pass
+  nothing and are not affected.
+
+### 12.3 The model roster churns; verify before trusting it
+
+Measured against live keys on 2026-10-11:
+
+- Groq free plan serves three chat models: `openai/gpt-oss-120b`,
+  `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`. Every `meta-llama/*` chat model was
+  **removed on 2026-08-16**. `groq.ts` shipped defaulting to
+  `llama-3.3-70b-versatile`, which fails for every free key.
+- **gpt-oss is a reasoning model and returns EMPTY content without a reasoning
+  cap.** With `response_format: json_object`: 0/6 requests succeeded uncapped
+  (Groq reported `Failed to validate JSON`), 6/6 with `reasoning_effort: low`
+  at ~25 reasoning tokens. `chain.ts` applies this automatically for `gpt-oss`
+  model IDs. The transport must always send a generous `max_tokens`.
+- OpenRouter `:free` is shared-capacity and unreliable in practice: the same
+  model succeeded and failed across identical requests minutes apart. It is a
+  fallback, never a primary.
+- `response_format` is honoured by Groq and NVIDIA but not reliably elsewhere —
+  Gemma on OpenRouter returns a ```json fence even when asked. `parseLooseJson`
+  salvages that rather than failing a whole exam.
+
+### 12.4 One repair attempt, bounded
+
+`repairPassage()` in `full-exam.ts` allows exactly **one** corrective call, and
+only for the passage, carrying the validator's own issue strings back to the
+model verbatim.
+
+- Different from `withRetry()`, which only helps with *transport* failures. A
+  validation failure means the model answered and was wrong; re-rolling the same
+  prompt at the same temperature reproduces the same mistake.
+- Bounded at one because a prompt that must satisfy a validator becomes a
+  conversation, and conversations cost more tokens than they save on a free tier.
+- When the repair fails, the **original** issues are returned, never the
+  repair's downstream symptom.

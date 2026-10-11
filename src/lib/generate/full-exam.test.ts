@@ -181,3 +181,37 @@ test("grounded morphology rows all come from the passage", async () => {
 test("quota cost equals the number of provider calls", () => {
   assert.equal(FULL_EXAM_QUOTA_COST, 4);
 });
+// --- Passage shape rules applied to a full exam -----------------------------
+
+test("full exam honours the teacher's paragraph count", async () => {
+  for (const paragraphCount of [3, 4] as const) {
+    const r = await generateFullExam({ ...BASE, paragraphCount });
+    assert.equal(r.ok, true, JSON.stringify(r.issues));
+    if (!r.ok || !r.text) continue;
+    const actual = r.text.text.split(/\n{2,}/).filter((p) => p.trim()).length;
+    assert.equal(actual, paragraphCount, `asked for ${paragraphCount} paragraphs`);
+  }
+});
+
+test("a full-exam passage stays on its topic in every paragraph", async () => {
+  // The reported failure was a passage that opened on advertising, moved to
+  // ancient monuments, then music, then archaeologists.
+  const r = await generateFullExam(BASE);
+  assert.equal(r.ok, true, JSON.stringify(r.issues));
+  if (!r.ok || !r.text) return;
+  const topic = BASE.topic.toLocaleLowerCase();
+  for (const [i, p] of r.text.text.split(/\n{2,}/).filter(Boolean).entries()) {
+    assert.match(p.toLocaleLowerCase(), new RegExp(topic, "i"), `paragraph ${i + 1} drifted`);
+  }
+});
+
+test("an unsupported paragraph count falls back to the default, it does not fail", async () => {
+  // 5 is not an offered option. Clamping to the default is the documented
+  // behaviour (normaliseParagraphCount): silently turning the teacher's choice
+  // into a hard error would be worse than the default, and the teacher still
+  // gets an exam. The exact-count RULE is separately asserted in facade.test.ts.
+  const r = await generateFullExam({ ...BASE, paragraphCount: 5 as never });
+  assert.equal(r.ok, true, JSON.stringify(r.issues));
+  if (!r.ok || !r.text) return;
+  assert.equal(r.text.text.split(/\n{2,}/).filter((p) => p.trim()).length, 3);
+});
