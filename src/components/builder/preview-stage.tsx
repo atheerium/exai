@@ -81,7 +81,9 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
               <div key={bi} className="mt-4">
                 {block.title && <h3 className="mb-2 text-center text-base font-semibold">{block.title}</h3>}
                 {block.paragraphs.map((paragraph, pi) => (
-                  <p key={pi} className="mt-2 text-justify text-[15px] leading-relaxed">
+                  // No first-line indent (user rule 2026-10-11); the whitespace
+                  // between paragraphs carries the separation, as in the PDF.
+                  <p key={pi} className="text-justify text-[15px] leading-relaxed mt-4 first:mt-0">
                     <Underlined text={paragraph} emphasis={block.emphasis} />
                   </p>
                 ))}
@@ -108,7 +110,7 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                 ))}
                 {block.task.items.map((item) => (
                   <p key={item.label} className="mt-1 flex gap-2 pl-8 text-[15px] leading-relaxed">
-                    <span className="w-4 shrink-0 font-semibold">{item.label}</span>
+                    <span className="w-5 shrink-0 font-bold">{item.label}</span>
                     <span className="flex-1">
                       {item.text}
                       {item.gap && (

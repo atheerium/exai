@@ -21,6 +21,34 @@ const BODY = 20;
 const INDENT = 360;
 const GAP_LEADER = ". . . . . . . . . . . . . . . . . .";
 
+/**
+ * Times New Roman, the Ministry's exam face (user instruction 2026-10-11).
+ *
+ * Every run goes through `t()` so no TextRun can be created without it. DOCX
+ * previously set no font at all, so Word fell back to Calibri and the export did
+ * not match the PDF.
+ */
+const FONT = "Times New Roman";
+
+/**
+ * Vertical whitespace between passage paragraphs, in twentieths of a point.
+ * No first-line indent (user rule, 2026-10-11). The PDF equivalent is PARA_GAP
+ * in pdf.ts; the two are tuned together against a real render.
+ */
+const PASSAGE_GAP_AFTER = 200;
+
+type RunOpts = {
+  bold?: boolean;
+  italics?: boolean;
+  underline?: Record<string, never>;
+  size?: number;
+  color?: string;
+};
+
+/** The only place a TextRun is constructed, so the font cannot be forgotten. */
+const t = (text: string, opts: RunOpts = {}) =>
+  new TextRun({ text, font: FONT, size: opts.size ?? BODY, color: opts.color ?? "111827", ...opts });
+
 const GRID = {
   top: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
   bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
@@ -54,6 +82,7 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
       align?: "left" | "center" | "right";
       indent?: number;
       justify?: boolean;
+      after?: number;
     } = {}
   ) =>
     new Paragraph({
@@ -66,24 +95,26 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
               ? AlignmentType.JUSTIFIED
               : undefined,
       indent: opts.indent ? { left: opts.indent } : undefined,
-      spacing: { after: 100 },
+      spacing: { after: opts.after ?? 100 },
       children: [
-        new TextRun({
-          text,
+        t(text, {
           bold: opts.bold,
           italics: opts.italics,
           size: opts.size ?? BODY,
-          color: opts.color ?? "111827",
+          color: opts.color,
         }),
       ],
     });
 
   const runs = (parts: { text: string; mark?: boolean }[]) =>
-    parts.map((part) => new TextRun({ text: part.text, bold: part.mark, underline: part.mark ? {} : undefined, size: BODY, color: "111827" }));
+    parts.map((part) => t(part.text, { bold: part.mark, underline: part.mark ? {} : undefined }));
 
   const passageParagraph = (text: string, emphasis: string[]) => {
     const targets = emphasis.filter((w) => w.length > 1);
-    if (targets.length === 0) return p(text, { justify: true, indent: INDENT });
+    // Rule (user 2026-10-11): passages carry NO first-line indent; paragraphs are
+    // separated by whitespace instead. DOCX spacing is in twentieths of a point,
+    // so PASSAGE_GAP_AFTER here and PARA_GAP in pdf.ts express the same rhythm.
+    if (targets.length === 0) return p(text, { justify: true, after: PASSAGE_GAP_AFTER });
     const re = new RegExp(`\\b(${targets.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "gi");
     const parts: { text: string; mark?: boolean }[] = [];
     let cursor = 0;
@@ -97,19 +128,23 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
 
     return new Paragraph({
       alignment: AlignmentType.JUSTIFIED,
-      indent: { left: INDENT, firstLine: 240 },
-      spacing: { after: 120 },
+      spacing: { after: PASSAGE_GAP_AFTER },
       children: runs(parts),
     });
   };
 
   if (isBac) {
+    // Arabic deliberately bypasses the `t()` factory: Times New Roman has no
+    // Arabic glyphs, so these runs name Amiri explicitly and let Word shape the
+    // text (DOCX needs no manual shaping, unlike the PDF path).
+    const arRun = (text: string, size = 11, bold = false) =>
+      new TextRun({ text, font: "Amiri", bold, size: size * 2, color: "111827" });
     const ar = (text: string, size = 11, bold = false) =>
       new Paragraph({
         alignment: AlignmentType.CENTER,
         bidirectional: true,
         spacing: { after: 60 },
-        children: [new TextRun({ text, bold, size: size * 2, color: "111827" })],
+        children: [arRun(text, size, bold)],
       });
     children.push(ar("الجمهورية الجزائرية الديمقراطية الشعبية", 11, true));
     children.push(ar("وزارة التربية الوطنية"));
@@ -132,7 +167,7 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
                 children: [
                   new Paragraph({
                     spacing: { after: 100 },
-                    children: [new TextRun({ text: heading, bold: true, size: 24, color: "111827" })],
+                    children: [t(heading, { bold: true, size: 24 })],
                   }),
                 ],
               }),
@@ -143,7 +178,7 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
                   new Paragraph({
                     alignment: AlignmentType.RIGHT,
                     spacing: { after: 100 },
-                    children: [new TextRun({ text: marks, bold: true, size: 22, color: "111827" })],
+                    children: [t(marks, { bold: true, size: 22 })],
                   }),
                 ],
               }),
@@ -159,9 +194,9 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
       indent: { left: INDENT + 320, hanging: 320 },
       spacing: { after: 80 },
       children: [
-        new TextRun({ text: `${item.label}\t`, size: BODY, color: "111827" }),
-        new TextRun({ text: item.text, size: BODY, color: "111827" }),
-        ...(item.gap ? [new TextRun({ text: `  ${GAP_LEADER}`, size: BODY, color: "111827" })] : []),
+        t(`${item.label}\t`),
+        t(item.text),
+        ...(item.gap ? [t(`  ${GAP_LEADER}`)] : []),
       ],
       tabStops: [{ type: "left" as const, position: INDENT + 320 }],
     });
@@ -199,8 +234,8 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
       new Paragraph({
         spacing: { before: 200, after: 80 },
         children: [
-          new TextRun({ text: `${task.number}.`, bold: true, size: BODY, color: "111827" }),
-          new TextRun({ text: `  ${task.instruction}`, bold: true, italics: true, size: BODY, color: "111827" }),
+          t(`${task.number}.`, { bold: true }),
+          t(`  ${task.instruction}`, { bold: true, italics: true }),
         ],
       })
     );
@@ -212,7 +247,7 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
     children.push(
       new Paragraph({
         spacing: { before: 240, after: 80 },
-        children: [new TextRun({ text: topic.label, bold: true, size: BODY, color: "111827" })],
+        children: [t(topic.label, { bold: true })],
       })
     );
     for (const line of topic.lines) children.push(p(line, { indent: INDENT }));
@@ -272,9 +307,10 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
               alignment: AlignmentType.CENTER,
               bidirectional: true,
               children: [
-                new TextRun({ text: "صفحة ", size: 18, color: "6b7280" }),
+                // Arabic page footer: Amiri, same reasoning as the header above.
+                new TextRun({ text: "صفحة ", font: "Amiri", size: 18, color: "6b7280" }),
                 new PageNumberElement(),
-                new TextRun({ text: " من ", size: 18, color: "6b7280" }),
+                new TextRun({ text: " من ", font: "Amiri", size: 18, color: "6b7280" }),
                 new SimpleField("NUMPAGES", "1"),
               ],
             }),

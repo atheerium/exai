@@ -28,6 +28,12 @@ const ITEM_TEXT_INDENT = 52;
 // Q4 items run two-up on one line: "a) its (§1)      b) them (§2)"
 const INLINE_ITEM_GAP = 26;
 const GAP_LEADER = "................";
+/**
+ * Vertical whitespace between passage paragraphs, in pdfkit line units
+ * (1 ≈ one BODY line). The passage has no first-line indent; the rhythm comes
+ * from here. DOCX equivalent: PASSAGE_GAP_AFTER in docx.ts.
+ */
+const PARA_GAP = 0.55;
 
 export async function renderPdf(docModel: ExportDocument): Promise<Buffer> {
   const doc = new PDFDocument({ size: "A4", margin: 56, bufferPages: true });
@@ -318,7 +324,7 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
   /** Width one item needs on a line, label included. */
   const itemWidth = (item: PaperItem): number => {
     doc.font(BOLD).fontSize(BODY);
-    let w = doc.widthOfString(`${item.label}) `);
+    let w = doc.widthOfString(`${item.label} `);
     doc.font(REGULAR).fontSize(BODY);
     w += doc.widthOfString(item.text);
     if (item.ref) w += doc.widthOfString(` ${item.ref}`);
@@ -332,8 +338,8 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
    * Falls back to one-per-line when the pair would not fit the measure.
    */
   const drawInlineItem = (item: PaperItem, x: number, y: number): number => {
-    font(BODY, true).fillColor("#000000").text(`${item.label})`, x, y, { lineBreak: false });
-    const labelW = doc.widthOfString(`${item.label}) `);
+    font(BODY, true).fillColor("#000000").text(`${item.label}`, x, y, { lineBreak: false });
+    const labelW = doc.widthOfString(`${item.label} `);
     font(BODY).fillColor("#000000").text(item.text, x + labelW, y, { lineBreak: false });
 
     let cursor = x + labelW + doc.widthOfString(item.text);
@@ -351,9 +357,9 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
   };
 
   const drawItem = (item: PaperItem, y: number) => {
-    font(BODY, true).fillColor("#000000").text(`${item.label})`, left + ITEM_INDENT, y, { lineBreak: false });
+    font(BODY, true).fillColor("#000000").text(`${item.label}`, left + ITEM_INDENT, y, { lineBreak: false });
 
-    const labelWidth = doc.widthOfString(`${item.label}) `);
+    const labelWidth = doc.widthOfString(`${item.label} `);
     const body = item.ref ? `${item.text} ${item.ref}` : item.text;
     font(BODY).fillColor("#000000").text(item.text, left + ITEM_INDENT + labelWidth, y, {
       width: contentWidth - ITEM_INDENT - labelWidth,
@@ -541,14 +547,16 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
       case "passage":
         // No printed paragraph numbers: the official papers carry the reference
         // only on the item, as "its (§1)", so the passage stays clean prose.
-        for (const paragraph of block.paragraphs) {
+        // No first-line indent (user rule 2026-10-11); paragraphs are separated
+        // by PARA_GAP whitespace instead. DOCX mirrors this with
+        // PASSAGE_GAP_AFTER; tune the two together against a real render.
+        block.paragraphs.forEach((paragraph, pi) => {
           richText(paragraph, block.emphasis, {
             width: contentWidth,
-            indent: 16,
             align: "justify",
           });
-          doc.moveDown(0.12);
-        }
+          if (pi < block.paragraphs.length - 1) doc.moveDown(PARA_GAP);
+        });
         break;
 
       case "sourceNote":

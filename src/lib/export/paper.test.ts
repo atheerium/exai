@@ -34,20 +34,20 @@ function exam(partial: Partial<ExamDto>): ExamDto {
 }
 
 test("letterLabel enumerates a..z then rolls over to aa", () => {
-  assert.equal(letterLabel(0), "a.");
-  assert.equal(letterLabel(25), "z.");
-  assert.equal(letterLabel(26), "aa.");
+  assert.equal(letterLabel(0), "a)", "lowercase letter + paren (user rule 2026-10-11)");
+  assert.equal(letterLabel(25), "z)");
+  assert.equal(letterLabel(26), "aa)");
 });
 
 test("parseTaskBody relabels numbered items as letters", () => {
   const { items } = parseTaskBody("1. First thing\n2. Second thing\n3. Third thing");
-  assert.deepEqual(items.map((i) => i.label), ["a.", "b.", "c."]);
+  assert.deepEqual(items.map((i) => i.label), ["a)", "b)", "c)"]);
   assert.deepEqual(items.map((i) => i.text), ["First thing", "Second thing", "Third thing"]);
 });
 
 test("parseTaskBody keeps already-lettered items and strips their old labels", () => {
   const { items } = parseTaskBody("A. Alpha\nB. Beta");
-  assert.deepEqual(items.map((i) => i.label), ["a.", "b."]);
+  assert.deepEqual(items.map((i) => i.label), ["a)", "b)"]);
   assert.deepEqual(items.map((i) => i.text), ["Alpha", "Beta"]);
 });
 
@@ -202,7 +202,7 @@ test("buildPaper letter the items of a numbered comprehension task", () => {
   const task = paper.blocks.find((b) => b.kind === "task");
   assert.ok(task && task.kind === "task");
   assert.equal(task.task.number, 1);
-  assert.deepEqual(task.task.items.map((i) => i.label), ["a.", "b."]);
+  assert.deepEqual(task.task.items.map((i) => i.label), ["a)", "b)"]);
   assert.equal(task.task.instruction, "Who or what do the underlined words refer to in the text?");
 });
 

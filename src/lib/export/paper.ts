@@ -63,6 +63,14 @@ export interface Paper {
 const LETTERS = "abcdefghijklmnopqrstuvwxyz";
 
 /** 0 -> "a.", 25 -> "z.", 26 -> "aa." */
+/**
+ * Choice label for an item: lowercase letter + `)`, e.g. `a)` (user rule,
+ * 2026-10-11 — screenshot 1).
+ *
+ * The label carries its own `)`, so renderers must print `item.label` verbatim
+ * rather than appending a separator. Previously the label was `A.` and the PDF
+ * appended `)`, which printed `A.)`.
+ */
 export function letterLabel(index: number): string {
   let n = index;
   let out = "";
@@ -70,7 +78,7 @@ export function letterLabel(index: number): string {
     out = LETTERS[n % 26] + out;
     n = Math.floor(n / 26) - 1;
   } while (n >= 0);
-  return `${out}.`;
+  return `${out.toLocaleLowerCase()})`;
 }
 
 // Generated prompts are a flat newline-separated block in one of two shapes:

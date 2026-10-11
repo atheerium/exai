@@ -70,6 +70,24 @@
   }
 }
 
+/* The exam paper itself is Times New Roman, the Ministry's exam face (user
+   instruction 2026-10-11). Scoped to .print-block (the builder preview and
+   browser print) so the app UI keeps its own sans stack — what the teacher
+   reviews must match what the PDF and DOCX export. The face is the same file
+   the exporters register, so preview and export cannot drift. */
+@font-face {
+  font-family: "ExaaiExamFont";
+  src: url("/fonts/TimesNewRoman.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.print-block,
+.print-block * {
+  font-family: "ExaaiExamFont", "Times New Roman", Times, serif;
+}
+
 @media print {
   .no-print {
     display: none !important;
