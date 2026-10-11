@@ -7,6 +7,7 @@ import {
   occursInPassage,
   extractTaskTargets,
   checkTaskLinkage,
+  checkTopicAnchoring,
 } from "./grounding";
 
 test("normaliseToken folds case and strips punctuation", () => {
@@ -143,4 +144,62 @@ test("checkTaskLinkage is a no-op without a passage", () => {
   // start failing.
   const tasks = [{ skill: "VOCABULARY", prompt: "1. Anything → ........." }];
   assert.deepEqual(checkTaskLinkage(tasks, ""), []);
+});
+
+// --- Topic anchoring across paragraphs -------------------------------------
+//
+// Reported failure (user, 2026-10-11): a generated passage ran advertising ->
+// ancient monuments -> traditional music -> archaeologists. Four paragraphs,
+// four subjects, so the questions had no stable referent.
+
+test("checkTopicAnchoring accepts a passage that stays on its topic", () => {
+  const passage = [
+    "Advertising shapes what young readers consider normal, and few products are as influential as the phone in a pocket.",
+    "The same advertising influences how heritage sites are presented, often replacing careful history with a memorable slogan.",
+    "Critics argue that advertising reduces culture to a brand, yet conservation still depends on the visitors it attracts.",
+  ].join("\n\n");
+  assert.deepEqual(checkTopicAnchoring(passage, { topic: "advertising" }), []);
+});
+
+test("checkTopicAnchoring rejects a paragraph that switches subject", () => {
+  const passage = [
+    "Advertising shapes what young readers consider normal, and few products are as influential as the phone in a pocket.",
+    "Traditional music in the Algerian south relies on rhythms passed down orally through generations of musicians.",
+    "Critics argue that advertising reduces culture to a brand, yet conservation still depends on the visitors it attracts.",
+  ].join("\n\n");
+  const issues = checkTopicAnchoring(passage, { topic: "advertising" });
+  assert.equal(issues.length, 1, "only the drifting paragraph is reported");
+  assert.match(issues[0], /Paragraph 2/);
+  assert.match(issues[0], /advertising/);
+});
+
+test("checkTopicAnchoring accepts a teacher keyword as an anchor", () => {
+  // A teacher keyword is a legitimate way to stay on-topic: the topic word need
+  // not be repeated in every paragraph.
+  const passage = [
+    "Mobile phones now reach most households, and the phone in a pocket shapes how people read the news each morning.",
+    "Digital literacy programmes try to teach young readers to check a source before they believe what it says.",
+    "Teachers agree that reading on a phone is now the classroom default, so verifying a headline matters more than ever.",
+  ].join("\n\n");
+  assert.deepEqual(
+    checkTopicAnchoring(passage, { topic: "digital literacy", keywords: "phone" }),
+    []
+  );
+});
+
+test("checkTopicAnchoring exempts a short referring-back closer", () => {
+  // A one-sentence paragraph that merely refers back is normal prose, not drift.
+  // Demanding a literal topic mention there would produce false rejections on
+  // otherwise good passages.
+  const passage = [
+    "Advertising shapes what young readers consider normal, and few products are as influential as the phone in a pocket.",
+    "Critics argue that advertising reduces culture to a brand, yet conservation still depends on the visitors it attracts.",
+    "In the end, it matters.",
+  ].join("\n\n");
+  assert.deepEqual(checkTopicAnchoring(passage, { topic: "advertising" }), []);
+});
+
+test("checkTopicAnchoring is a no-op without anchors or paragraphs", () => {
+  assert.deepEqual(checkTopicAnchoring("", { topic: "advertising" }), []);
+  assert.deepEqual(checkTopicAnchoring("Any text at all here.", { topic: "" }), []);
 });

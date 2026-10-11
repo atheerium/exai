@@ -8,6 +8,7 @@ import {
   generateWritingCandidates,
   generateRewriteCandidates,
   validateCandidate,
+  DEFAULT_PARAGRAPH_COUNT,
 } from "./index";
 
 const input = {
@@ -152,4 +153,68 @@ test("BEM generation through facade: marks 7/7/6, single writing topic", async (
     assert.equal(p.guided.kind, "GUIDED");
     assert.equal(p.guided.marks, 6);
   }
+});
+
+
+// --- Paragraph count and topic anchoring at the validator boundary ---------
+//
+// Teacher instruction, 2026-10-11: the passage is "around 3 to 4 paragraphs,
+// chosen by the teacher, default 3".
+
+const ON_TOPIC = (n: number) =>
+  Array.from({ length: n }, (_, i) =>
+    `Heritage preservation depends on public interest, and this paragraph makes that point number ${i + 1} at some length.`
+  ).join("\n\n");
+
+test("buildContext normalises the teacher paragraph choice", () => {
+  assert.equal(buildContext({ ...input, paragraphCount: 4 }).paragraphCount, 4);
+  assert.equal(buildContext({ ...input, paragraphCount: 3 }).paragraphCount, 3);
+  assert.equal(buildContext(input).paragraphCount, DEFAULT_PARAGRAPH_COUNT);
+  // 5 is not an offered option: silently clamping a teacher's explicit choice
+  // would be worse than telling them the option does not exist, so the default
+  // is used and the validator reports the mismatch rather than passing it.
+  assert.equal(buildContext({ ...input, paragraphCount: 5 }).paragraphCount, DEFAULT_PARAGRAPH_COUNT);
+});
+
+test("validateCandidate rejects the wrong paragraph count exactly", () => {
+  const ok = validateCandidate("TEXT", { title: "T", text: ON_TOPIC(3) }, undefined, {
+    paragraphCount: 3,
+  });
+  assert.ok(ok.ok, ok.issues.join("; "));
+
+  const wrong = validateCandidate("TEXT", { title: "T", text: ON_TOPIC(4) }, undefined, {
+    paragraphCount: 3,
+  });
+  assert.ok(!wrong.ok);
+  assert.match(wrong.issues.join(" "), /4 paragraph\(s\) instead of 3/);
+});
+
+test("validateCandidate rejects a passage that drifts off its topic", () => {
+  const drifted = [
+    "Advertising shapes what young readers consider normal in almost every market they walk through.",
+    "Traditional music in the Algerian south relies on rhythms passed down orally through generations.",
+    "Tourists who visit the old towns often hear those rhythms without ever learning their names.",
+  ].join("\n\n");
+
+  const v = validateCandidate("TEXT", { title: "T", text: drifted }, undefined, {
+    paragraphCount: 3,
+    topic: "advertising",
+  });
+  assert.ok(!v.ok, "an off-topic paragraph must be caught, not shipped to the teacher");
+  assert.match(v.issues.join(" "), /off-topic/);
+});
+
+test("validateCandidate accepts an on-topic passage", () => {
+  const v = validateCandidate("TEXT", { title: "T", text: ON_TOPIC(3) }, undefined, {
+    paragraphCount: 3,
+    topic: "heritage",
+  });
+  assert.ok(v.ok, v.issues.join("; "));
+});
+
+test("paragraph count is unchecked when the caller does not ask for it", () => {
+  // REWRITE and alternatives have no teacher paragraph choice, so an exact-count
+  // rule must not start failing them.
+  const v = validateCandidate("TEXT", { title: "T", text: ON_TOPIC(5) });
+  assert.ok(v.ok, v.issues.join("; "));
 });

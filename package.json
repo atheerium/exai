@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "rm -f tsconfig.tsbuildinfo && tsc --noEmit",
-    "test": "node --import tsx --test src/lib/guide.test.ts src/lib/rate-limit.test.ts src/lib/generate/mock.test.ts src/lib/generate/referents.test.ts src/lib/generate/grounding.test.ts src/lib/generate/full-exam.test.ts src/lib/generate/facade.test.ts src/lib/generate/openai.test.ts src/lib/generate/corpus.test.ts src/lib/generate/groq.test.ts src/lib/generate/provider.test.ts src/lib/generate/provider-grounding.test.ts src/lib/generate/rng.test.ts src/lib/password-reset.test.ts src/lib/serialize.test.ts src/lib/merge-patch.test.ts src/lib/export/assemble.test.ts src/lib/utils.test.ts src/lib/auth.test.ts src/test-registration.test.ts src/lib/export/paper.test.ts src/lib/export/arabic.test.ts src/lib/export/full-exam-paper.test.ts",
+    "test": "node --import tsx --test src/lib/guide.test.ts src/lib/rate-limit.test.ts src/lib/generate/mock.test.ts src/lib/generate/referents.test.ts src/lib/generate/grounding.test.ts src/lib/generate/chain.test.ts src/lib/generate/full-exam.test.ts src/lib/generate/facade.test.ts src/lib/generate/openai.test.ts src/lib/generate/corpus.test.ts src/lib/generate/groq.test.ts src/lib/generate/provider.test.ts src/lib/generate/provider-grounding.test.ts src/lib/generate/rng.test.ts src/lib/password-reset.test.ts src/lib/serialize.test.ts src/lib/merge-patch.test.ts src/lib/export/assemble.test.ts src/lib/utils.test.ts src/lib/auth.test.ts src/test-registration.test.ts src/lib/export/paper.test.ts src/lib/export/arabic.test.ts src/lib/export/full-exam-paper.test.ts",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
     "postinstall": "prisma generate"

@@ -20,8 +20,14 @@ import { checkTaskLinkage, checkTopicAnchoring, type LinkableTask } from "./grou
 import { taskHasTable } from "@/lib/export/tables";
 import type { GenerationRequest } from "@/types";
 import * as mock from "./mock";
-import * as openai from "./openai";
-import * as groq from "./groq";
+import { createCompatibleGenerators } from "./provider";
+import {
+  chainFromEnv,
+  classifyFailure,
+  resolveChain,
+  shouldAdvance,
+  ChainError,
+} from "./chain";
 import type { GeneratedSource, GeneratedTask, GeneratedText, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 
 export type { GeneratedSource, GeneratedTask, GeneratedText, GeneratedTextCandidate, GeneratedTopic };
@@ -102,39 +108,99 @@ export function providerName(): string {
   return process.env.AI_PROVIDER || "mock";
 }
 
-function impl() {
-  const p = providerName();
-  if (p === "openai") return openai;
-  if (p === "groq") return groq;
-  return mock;
+/** Which entry of the chain served the last successful call, for the ops log. */
+let lastServingEntry = "mock";
+
+export function servingProvider(): string {
+  return lastServingEntry;
+}
+
+/**
+ * The mock provider's functions are synchronous (they read a local corpus), so
+ * the chain adapter accepts either shape and normalises to a promise.
+ */
+type MaybePromise<T> = T | Promise<T>;
+
+type GeneratorImpl = {
+  generateTextCandidates: (ctx: GenContext) => MaybePromise<GeneratedTextCandidate[]>;
+  generatePartOneCandidates: (ctx: GenContext) => MaybePromise<GeneratedTask[][]>;
+  generateTextExplorationCandidates: (ctx: GenContext) => MaybePromise<GeneratedTask[][]>;
+  generateWritingCandidates: (ctx: GenContext) => MaybePromise<{ guided: GeneratedTopic; free: GeneratedTopic | null }[]>;
+  generateRewriteCandidates: (
+    ctx: GenContext,
+    opts: { text: string; title?: string; target: "simpler" | "harder" }
+  ) => MaybePromise<GeneratedTextCandidate[]>;
+};
+
+/**
+ * Run one generation across the configured chain, advancing only when the next
+ * entry could plausibly do better (see `shouldAdvance`).
+ *
+ * Validation failures deliberately do NOT advance: a different model has no more
+ * knowledge of this exam's guide rules, so retrying elsewhere just spends the
+ * fallback quota to arrive at the same 422.
+ */
+async function withChain<T>(run: (impl: GeneratorImpl) => Promise<T>): Promise<T> {
+  const entries = chainFromEnv();
+  if (entries.length === 0) return run(mock);
+
+  const { configs, skipped } = resolveChain(entries);
+  if (configs.length === 0) {
+    const detail = skipped.map((s) => `${s.entry.provider}: ${s.reason}`).join("; ");
+    throw new ChainError(
+      "auth",
+      "chain",
+      entries.map((e) => e.model).join(","),
+      `No usable provider in AI_PROVIDER_CHAIN (${detail || "chain was empty"}).`
+    );
+  }
+
+  let lastError: unknown;
+  for (let i = 0; i < configs.length; i++) {
+    const cfg = configs[i];
+    try {
+      const out = await run(createCompatibleGenerators(() => cfg));
+      lastServingEntry = `${cfg.providerLabel}:${cfg.model}`;
+      return out;
+    } catch (e) {
+      lastError = e;
+      const failure = classifyFailure(e);
+      if (!shouldAdvance(failure) || i === configs.length - 1) throw e;
+      console.warn(
+        `[generate] ${cfg.providerLabel}:${cfg.model} failed (${failure}); trying next chain entry.`,
+        (e as Error)?.message?.slice(0, 140)
+      );
+    }
+  }
+  throw lastError;
 }
 
 // Each generation returns candidates (a primary + N alternatives). The caller
 // persists candidates so the replacement panel can offer them (PRD 15.3).
 
 export async function generateTextCandidates(ctx: GenContext): Promise<GeneratedTextCandidate[]> {
-  return impl().generateTextCandidates(ctx);
+  return withChain((i) => Promise.resolve(i.generateTextCandidates(ctx)));
 }
 
 export async function generatePartOneCandidates(ctx: GenContext): Promise<GeneratedTask[][]> {
-  return impl().generatePartOneCandidates(ctx);
+  return withChain((i) => Promise.resolve(i.generatePartOneCandidates(ctx)));
 }
 
 export async function generateTextExplorationCandidates(ctx: GenContext): Promise<GeneratedTask[][]> {
-  return impl().generateTextExplorationCandidates(ctx);
+  return withChain((i) => Promise.resolve(i.generateTextExplorationCandidates(ctx)));
 }
 
 export async function generateWritingCandidates(
   ctx: GenContext
 ): Promise<{ guided: GeneratedTopic; free: GeneratedTopic | null }[]> {
-  return impl().generateWritingCandidates(ctx);
+  return withChain((i) => Promise.resolve(i.generateWritingCandidates(ctx)));
 }
 
 export async function generateRewriteCandidates(
   ctx: GenContext,
   opts: { text: string; title?: string; target: "simpler" | "harder" }
 ): Promise<GeneratedTextCandidate[]> {
-  return impl().generateRewriteCandidates(ctx, opts);
+  return withChain((i) => Promise.resolve(i.generateRewriteCandidates(ctx, opts)));
 }
 
 function countItems(task: GeneratedTask): number {

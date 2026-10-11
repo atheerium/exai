@@ -243,14 +243,42 @@ export function checkTopicAnchoring(
   paragraphs.forEach((paragraph, i) => {
     const words = paragraph.split(/\s+/).filter(Boolean).length;
     if (words < minWords) return;
-    const anchored = anchors.some((a) => occursInPassage(paragraph, a));
-    if (!anchored) {
+    if (!anchors.some((a) => mentionsAnchor(paragraph, a))) {
       issues.push(
         `Paragraph ${i + 1} does not mention "${opts.topic}" or any teacher keyword, so it is off-topic.`
       );
     }
   });
   return issues;
+}
+
+/**
+ * Phrase-aware anchor test.
+ *
+ * `occursInPassage` deliberately matches a SINGLE token with inflections, which
+ * is right for a vocabulary target or a referent ("monuments" matches
+ * "monument") but wrong for an anchor: topics are routinely multi-word ("digital
+ * literacy", "heritage preservation"), and running them through a single-token
+ * comparison can never match, so every paragraph would be reported off-topic.
+ *
+ * Word-boundary containment is used instead, which handles both a one-word and a
+ * multi-word anchor without needing two code paths. Deliberately NOT stemmed:
+ * accepting a prefix would let "advert" anchor a paragraph about advertising
+ * appliances, which is exactly the drift this check exists to catch.
+ */
+function mentionsAnchor(paragraph: string, anchor: string): boolean {
+  const haystack = " " + paragraph
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim() + " ";
+  const needle = anchor
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!needle) return false;
+  return haystack.includes(` ${needle} `);
 }
 
 /**
