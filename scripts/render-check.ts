@@ -4,6 +4,7 @@ import { writeFileSync } from "node:fs";
 import { generateFullExam } from "../src/lib/generate/full-exam";
 import { assembleDocument } from "../src/lib/export/assemble";
 import { renderPdf } from "../src/lib/export/pdf";
+import { renderDocx } from "../src/lib/export/docx";
 import { GRADES, getGuide } from "../src/data/guides";
 import type { ExamDto, GeneratedTask, SectionDto } from "../src/types";
 
@@ -100,9 +101,12 @@ const dto: ExamDto = {
   createdAt: new Date().toISOString(),
 };
 
-const pdf = await renderPdf(assembleDocument(dto));
+const doc = assembleDocument(dto);
+const pdf = await renderPdf(doc);
 writeFileSync("/tmp/opencode/examcheck/exam.pdf", pdf);
-console.log("wrote /tmp/opencode/examcheck/exam.pdf", pdf.length, "bytes");
+const docx = await renderDocx(doc);
+writeFileSync("/tmp/opencode/examcheck/exam.docx", docx);
+console.log("wrote exam.pdf", pdf.length, "bytes; exam.docx", docx.length, "bytes");
 }
 
 main().catch((e) => {
