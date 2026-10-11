@@ -10,6 +10,8 @@ export interface ExamConfigDto {
   grade: string;
   stream?: string | null;
   length: number;
+  /** Passage paragraphs, 3 or 4 (teacher choice, default 3). */
+  paragraphCount?: number;
   unit: string;
   topic: string;
   customTopic: boolean;

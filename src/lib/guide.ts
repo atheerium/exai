@@ -4,6 +4,24 @@
 import { GRADES, GUIDES, getGrade, getGuide, getAvailableLanguages, type Guide } from "@/data/guides";
 import { getTheme } from "@/data/themes";
 
+/**
+ * Paragraph counts a teacher may pick for the passage (user instruction,
+ * 2026-11-11: "around 3 to 4 paragraphs, chosen by the teacher, default 3").
+ *
+ * The passage arc is lead → middle aspects → close, so only 3 and 4 produce a
+ * well-formed paper. Defined here rather than in `generate/` because `guide.ts`
+ * is the lower-level module: `generate/index.ts` imports this one, so declaring
+ * them there would create a cycle.
+ */
+export const ALLOWED_PARAGRAPH_COUNTS = [3, 4] as const;
+export const DEFAULT_PARAGRAPH_COUNT = 3;
+
+/** Clamp anything unrecognised to the default rather than throwing: callers that
+ *  have no user choice (REWRITE, alternatives) pass nothing and must not fail. */
+export function normaliseParagraphCount(value: number | null | undefined): number {
+  return ALLOWED_PARAGRAPH_COUNTS.includes(value as 3 | 4) ? (value as number) : DEFAULT_PARAGRAPH_COUNT;
+}
+
 export interface ResolvedExamRules {
   guide: Guide;
   themeKey: string;
@@ -65,12 +83,22 @@ export function validateConfigInputs(params: {
   grade: string;
   stream?: string | null;
   length?: number;
+  /** Teacher-chosen passage paragraphs; 3 or 4 (user instruction, 2026-10-11). */
+  paragraphCount?: number;
   unit: string;
   topic: string;
   language?: string;
 }) {
   if (!params.level || !params.grade || !params.unit || !params.topic) {
     throw new Error("Missing required parameters");
+  }
+  if (
+    params.paragraphCount != null &&
+    !ALLOWED_PARAGRAPH_COUNTS.includes(params.paragraphCount as 3 | 4)
+  ) {
+    throw new Error(
+      `Paragraph count must be ${ALLOWED_PARAGRAPH_COUNTS.join(" or ")} (got ${params.paragraphCount}).`
+    );
   }
   const available = getAvailableLanguages();
   if (params.language && !available.includes(params.language)) {

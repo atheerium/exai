@@ -209,6 +209,51 @@ export function extractTaskTargets(task: LinkableTask): string[] {
 const LEXICAL_SKILLS: ReadonlySet<string> = new Set(["VOCABULARY", "MORPHOLOGY"]);
 
 /**
+ * Reject a passage that drifts off its topic between paragraphs.
+ *
+ * Motivation (user report, 2026-10-11): a generated passage opened on
+ * "advertising", then moved to ancient monuments, then traditional music, then
+ * archaeologists — four paragraphs, four subjects. That reads as four unrelated
+ * texts stapled together, and the questions then have no stable referent.
+ *
+ * The rule is deliberately mechanical: every paragraph must mention the topic
+ * or one of the teacher keywords. That catches the reported failure without
+ * pretending to judge style. It does NOT prove full coherence — a paragraph can
+ * name the topic once and then wander. Stated plainly so nobody reads this as
+ * more than it is.
+ *
+ * Short paragraphs are exempt by word count: a one-sentence closing paragraph
+ * that merely refers back ("In the end, …") is normal, and demanding a literal
+ * topic mention there produces false rejections.
+ */
+export function checkTopicAnchoring(
+  passage: string,
+  opts: { topic: string; keywords?: string | null; minWords?: number }
+): string[] {
+  const issues: string[] = [];
+  const paragraphs = passage.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  if (paragraphs.length === 0) return issues;
+
+  const anchors = [opts.topic, ...(opts.keywords ?? "").split(/[,;/]/).map((k) => k.trim())].filter(
+    (a): a is string => !!a && a.length >= 2
+  );
+  if (anchors.length === 0) return issues;
+
+  const minWords = opts.minWords ?? 12;
+  paragraphs.forEach((paragraph, i) => {
+    const words = paragraph.split(/\s+/).filter(Boolean).length;
+    if (words < minWords) return;
+    const anchored = anchors.some((a) => occursInPassage(paragraph, a));
+    if (!anchored) {
+      issues.push(
+        `Paragraph ${i + 1} does not mention "${opts.topic}" or any teacher keyword, so it is off-topic.`
+      );
+    }
+  });
+  return issues;
+}
+
+/**
  * Mechanically checkable linkage between a section's tasks and the passage.
  *
  * Returns an empty array when everything holds. Issues are human-readable and

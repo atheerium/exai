@@ -2,6 +2,7 @@
 
 import { prisma, type DbClient } from "@/lib/db";
 import type { ExamDto, SectionDto, SourceDto, TaskDto, TopicDto, ExamConfigDto } from "@/types";
+import { DEFAULT_PARAGRAPH_COUNT } from "@/lib/generate";
 
 /** Schema for the JSON stored in ExamSection.content */
 interface SectionContent {
@@ -129,6 +130,7 @@ export async function examToDto(exam: any): Promise<ExamDto> {
         grade: exam.config.grade,
         stream: exam.config.stream,
         length: exam.config.length,
+      paragraphCount: exam.config.paragraphCount ?? DEFAULT_PARAGRAPH_COUNT,
         unit: exam.config.unit,
         topic: exam.config.topic,
         customTopic: exam.config.customTopic,

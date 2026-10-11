@@ -59,6 +59,7 @@ model ExamConfig {
   grade        String
   stream       String?
   length       Int    @default(150) // words
+    paragraphCount Int @default(3) // passages are 3 or 4 paragraphs (teacher choice)
   unit         String
   topic        String
   customTopic     Boolean @default(false)

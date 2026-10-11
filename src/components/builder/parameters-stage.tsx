@@ -10,6 +10,7 @@ import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
 import type { ExamDto } from "@/types";
 import { getGuide } from "@/data/guides";
+import { ALLOWED_PARAGRAPH_COUNTS, DEFAULT_PARAGRAPH_COUNT } from "@/lib/guide";
 
 interface Catalog {
   levels: Record<
@@ -42,6 +43,7 @@ export function ParametersStage({
     grade: string;
     stream?: string | null;
     length: number;
+    paragraphCount?: number;
     unit: string;
     topic: string;
     customTopic: boolean;
@@ -55,6 +57,9 @@ export function ParametersStage({
   const [grade, setGrade] = React.useState(exam.config?.grade ?? "");
   const [stream, setStream] = React.useState(exam.config?.stream ?? "");
   const [length, setLength] = React.useState<number>(exam.config?.length ?? 150);
+  const [paragraphCount, setParagraphCount] = React.useState<number>(
+    exam.config?.paragraphCount ?? DEFAULT_PARAGRAPH_COUNT
+  );
   const [difficulty, setDifficulty] = React.useState(exam.config?.difficulty ?? "Standard");
   const [unit, setUnit] = React.useState(exam.config?.unit ?? "");
   const [topic, setTopic] = React.useState(exam.config?.topic ?? "");
@@ -112,6 +117,7 @@ export function ParametersStage({
         grade,
         stream: streams.length ? stream : null,
         length,
+        paragraphCount,
         unit,
         topic: customTopic ? topic : topic,
         customTopic,
@@ -231,6 +237,24 @@ export function ParametersStage({
               </>
             )}
           </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>{t("builder.paragraphs")}</Label>
+          <Select
+            value={String(paragraphCount)}
+            onChange={(e) => setParagraphCount(Number(e.target.value))}
+            disabled={!grade}
+          >
+            {/* 3 or 4 only: the passage arc is lead → aspects → close, so other
+                counts do not produce a well-formed paper (see guide.ts). */}
+            {ALLOWED_PARAGRAPH_COUNTS.map((n) => (
+              <option key={n} value={n}>
+                {t("builder.paragraphsValue").replace("{n}", String(n))}
+              </option>
+            ))}
+          </Select>
+          <p className="text-xs text-muted-foreground">{t("builder.paragraphsHelp")}</p>
         </div>
 
         <div className="space-y-1.5">

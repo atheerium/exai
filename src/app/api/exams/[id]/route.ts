@@ -3,6 +3,7 @@ import { withRls } from "@/lib/db";
 import { requireUser, requireCsrf } from "@/lib/auth";
 import { loadExamDto } from "@/lib/serialize";
 import { validateConfigInputs } from "@/lib/guide";
+import { normaliseParagraphCount } from "@/lib/guide";
 import { getGrade, getGuide } from "@/data/guides";
 import { track } from "@/lib/events";
 import { captureRevision } from "@/lib/revisions";
@@ -50,6 +51,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             grade: body.config.grade,
             stream: body.config.stream ?? null,
             length: body.config.length,
+            paragraphCount: normaliseParagraphCount(body.config.paragraphCount),
             unit: body.config.unit,
             topic: body.config.topic,
             customTopic: !!body.config.customTopic,
@@ -64,6 +66,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             grade: body.config.grade,
             stream: body.config.stream ?? null,
             length: body.config.length,
+            paragraphCount: normaliseParagraphCount(body.config.paragraphCount),
             unit: body.config.unit,
             topic: body.config.topic,
             customTopic: !!body.config.customTopic,

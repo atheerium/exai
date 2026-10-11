@@ -9,9 +9,14 @@
 // Teacher keywords (optional): when provided via the ExamConfig, they bias
 // generation toward specific themes or vocabulary.
 
-import { resolveRules } from "@/lib/guide";
+import {
+  resolveRules,
+  normaliseParagraphCount,
+  ALLOWED_PARAGRAPH_COUNTS,
+  DEFAULT_PARAGRAPH_COUNT,
+} from "@/lib/guide";
 import { countWords } from "./rng";
-import { checkTaskLinkage, type LinkableTask } from "./grounding";
+import { checkTaskLinkage, checkTopicAnchoring, type LinkableTask } from "./grounding";
 import { taskHasTable } from "@/lib/export/tables";
 import type { GenerationRequest } from "@/types";
 import * as mock from "./mock";
@@ -39,6 +44,11 @@ export interface GenContext {
    * generation, which keeps the theme-level behaviour.
    */
   groundingText?: string | null;
+  /**
+   * Paragraphs in the passage. Teacher choice, default 3 (user instruction,
+   * 2026-11); offered as 3 or 4 because the arc is lead → aspects → close.
+   */
+  paragraphCount?: number;
 }
 
 export function buildContext(input: {
@@ -53,6 +63,7 @@ export function buildContext(input: {
   teacherKeywords?: string | null;
   difficulty?: string | null;
   groundingText?: string | null;
+  paragraphCount?: number | null;
 }): GenContext {
   const rules = resolveRules({
     level: input.level,
@@ -76,8 +87,16 @@ export function buildContext(input: {
     teacherKeywords: input.teacherKeywords ?? null,
     difficulty: input.difficulty ?? null,
     groundingText: input.groundingText ?? null,
+    paragraphCount: normaliseParagraphCount(input.paragraphCount),
   };
 }
+
+/**
+ * Paragraph counts a teacher may pick. Owned by `guide.ts` and re-exported here
+ * so generator code has a single import site; see that file for why it lives
+ * there rather than here.
+ */
+export { ALLOWED_PARAGRAPH_COUNTS, DEFAULT_PARAGRAPH_COUNT, normaliseParagraphCount };
 
 export function providerName(): string {
   return process.env.AI_PROVIDER || "mock";
@@ -144,6 +163,12 @@ export function validateCandidate(
      * guaranteed — semantic answerability is NOT checked.
      */
     groundingText?: string;
+    /** Exact paragraph count the teacher asked for (default 3). */
+    paragraphCount?: number;
+    /** Passage topic, for per-paragraph topic anchoring. */
+    topic?: string;
+    /** Teacher keywords that can also anchor a paragraph. */
+    teacherKeywords?: string | null;
   }
 ): { ok: boolean; issues: string[] } {
   const issues: string[] = [];
@@ -160,6 +185,26 @@ export function validateCandidate(
         const maxWords = Math.ceil(opts.length * 1.2);
         if (words < minWords || words > maxWords) {
           issues.push(`Generated text word count ${words} is outside the expected range (${minWords}-${maxWords} for length ${opts.length}).`);
+        }
+      }
+      // Paragraph count is a teacher choice (default 3), so it is checked
+      // exactly rather than as a band: a 4-paragraph passage when the teacher
+      // asked for 3 is a different artefact, not a near miss.
+      if (opts?.paragraphCount) {
+        const actual = t.text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean).length;
+        if (actual !== opts.paragraphCount) {
+          issues.push(`Generated text has ${actual} paragraph(s) instead of ${opts.paragraphCount}.`);
+        }
+      }
+      // One topic across all paragraphs: catches the "advertising, then ancient
+      // monuments, then music" failure mechanically. See grounding.ts for what
+      // this does and does not guarantee.
+      if (opts?.topic) {
+        for (const issue of checkTopicAnchoring(t.text, {
+          topic: opts.topic,
+          keywords: opts.teacherKeywords,
+        })) {
+          issues.push(issue);
         }
       }
     }
