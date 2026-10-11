@@ -1,4 +1,5 @@
 import { test, before, after } from "node:test";
+import { candidateList as listFor } from "./provider";
 import assert from "node:assert/strict";
 import http from "node:http";
 import {
@@ -7,6 +8,7 @@ import {
   parseSource,
   parseTaskSets,
   TEMPERATURE,
+  createCompatibleGenerators,
   type ProviderConfig,
 } from "./provider";
 
@@ -23,6 +25,9 @@ type Mode =
   | "non-json-content"
   | "fenced-json-content"
   | "bare-array-content"
+  | "nested-array-content"
+  | "json-validate-failed"
+  | "json-validate-failed-always"
   | "empty-content";
 
 let mode: Mode = "ok";
@@ -76,6 +81,29 @@ function respond(res: http.ServerResponse) {
     reply("```json\n" + JSON.stringify({ sets: [{ tasks: [] }] }) + "\n```");
   } else if (mode === "bare-array-content") {
     reply(JSON.stringify([{ title: "a", text: "one" }, { title: "b", text: "two" }]));
+  } else if (mode === "nested-array-content") {
+    reply(JSON.stringify([{ sets: [{ tasks: [{ title: "a", text: "one" }] }] }]));
+  } else if (mode === "json-validate-failed") {
+    // Groq validates the completion ITSELF when response_format is set and can
+    // reject a payload that is perfectly usable. Refused once with the header,
+    // then served normally without it.
+    if (!lastBody.response_format) {
+      reply(JSON.stringify({ sets: [{ tasks: [] }] }));
+    } else {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: { message: "Failed to validate JSON. Please adjust your prompt.", code: "json_validate_failed" },
+        })
+      );
+    }
+  } else if (mode === "json-validate-failed-always") {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        error: { message: "Failed to validate JSON. Please adjust your prompt.", code: "json_validate_failed" },
+      })
+    );
   } else if (mode === "empty-content") {
     reply("");
   } else {
@@ -295,4 +323,43 @@ test("chat: accepts a bare-array reply under the requested key", async () => {
   const parsed = await chat(config(), { kind: "TEXT" });
   assert.equal(parsed.length, 2);
   assert.equal(parsed[0].title, "a");
+});
+
+test("candidateList unwraps a list nested inside a bare array", () => {
+  // Measured live on Groq 2026-10-11: gpt-oss sometimes answers with
+  // `[{"candidates":[...]}]`. Taken at face value, candidate 0 has keys
+  // ["candidates"], so title/text read empty and the run died with
+  // "Generated text has no title" -- blaming the validator, not the reply.
+  const nested = [{ candidates: [{ title: "a", text: "one" }] }];
+  const candidates = listFor(nested, "candidates") as Array<Record<string, unknown>>;
+  assert.equal(candidates.length, 1);
+  assert.equal(typeof candidates[0].title, "string");
+
+  // A bare array that IS the list must be left alone.
+  const flat = [{ title: "a", text: "one" }, { title: "b", text: "two" }];
+  assert.equal(listFor(flat, "candidates")!.length, 2);
+
+  // The sets schema unwraps its own key, not the passage one.
+  assert.equal(listFor([{ sets: [{ tasks: [] }] }], "sets")!.length, 1);
+  assert.equal(listFor([{ sets: [{ tasks: [] }] }], "candidates")!.length, 1, "still the outer array");
+});
+
+test("chat: retries once without response_format when the provider rejects its own JSON", async () => {
+  // Measured live on Groq 2026-10-11: Part One returned a 400 json_validate_failed
+  // for a payload that was fine. Advancing the chain cannot help (the next
+  // entries were blocked models), so the only recovery is to re-ask without the
+  // header -- parseLooseJson already tolerates unfenced JSON.
+  mode = "json-validate-failed";
+  const parsed = await chat(config(), { kind: "PART_ONE" });
+  assert.deepEqual(parsed, { sets: [{ tasks: [] }] }, "recovered without the JSON header");
+  assert.ok(!("response_format" in lastBody), "the retry must omit response_format");
+});
+
+test("chat: retries a JSON validation failure at most once", async () => {
+  // Two calls total: the original, then the header-less retry. A third would
+  // mean the recursion had no bound.
+  mode = "json-validate-failed-always";
+  const before = requests;
+  await assert.rejects(() => chat(config(), { kind: "PART_ONE" }), /AI provider error 400/);
+  assert.equal(requests - before, 2, "exactly one retry, never a loop");
 });

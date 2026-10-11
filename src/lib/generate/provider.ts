@@ -40,7 +40,7 @@ export interface ProviderConfig {
 export async function chat(
   config: ProviderConfig,
   prompt: object,
-  opts: { temperature?: number } = {}
+  opts: { temperature?: number; useJsonMode?: boolean } = {}
 ): Promise<any> {
   if (!config.apiKey) throw new Error(`${config.providerLabel.toUpperCase()}_API_KEY is not configured (AI_PROVIDER=${config.providerLabel}).`);
 
@@ -64,7 +64,7 @@ export async function chat(
         // Only sent when the provider config asks for it; several OpenAI-compatible
         // endpoints reject the unknown field outright.
         ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {}),
-        response_format: { type: "json_object" },
+        ...(opts.useJsonMode === false ? {} : { response_format: { type: "json_object" } }),
         messages: [
           { role: "system", content: SYSTEM },
           { role: "user", content: JSON.stringify(prompt) },
@@ -73,6 +73,23 @@ export async function chat(
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+
+      // Groq validates the completion itself when `response_format` is set, and
+      // rejects answers it considers off-spec with a 400 `json_validate_failed`
+      // EVEN THOUGH THE PAYLOAD IS FINE — measured live 2026-10-11 on Part One,
+      // where the returned object was usable and Groq refused it anyway.
+      //
+      // Advancing the chain cannot fix that (the next entries were blocked
+      // models). Re-asking without the header costs one extra call and is the
+      // only thing that works, because `parseLooseJson` already tolerates fenced
+      // or prose-wrapped JSON. One retry only, to keep this bounded.
+      if (
+        opts.useJsonMode !== false &&
+        res.status === 400 &&
+        /json_validate_failed|failed to (generate|validate) json/i.test(body)
+      ) {
+        return chat(config, prompt, { ...opts, useJsonMode: false });
+      }
       throw new Error(`AI provider error ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
     }
     const data = await res.json();
@@ -124,9 +141,19 @@ export function parseLooseJson(content: string): any {
  * key it expects. Tolerating the array cannot swallow a real error: these
  * schemas always require a keyed object, so a top-level array is never invalid.
  */
-function candidateList(json: any, key: "candidates" | "sets"): unknown[] | null {
-  if (Array.isArray(json)) return json;
-  return Array.isArray(json?.[key]) ? json[key] : null;
+export function candidateList(json: any, key: "candidates" | "sets"): unknown[] | null {
+  if (!Array.isArray(json)) return Array.isArray(json?.[key]) ? json[key] : null;
+
+  // A bare array is usually the list itself. But gpt-oss also returns the list
+  // NESTED inside an array of one: `[{"candidates":[...]}]`. Taking that as the
+  // list yields a candidate whose keys are `candidates`, so `title` and `text`
+  // read as empty and the exam dies with "Generated text has no title" — which
+  // points at the validator rather than at the real cause. Unwrap that level.
+  const first = json[0];
+  if (first && typeof first === "object" && Array.isArray((first as any)[key])) {
+    return (first as any)[key];
+  }
+  return json;
 }
 
 /**

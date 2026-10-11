@@ -31,6 +31,7 @@ import {
   validateCandidate,
   type GenContext,
 } from "./index";
+import { trimPassageToBand } from "./trim";
 import type { GeneratedTask, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 
 export const FULL_EXAM_SECTIONS = ["TEXT", "PART_ONE", "TEXT_EXPLORATION", "WRITING"] as const;
@@ -132,6 +133,17 @@ function repairContext(ctx: GenContext, issues: string[]): GenContext {
   };
 }
 
+/**
+ * True when the ONLY problem is the length band.
+ *
+ * The trim is a surgical fix and must not be used to paper over anything else:
+ * if the passage is also off-topic or has the wrong paragraph count, cutting
+ * sentences could easily make that worse, so the repair path handles it instead.
+ */
+function isOnlyLengthIssue(issues: string[]): boolean {
+  return issues.length > 0 && issues.every((i) => /word count .* is outside the expected range/.test(i));
+}
+
 /** `Promise.allSettled([p])` for one promise, so `unwrap` keeps one signature. */
 async function settle<T>(run: () => Promise<T>): Promise<PromiseSettledResult<T>> {
   try {
@@ -194,8 +206,29 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
   let alternatives: GeneratedTextCandidate[] = [];
   try {
     const textCandidates = await withRetry(() => generateTextCandidates(baseCtx));
-    const first = textCandidates[0];
-    const check = first ? validatePassage(first) : { ok: false, issues: ["no passage returned"] };
+    let first = textCandidates[0];
+    let check = first ? validatePassage(first) : { ok: false, issues: ["no passage returned"] };
+
+    // Code-side trim, BEFORE any model call is spent on fixing it. An
+    // over-length passage is computable, so it is computed (trim.ts) rather
+    // than re-rolled; a model asked twice tends to overshoot twice. Only a
+    // pure length failure is trimmed, and the trimmed text is re-validated
+    // against every other rule, so a trim that breaks anchoring or the
+    // paragraph count is discarded rather than shipped.
+    if (!check.ok && first && isOnlyLengthIssue(check.issues)) {
+      const trimmed = trimPassageToBand(first.text, { length: baseCtx.length });
+      if (trimmed.trimmed) {
+        const recheck = validatePassage({ ...first, text: trimmed.text });
+        if (recheck.ok) {
+          console.warn(
+            `[generate] passage was ${trimmed.wordsBefore} words (band max ` +
+              `${Math.ceil(baseCtx.length * 1.2)}); trimmed to ${trimmed.wordsAfter}`
+          );
+          first = { ...first, text: trimmed.text };
+          check = recheck;
+        }
+      }
+    }
 
     if (check.ok) {
       primary = first;

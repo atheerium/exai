@@ -120,6 +120,17 @@ export function providerName(): string {
 /** Which entry of the chain served the last successful call, for the ops log. */
 let lastServingEntry = "mock";
 
+/**
+ * `provider:model` pairs this key has been refused, per process.
+ *
+ * Keyed by the PAIR, not the model alone: a block is scoped to a project on one
+ * provider, and the same model may serve fine through another provider. Losing
+ * the list on restart is deliberate — it is a per-process optimisation, not a
+ * source of truth, and a redeploy is the documented way to retry a model that has
+ * since been enabled.
+ */
+const blockedEntries = new Set<string>();
+
 export function servingProvider(): string {
   return lastServingEntry;
 }
@@ -179,16 +190,30 @@ async function withChain<T>(run: (impl: GeneratorImpl) => Promise<T>): Promise<T
   let lastError: unknown;
   for (let i = 0; i < configs.length; i++) {
     const cfg = configs[i];
+    // Skip an entry already known to be blocked in this process. Re-dialing a
+    // model the provider has refused costs a round trip on EVERY section of
+    // EVERY exam: measured live 2026-10-11, three of five default entries were
+    // blocked at project level and turned a 6s failure into a 199s one.
+    const entryKey = `${cfg.providerLabel}:${cfg.model}`;
+    if (blockedEntries.has(entryKey)) continue;
+
     try {
       const out = await run(createCompatibleGenerators(() => cfg));
-      lastServingEntry = `${cfg.providerLabel}:${cfg.model}`;
+      lastServingEntry = entryKey;
       return out;
     } catch (e) {
       lastError = e;
       const failure = classifyFailure(e);
+      if (failure === "unavailable") {
+        blockedEntries.add(entryKey);
+        console.warn(
+          `[generate] ${entryKey} is unavailable for this key; skipping it for the rest of this process. ` +
+            "Enable it in the provider's project settings to use it again."
+        );
+      }
       if (!shouldAdvance(failure) || i === configs.length - 1) throw e;
       console.warn(
-        `[generate] ${cfg.providerLabel}:${cfg.model} failed (${failure}); trying next chain entry.`,
+        `[generate] ${entryKey} failed (${failure}); trying next chain entry.`,
         (e as Error)?.message?.slice(0, 140)
       );
     }
