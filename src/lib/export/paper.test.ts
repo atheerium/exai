@@ -379,3 +379,92 @@ test("buildPaper never leaks an answer string into the rendered blocks", () => {
   const serialised = JSON.stringify(buildPaper(doc).blocks);
   assert.equal(serialised.includes("secret answer"), false);
 });
+// --- Item labels across every generated shape (teacher report, 2026-10-12) ---
+//
+// The report was "only question 1 has letters". Cause: parseTaskBody only
+// recognised lines that ALREADY began with a number or letter, so a task the
+// model emitted as bare lines rendered as lead-in text with no labels. The
+// labels are ours to print, so the model's choice of prefix must not decide.
+
+test("bare lines are items, so unprefixed tasks still get letters", () => {
+  const { lead, items } = parseTaskBody(
+    "What does the passage say about daily life?\n" +
+      "What evidence suggests an interconnected civilisation?\n" +
+      "How does the passage describe trade?"
+  );
+  assert.equal(lead.length, 0);
+  assert.equal(items.length, 3);
+  assert.deepEqual(items.map((i) => i.label), ["a)", "b)", "c)"]);
+  assert.equal(items[0].text, "What does the passage say about daily life?");
+});
+
+test("blank-line separated blocks are one item each", () => {
+  // The morphology/phonology shape, captured verbatim from a live run.
+  const { lead, items } = parseTaskBody(
+    "Word: excavation\nDerived form: \n\nWord: collaborative\nDerived form: \n\nWord: linked\nDerived form: "
+  );
+  assert.equal(lead.length, 0);
+  assert.equal(items.length, 3);
+  assert.deepEqual(items.map((i) => i.label), ["a)", "b)", "c)"]);
+  // Field labels stay attached to their value rather than becoming items.
+  assert.match(items[0].text, /^Word: excavation/);
+  assert.match(items[0].text, /Derived form:/);
+});
+
+test("a key/value rewrite exercise stays ONE item, not three", () => {
+  // Sentence A / Sentence B / the instruction belong to a single question.
+  // Labelling them a) b) c) would print nonsense.
+  const { lead, items } = parseTaskBody(
+    "Sentence A: Scholars highlight workshops, which demonstrate a trade network.\n" +
+      "Sentence B: The discovery of workshops demonstrates a trade network.\n" +
+      "Rewrite sentence B so that it means the same as sentence A."
+  );
+  // The requirement is that it is NOT three questions. Whether it renders as one
+  // item or stays as lead-in text under the instruction is the existing,
+  // already-tested behaviour for this shape.
+  assert.ok(items.length <= 1, `expected at most one item, got ${items.length}`);
+  assert.equal(lead.length + items.length >= 1, true);
+  const all = [...lead, ...items.map((i) => i.text)].join(" ");
+  assert.match(all, /Sentence A:/);
+  assert.match(all, /Rewrite sentence B/);
+});
+
+test("a lead-in still wins when prefixed items follow it", () => {
+  const { lead, items } = parseTaskBody("Match each idea.\n1. One\n2. Two");
+  assert.deepEqual(lead, ["Match each idea."]);
+  assert.deepEqual(items.map((i) => i.label), ["a)", "b)"]);
+});
+
+test("numbered items inside a blank-line block still split", () => {
+  const { items } = parseTaskBody("1. First thing.\n2. Second thing.\n\n1. Third thing.");
+  assert.equal(items.length, 3);
+  assert.deepEqual(items.map((i) => i.label), ["a)", "b)", "c)"]);
+});
+
+test("referent items keep their paragraph reference when unprefixed", () => {
+  const { items } = parseTaskBody(
+    'Who does "they" refer to?\nWho does "it" refer to in that example (§2)?'
+  );
+  assert.equal(items.length, 2);
+  assert.equal(items[1].ref, "(§2)");
+});
+
+test("a repeated field-label list without blank lines is still one item per entry", () => {
+  // The same morphology shape as above, but the generator omitted the blank
+  // lines. It must NOT collapse into a single exercise: "Word:" opens a
+  // question and "Derived form:" completes it.
+  const { items } = parseTaskBody(
+    "Word: excavation\nDerived form: \nWord: collaborative\nDerived form: \nWord: linked\nDerived form: "
+  );
+  assert.equal(items.length, 3);
+  assert.deepEqual(items.map((i) => i.label), ["a)", "b)", "c)"]);
+  assert.match(items[1].text, /^Word: collaborative/);
+  assert.match(items[1].text, /Derived form:/);
+});
+
+test("a markdown table skeleton is not mistaken for field/value pairs", () => {
+  // Captured live: "Base Word | Derived Form\n--- | ---\ncommunal | communalism".
+  const { items } = parseTaskBody("Base Word | Derived Form\n--- | ---\ncommunal | communalism");
+  assert.equal(items.length, 2, "the header and the data row");
+  assert.deepEqual(items.map((i) => i.label), ["a)", "b)"]);
+});

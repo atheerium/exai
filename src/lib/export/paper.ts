@@ -85,12 +85,30 @@ export function letterLabel(index: number): string {
   return `${out.toLocaleLowerCase()})`;
 }
 
-// Generated prompts are a flat newline-separated block in one of two shapes:
-// "1. first\n2. second" or "A. first\nB. second", sometimes preceded by a
-// free-standing lead-in line. Both prefixes must render as lettered items, and
-// a dotted run at the end of an item is the student's answer slot.
+// Generated prompts arrive in four shapes, only ONE of which the old parser
+// recognised (teacher report, 2026-10-12: "only question 1 has letters"):
+//
+//   1. "1. first\n2. second"  /  "A. first\nB. second"  -> items (already worked)
+//   2. bare lines, one item each, NO prefix               -> was `lead`, so unlabelled
+//   3. blank-line-separated blocks ("Word: x\nDerived form:") -> one item per block
+//   4. a single key/value exercise ("Sentence A: ...\nSentence B: ...") -> ONE item
+//
+// The letters are ours to print (label is overwritten with letterLabel below),
+// so whether the MODEL chose to prefix them must never decide whether an item
+// gets a label. Shape 4 is the exception: a rewrite exercise is one question
+// with two sentences, not three questions, and labelling its lines a) b) c)
+// would print nonsense on the paper.
 const NUMBERED = /^(\d+)[.)]\s+(.*)$/;
 const LETTERED = /^([A-Za-z])[.)]\s+(.*)$/;
+/**
+ * A field label such as "Word:", "Derived form:", "Sentence A:" — pairs of these
+ * form one exercise. The value may be EMPTY ("Derived form: " with the student
+ * to fill it in), which is the normal shape for these tasks, so the value is not
+ * required to be present.
+ */
+const FIELD_LABEL = /^[A-Z][A-Za-z ]{0,24}:(?:\s|$)/;
+/** A markdown table separator row ("--- | ---"), which is scaffolding, not content. */
+const TABLE_SEPARATOR = /^[\s|:-]+$/;
 const GAP = /(?:→|:)?\s*\.{3,}\s*$/;
 const UNDERLINED = /^"([^"]+)"\s*\(underlined\)$/;
 // "(§2)" — the paragraph an item refers back to, printed inline on the paper.
@@ -101,38 +119,142 @@ export function parseTaskBody(prompt: string, instruction?: string): { lead: str
   const items: PaperItem[] = [];
   const target = (instruction ?? "").trim().toLowerCase();
 
+  const pushItem = (body: string) => {
+    const ref = PARA_REF.exec(body);
+    const withoutRef = ref ? body.replace(PARA_REF, "").trim() : body;
+    const gap = GAP.test(withoutRef);
+    items.push({
+      label: "",
+      text: gap ? withoutRef.replace(GAP, "").trim() : withoutRef,
+      gap,
+      ref: ref ? `(\u00a7${ref[1]})` : null,
+      referent: false,
+    });
+  };
+
+  // Shape 3 first: blank-line-separated blocks are unambiguously one item each.
+  // The morphology and phonology tasks are generated in exactly this shape
+  // ("Word: excavation\nDerived form: \n\nWord: collaborative\nDerived form:").
+  //
+  // Within a block, a PREFIXED line starts a new item and an unprefixed line
+  // continues the current one -- otherwise "Word: x" and "Derived form:" would
+  // become two separate questions. Always split on newlines: guarding that with
+  // a "does it start with a number" test silently merges a multi-line block into
+  // one item, because NUMBERED has no `m` flag and cannot match past a newline.
+  const blocks = prompt
+    .split(/\n\s*\n/)
+    .map((b) => b.trim())
+    .filter(Boolean);
+
+  if (blocks.length > 1) {
+    for (const block of blocks) {
+      // The first line of each block always starts a new item, even when the
+      // previous block already produced one -- otherwise "Word: collaborative"
+      // is appended to the previous question instead of opening its own.
+      let atBlockStart = true;
+      for (const raw of block.split("\n")) {
+        const line = raw.trim();
+        if (!line) continue;
+        // "--- | ---" separates a markdown header from its data. Printing it
+        // would put a row of dashes on the paper.
+        if (TABLE_SEPARATOR.test(line) && /[|\-]/.test(line)) continue;
+        const m = NUMBERED.exec(line) ?? LETTERED.exec(line);
+        if (m) {
+          pushItem(m[2].trim());
+        } else if (items.length > 0 && !atBlockStart) {
+          const last = items[items.length - 1];
+          items[items.length - 1] = { ...last, text: `${last.text} ${line}`.trim() };
+        } else {
+          pushItem(line);
+        }
+        atBlockStart = false;
+      }
+    }
+    return { lead, items: items.map((it, i) => ({ ...it, label: letterLabel(i) })) };
+  }
+
+  const onlyLines = prompt.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  // A bare line is a LEAD-IN only when prefixed items actually follow it. If the
+  // whole prompt is bare lines, they are the items — that is shape 2, and the
+  // lead-in case would otherwise swallow them.
+  const hasPrefixedItems = onlyLines.some((l) => NUMBERED.test(l) || LETTERED.test(l));
+  // Shape 4: a lone block of DISTINCT field labels is one exercise (a grammar
+  // rewrite: "Sentence A:", "Sentence B:"). A REPEATED pair of labels
+  // ("Word:", "Derived form:", "Word:", "Derived form:", ...) is a list of
+  // separate questions that merely arrived without blank lines between them, so
+  // it must not be mistaken for one exercise. Distinct labels are the tell:
+  // 2 distinct across 4 lines is a list, 2 distinct across 2 lines is an
+  // exercise.
+  const fieldLines = onlyLines.filter((l) => FIELD_LABEL.test(l));
+  const distinctFields = new Set(fieldLines.map((l) => l.split(":")[0].trim().toLowerCase()));
+  const isFieldExercise =
+    onlyLines.length > 1 &&
+    fieldLines.length >= onlyLines.length - 1 &&
+    fieldLines.length === distinctFields.size;
+
+  // Labels seen in the item currently being built, for the repeated-pair case.
+  let currentFieldLabels = new Set<string>();
+
   for (const raw of prompt.split("\n")) {
     const line = raw.trim();
     if (!line) continue;
+    // "--- | ---" separates a markdown header from its data. Printing it would
+    // put a row of dashes on the paper.
+    if (TABLE_SEPARATOR.test(line) && /[|\-]/.test(line)) continue;
 
     const m = NUMBERED.exec(line) ?? LETTERED.exec(line);
     if (m) {
-      const body = m[2].trim();
-      const ref = PARA_REF.exec(body);
-      const withoutRef = ref ? body.replace(PARA_REF, "").trim() : body;
-      const gap = GAP.test(withoutRef);
-      items.push({
-        label: "",
-        text: gap ? withoutRef.replace(GAP, "").trim() : withoutRef,
-        gap,
-        ref: ref ? `(§${ref[1]})` : null,
-        referent: false,
-      });
+      pushItem(m[2].trim());
       continue;
     }
 
     // The generator often repeats the instruction as the prompt's first line;
     // rendering both would duplicate the task stem on the paper.
-    if (items.length === 0 && line.toLowerCase() === target && target !== "") continue;
+    if (items.length === 0 && lead.length === 0 && line.toLowerCase() === target && target !== "") continue;
 
-    if (items.length > 0) {
-      const last = items[items.length - 1];
-      items[items.length - 1] = { ...last, text: `${last.text} ${line}`.trim() };
+    // A repeated field-label list without blank lines ("Word: x / Derived
+    // form:" x3): a label that is NEW to the current item continues it, and a
+    // label that REPEATS opens the next question. Distinct labels are handled
+    // above as a single exercise, so this branch only sees repeated pairs.
+    if (!hasPrefixedItems && !isFieldExercise && FIELD_LABEL.test(line)) {
+      const label = line.split(":")[0].trim().toLowerCase();
+      if (items.length === 0 || currentFieldLabels.has(label)) {
+        pushItem(line);
+        currentFieldLabels = new Set([label]);
+      } else {
+        const last = items[items.length - 1];
+        items[items.length - 1] = { ...last, text: `${last.text} ${line}`.trim() };
+        currentFieldLabels.add(label);
+      }
       continue;
     }
-    lead.push(line);
+
+    // Shape 2: the whole prompt is bare lines, so every line is its own item.
+    // This is the fix for the teacher report -- Part One QUESTIONS,
+    // PARAGRAPH_ID and COHESIVE_MARKERS are generated as bare questions, one per
+    // line, and were rendered with no letters because nothing recognised them as
+    // items. Checked BEFORE the continuation rule, or line 2 would be appended
+    // to item 1 instead of starting its own.
+    if (!hasPrefixedItems && !isFieldExercise) {
+      pushItem(line);
+      continue;
+    }
+
+    if (items.length === 0) {
+      // Prefixed items follow, so this bare line is the lead-in.
+      lead.push(line);
+      continue;
+    }
+
+    // Continuation of the item above: a wrapped sentence, or the rest of a
+    // field/value exercise.
+    const last = items[items.length - 1];
+    items[items.length - 1] = { ...last, text: `${last.text} ${line}`.trim() };
   }
 
+  // Shape 4 kept as lead-in text under the instruction: it is one exercise
+  // whose sentences belong together.
   return { lead, items: items.map((it, i) => ({ ...it, label: letterLabel(i) })) };
 }
 

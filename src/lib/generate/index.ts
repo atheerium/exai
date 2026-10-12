@@ -327,6 +327,15 @@ export function validateCandidate(
   if (type === "PART_ONE" || type === "TEXT_EXPLORATION") {
     const tasks = payload as GeneratedTask[];
     if (!tasks || tasks.length === 0) issues.push("No tasks were generated.");
+    // An empty prompt passes every other check (0 marks contribution, no table
+    // to inspect, no targets to ground) and renders as a blank question on the
+    // paper. Observed live: the model answered the morphology task with a
+    // {word, derivedForm} shape, so `prompt` came back "".
+    tasks.forEach((t, i) => {
+      if (!(t.prompt ?? "").trim()) {
+        issues.push(`Task ${i + 1} has no content (empty prompt) and cannot be printed.`);
+      }
+    });
     const total = tasks.reduce((s, t) => s + t.marks, 0);
     const expected = expectedMarks ?? (type === "PART_ONE" ? 7 : 8);
     if (Math.abs(total - expected) > 0.05) {

@@ -619,6 +619,40 @@ carry one.
 - The title is still generated and stored, so turning the toggle on needs no
   regeneration.
 
+### 10.1a Every item gets a letter, whatever shape the model returned
+
+Teacher report (2026-10-12): "only question 1 has letters". Cause: `parseTaskBody`
+only recognised items on lines that ALREADY began with a number or a letter, so
+any task the model emitted as bare lines rendered as lead-in text with no labels
+at all. Question 1 worked only because that model happened to prefix `a)`.
+
+The letters are ours to print (`letterLabel` overwrites any label the model
+supplied), so the model's choice of prefix must never decide whether an item is
+recognised. Four shapes are now handled, all verified against live output:
+
+| Shape | Example | Result |
+|---|---|---|
+| Prefixed | `1. first` / `A. first` | item (unchanged) |
+| Bare lines | `What does the passage say?` | item |
+| Blank-line blocks | `Word: x` / `Derived form:` separated by blank lines | one item per block |
+| Key/value exercise | `Sentence A: ...` / `Sentence B: ...` | ONE item, kept as lead text |
+
+Two exclusions, both deliberate:
+
+- **A key/value exercise is not three questions.** Labelling `Sentence A` and
+  `Sentence B` as `a)` and `b)` would print nonsense. Distinguishing signal: the
+  labels are DISTINCT. A repeated pair (`Word:` / `Derived form:` twice) is a
+  list of questions that arrived without blank lines, and each repeat opens a new
+  item.
+- **Markdown separator rows are dropped.** `--- | ---` is table scaffolding and
+  must not appear on the paper.
+
+Known pre-existing defect, NOT introduced here and NOT fixed by it: for a
+CHOOSE_CORRECT_FORM grammar task the prompt is `1. sentence` / `A. option` /
+`B. option`, and the option lines are lettered as if they were separate items
+(3 items before this change, 2 after). The option lines should render as the
+options of item `a)`, not as items in their own right.
+
 ### 10.2 Paragraphs are separated by whitespace, never indented
 
 No first-line indent on passage paragraphs. The separation between them is

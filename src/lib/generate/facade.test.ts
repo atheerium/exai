@@ -237,3 +237,14 @@ test("paragraph count is unchecked when the caller does not ask for it", () => {
   const v = validateCandidate("TEXT", { title: "T", text: ON_TOPIC(5) });
   assert.ok(v.ok, v.issues.join("; "));
 });
+
+test("validateCandidate rejects a task with an empty prompt", () => {
+  // An empty prompt passes every other check and prints as a blank question.
+  // Seen live: the model answered morphology with {word, derivedForm}, so
+  // `prompt` arrived as "".
+  const v = validateCandidate("PART_ONE", [
+    { prompt: "", instruction: "i", answer: "a", marks: 7, skill: "READING", family: "TRUE_FALSE" },
+  ], 7);
+  assert.ok(!v.ok);
+  assert.match(v.issues.join(" "), /Task 1 has no content/);
+});
