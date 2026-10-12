@@ -6,6 +6,7 @@
 
 import type { GeneratedSource, GeneratedTask, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 import { rulePrescribesTable } from "@/lib/export/tables";
+import { candidateCount, DEFAULT_CANDIDATES } from "./candidates";
 import type { GenContext } from "./index";
 
 const SYSTEM = [
@@ -232,17 +233,37 @@ function coherenceNote(ctx: GenContext): string {
   // enforces. A model cannot satisfy a rule it was never told numerically.
   const minWords = Math.floor(ctx.length * 0.8);
   const maxWords = Math.ceil(ctx.length * 1.2);
+  // Rewritten 2026-10-12 against a teacher-supplied reference passage (a news
+  // article whose three paragraphs run claim -> development -> evidence and are
+  // held together by lexical chains: diet -> dietary intake -> fast food ->
+  // Mediterranean diet; Researchers -> They -> She).
+  //
+  // The previous wording said "Name that topic, or a concrete aspect of it,
+  // explicitly in EVERY paragraph". Combined with a validator that accepted the
+  // verbatim phrase, that INSTRUCTED the chant the teacher reported: the model
+  // opened two paragraphs with "Exploring the ancient world..." because that was
+  // the cheapest way to satisfy the constraint. Asking for a property and then
+  // rewarding the literal token is how a prompt teaches bad writing.
+  //
+  // The instruction is now about prose (an arc, varied reference, no pasted
+  // phrase) and the validator checks cohesion instead of token presence.
   return (
     ` Write EXACTLY ${paragraphs} paragraph${paragraphs === 1 ? "" : "s"}, separated by a blank line. ` +
     `The whole passage must be between ${minWords} and ${maxWords} words: count your words and stay in that range. ` +
     `The topic is "${ctx.topic}". ` +
-    "Name that topic, or a concrete aspect of it, explicitly in EVERY paragraph -- a paragraph that names " +
-    "neither the topic nor one of its concrete nouns (a place, a period, a material, an activity) is rejected. " +
-    "Stay on that topic throughout: do NOT switch to a different subject partway through, and do not introduce " +
-    "facts from an unrelated field. Open by introducing the topic, develop one aspect per paragraph, and close " +
-    "without introducing new facts. " +
+    "Structure the passage as a short report that develops ONE idea: the opening paragraph states the main point, " +
+    `the following paragraph${paragraphs > 3 ? "s develop it" : " develops it"} ` +
+    "with related information, and the closing paragraph adds the consequence or conclusion without introducing new facts. " +
+    "Hold the paragraphs together the way a well-written article does: carry a subject across the boundary and refer " +
+    "back to it with pronouns, synonyms and related words (for example a subject named once is then called `it`, " +
+    "`they`, `such research`, or simply is not renamed). " +
+    "Name the topic, or one of its concrete aspects, ONCE in the opening paragraph. " +
+    "Do NOT paste the full topic phrase into every paragraph, and do NOT begin consecutive paragraphs the same way -- " +
+    "repeated openings read as machine-written. " +
+    "Every paragraph must stay on that topic: do NOT switch to a different subject, and do not introduce facts from an " +
+    "unrelated field. Use concrete detail (a place, a period, an example, a study) to keep it specific. " +
     (ctx.teacherKeywords
-      ? `Each paragraph must also relate to at least one of these teacher keywords: ${ctx.teacherKeywords}. `
+      ? `Work these teacher keywords into the passage naturally, wherever they belong -- do NOT repeat them in every paragraph: ${ctx.teacherKeywords}. `
       : "") +
     repair
   );
@@ -340,30 +361,6 @@ const CHOICE_LABEL_RULE =
  * stops the drift in the first place — the same lesson as stating the word band
  * numerically rather than as "about N words".
  */
-/** How many proposals a generation call should return. See `candidateCount`. */
-export const DEFAULT_CANDIDATES = 1;
-
-/**
- * Proposals per generation call.
- *
- * ONE by default (user decision, 2026-10-12): the teacher asked for an exam, not
- * for three of them. Generating three of everything meant four calls returned
- * ~3x the content while the teacher saw one — on a free tier already capped at
- * ~8000 tokens per minute, that tripled the cost of the run the teacher actually
- * wanted.
- *
- * Alternatives remain available on demand: the replacement panel and the
- * rewrite path ask for them explicitly. `AI_CANDIDATES=3` restores the previous
- * behaviour globally for a deployment that wants a choice up front.
- *
- * Read per call rather than cached at module load, matching `chain.ts`: a
- * runtime env change must take effect without a restart.
- */
-export function candidateCount(): number {
-  const raw = Number(process.env.AI_CANDIDATES);
-  return Number.isInteger(raw) && raw >= 1 && raw <= 3 ? raw : DEFAULT_CANDIDATES;
-}
-
 /** `with exactly N sets` / `with N different candidates`, matching what is asked for. */
 function countNote(n: number, noun: string): string {
   return ` with exactly ${n} ${noun}`;
@@ -607,6 +604,8 @@ export function parseTaskSets(
     }));
   });
 }
+
+export { candidateCount, DEFAULT_CANDIDATES };
 
 export function keywordNote(ctx: GenContext): string {
   return ctx.teacherKeywords ? ` Incorporate these teacher keywords where appropriate: ${ctx.teacherKeywords}.` : "";

@@ -308,15 +308,18 @@ export function validateCandidate(
           issues.push(`Generated text has ${actual} paragraph(s) instead of ${opts.paragraphCount}.`);
         }
       }
-      // One topic across all paragraphs: catches the "advertising, then ancient
-      // monuments, then music" failure mechanically. See grounding.ts for what
-      // this does and does not guarantee.
+      // Topicality and cohesion are ADVISORY. Two mechanical attempts were made
+      // and both rejected good passages — including a coherent one held together
+      // by pronoun chains, and passages that say "prehistoric" rather than the
+      // curriculum label's "ancient". Logged, not enforced: see grounding.ts for
+      // the measurements. Hard failures here mean only word count, paragraph
+      // count and schema, which are all exactly computable.
       if (opts?.topic) {
-        for (const issue of checkTopicAnchoring(t.text, {
+        for (const advisory of checkTopicAnchoring(t.text, {
           topic: opts.topic,
           keywords: opts.teacherKeywords,
         })) {
-          issues.push(issue);
+          console.warn(`[generate] passage: ${advisory}`);
         }
       }
     }

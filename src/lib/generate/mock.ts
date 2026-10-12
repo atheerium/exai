@@ -8,6 +8,7 @@
 import { getTheme, type Theme } from "@/data/themes";
 import type { Guide, PartOneRule, SkillRule } from "@/data/guides";
 import { countWords, Seeded } from "./rng";
+import { candidateCount } from "./candidates";
 import { pickReferents } from "./referents";
 import { occursInPassage, passageVocabulary } from "./grounding";
 import { rulePrescribesTable, taskHasTable } from "@/lib/export/tables";
@@ -1067,21 +1068,32 @@ export function topicAlternatives(ctx: MockContext, count = 3): { guided: Genera
 // Facade entry points (same shape as the OpenAI provider, PRD 15.3)
 // ---------------------------------------------------------------------------
 
+// The mock honours `candidateCount()` for the same reason it honours the
+// paragraph count and topic anchoring: it is the offline stand-in for the real
+// providers, and a test double that returns a different SHAPE from the code it
+// stands in for silently stops covering that code.
 export function generateTextCandidates(ctx: MockContext): GeneratedTextCandidate[] {
+  const n = candidateCount();
   const primary = generateText(ctx, 0);
-  return [{ title: primary.title, text: primary.text, source: primary.source }, ...textAlternatives(ctx, 2)];
+  return [
+    { title: primary.title, text: primary.text, source: primary.source },
+    ...textAlternatives(ctx, n - 1),
+  ];
 }
 
 export function generatePartOneCandidates(ctx: MockContext): GeneratedTask[][] {
-  return [generatePartOne(ctx, 0), ...taskAlternatives(ctx, "PART_ONE", 2)];
+  return [generatePartOne(ctx, 0), ...taskAlternatives(ctx, "PART_ONE", candidateCount() - 1)];
 }
 
 export function generateTextExplorationCandidates(ctx: MockContext): GeneratedTask[][] {
-  return [generateTextExploration(ctx, 0), ...taskAlternatives(ctx, "TEXT_EXPLORATION", 2)];
+  return [
+    generateTextExploration(ctx, 0),
+    ...taskAlternatives(ctx, "TEXT_EXPLORATION", candidateCount() - 1),
+  ];
 }
 
 export function generateWritingCandidates(ctx: MockContext): { guided: GeneratedTopic; free: GeneratedTopic | null }[] {
-  return [generateWriting(ctx, 0), ...topicAlternatives(ctx, 2)];
+  return [generateWriting(ctx, 0), ...topicAlternatives(ctx, candidateCount() - 1)];
 }
 
 // ---------------------------------------------------------------------------

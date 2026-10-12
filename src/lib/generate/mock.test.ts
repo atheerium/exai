@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getGuide, GUIDES } from "../../data/guides";
+import { candidateCount } from "./candidates";
 import {
   generateText,
   generateTextCandidates,
@@ -56,7 +57,7 @@ test("generateText is split into 3-5 paragraphs", () => {
 
 test("generateTextCandidates each carry a source citation", () => {
   const cands = generateTextCandidates(ctx());
-  assert.equal(cands.length, 3);
+  assert.equal(cands.length, candidateCount());
   for (const c of cands) {
     assert.ok(c.title.length > 0);
     assert.ok(c.text.length > 0);

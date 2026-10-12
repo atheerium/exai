@@ -230,6 +230,32 @@ export function checkTopicAnchoring(
   passage: string,
   opts: { topic: string; keywords?: string | null; minWords?: number }
 ): string[] {
+  // ADVISORY ONLY. These observations are logged, never enforced.
+  //
+  // Two attempts were made to enforce this mechanically and both rejected good
+  // passages, which is why they are not enforced:
+  //
+  //   1. Per-paragraph topic anchoring ("every paragraph must name the topic or
+  //      a content word of it"). Rejected 4 of 4 live passages, because the
+  //      topic is the CURRICULUM LABEL ("Exploring the ancient world") and a
+  //      passage about Neolithic settlements legitimately says "prehistoric",
+  //      not "ancient". Worse, it INSTRUCTED the chant the teacher reported
+  //      (user, 2026-10-12): telling a model to name something in every
+  //      paragraph teaches it to paste the phrase into every paragraph.
+  //
+  //   2. Adjacent-paragraph lexical overlap. Scored the teacher's own reference
+  //      article at 5 and 7 shared content words, which looked promising -- but
+  //      live passages that read well scored 3/1 and 0/2. The zero was a
+  //      genuinely coherent passage held together by pronoun chains ("These
+  //      burial chambers...", "Such findings..."), which are excluded because
+  //      "they"/"these" are far too common to be evidence. The reference article
+  //      scored well only because it repeats "diet" and "researchers" heavily,
+  //      which is one valid style, not a rule.
+  //
+  // So topicality and cohesion are PROMPT-enforced (see `coherenceNote`), in the
+  // same category as semantic answerability: not mechanically checkable without
+  // rejecting good writing. This function still reports what it can so the
+  // signal is visible in logs and available if a caller wants to act on it.
   const issues: string[] = [];
   const paragraphs = passage.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   if (paragraphs.length === 0) return issues;
@@ -243,22 +269,73 @@ export function checkTopicAnchoring(
 
   if (topicAnchors.length === 0 && keywordAnchors.length === 0) return issues;
 
-  paragraphs.forEach((paragraph, i) => {
-    const words = paragraph.split(/\s+/).filter(Boolean).length;
-    if (words < minWords) return;
-    // Filler-only matches are ignored: accepting "and" or "exploring" would
-    // anchor every paragraph, which is the failure this check exists to stop.
-    const anchored =
-      topicAnchors.some((forms) => forms.some((f) => mentionsAnchor(paragraph, f))) ||
-      keywordAnchors.some((k) => mentionsAnchor(paragraph, k));
-    if (!anchored) {
+  const substantive = paragraphs.filter((p) => p.split(/\s+/).filter(Boolean).length >= minWords);
+  if (substantive.length === 0) return issues;
+
+  const anchored =
+    topicAnchors.some((forms) => forms.some((f) => mentionsAnchor(passage, f))) ||
+    keywordAnchors.some((k) => mentionsAnchor(passage, k));
+  if (!anchored) {
+    issues.push(
+      `Advisory: the passage never mentions "${opts.topic}" or any teacher keyword. It may still be on topic by paraphrase.`
+    );
+  }
+
+  for (let i = 0; i + 1 < substantive.length; i++) {
+    const shared = sharedContentTokens(substantive[i], substantive[i + 1]);
+    if (shared === 0) {
       issues.push(
-        `Paragraph ${i + 1} does not mention "${opts.topic}" or any teacher keyword, so it is off-topic.`
+        `Advisory: paragraphs ${i + 1} and ${i + 2} share no content vocabulary. This may be a pronoun chain ` +
+          `(which this check cannot see) or genuine drift.`
       );
     }
-  });
+  }
   return issues;
 }
+
+/**
+ * Content words two paragraphs share.
+ *
+ * Stopwords are removed (otherwise "the" and "of" make every pair overlap) and
+ * inflection variants are folded, so "studies" and "study" count once. Numbers
+ * are dropped too: two paragraphs both containing "2000" is not cohesion.
+ */
+function sharedContentTokens(a: string, b: string): number {
+  const tokensOf = (text: string) => {
+    const out = new Set<string>();
+    for (const token of passageTokens(text)) {
+      if (token.length < 4) continue;
+      if (STOPWORDS.has(token)) continue;
+      if (/^\d+$/.test(token)) continue;
+      out.add(foldPlural(token));
+    }
+    return out;
+  };
+  const left = tokensOf(a);
+  const right = tokensOf(b);
+  let shared = 0;
+  for (const t of left) if (right.has(t)) shared++;
+  return shared;
+}
+
+/**
+ * Fold a regular plural so `study` and `studies` compare equal.
+ *
+ * Deliberately shallow. It does NOT stem `researcher` to `research`, which a
+ * real stemmer would -- so adjacent paragraphs must share an explicit noun
+ * rather than a morphological variant of one. That is the stricter, safer
+ * direction for a cohesion check: it will not pass a pair that a human would
+ * call loosely linked.
+ */
+function foldPlural(token: string): string {
+  if (token.endsWith("ies") && token.length > 4) return `${token.slice(0, -3)}y`;
+  if (token.endsWith("sses") || token.endsWith("shes") || token.endsWith("ches")) return token.slice(0, -2);
+  if (token.endsWith("es") && token.length > 4) return token.slice(0, -2);
+  if (token.endsWith("s") && !token.endsWith("ss") && token.length > 3) return token.slice(0, -1);
+  return token;
+}
+
+
 
 /**
  * The forms of a topic that count as a mention: the whole phrase, then each of
