@@ -1,6 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { DEFAULT_CANDIDATES } from "./provider";
 import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, generateRewriteCandidates, validateCandidate } from "./index";
 
 // Canned OpenAI-compatible responses keyed by the "kind" field the provider
@@ -143,7 +144,8 @@ const input = {
 
 test("openai provider: text candidates flow through the stub and validate", async () => {
   const candidates = await generateTextCandidates(buildContext(input));
-  assert.equal(candidates.length, 3);
+  // One proposal by default (user decision 2026-10-12); alternatives are on demand.
+  assert.equal(candidates.length, DEFAULT_CANDIDATES);
   for (const c of candidates) {
     assert.ok(c.text.length > 50);
     assert.ok(c.title);
@@ -154,7 +156,7 @@ test("openai provider: text candidates flow through the stub and validate", asyn
 
 test("openai provider: part one sets validate (5 tasks, 7 marks)", async () => {
   const sets = await generatePartOneCandidates(buildContext(input));
-  assert.equal(sets.length, 3);
+  assert.equal(sets.length, DEFAULT_CANDIDATES);
   for (const set of sets) {
     assert.equal(set.length, 5);
     const v = validateCandidate("PART_ONE", set, buildContext(input).guide.marks.partOne);
@@ -164,7 +166,7 @@ test("openai provider: part one sets validate (5 tasks, 7 marks)", async () => {
 
 test("openai provider: text exploration sets validate (5 skills, 7 marks)", async () => {
   const sets = await generateTextExplorationCandidates(buildContext(input));
-  assert.equal(sets.length, 3);
+  assert.equal(sets.length, DEFAULT_CANDIDATES);
   for (const set of sets) {
     assert.equal(set.length, 5);
     const v = validateCandidate("TEXT_EXPLORATION", set, buildContext(input).guide.marks.textExploration);
@@ -174,7 +176,7 @@ test("openai provider: text exploration sets validate (5 skills, 7 marks)", asyn
 
 test("openai provider: writing sets validate (guided keywords, free without)", async () => {
   const sets = await generateWritingCandidates(buildContext(input));
-  assert.equal(sets.length, 3);
+  assert.equal(sets.length, DEFAULT_CANDIDATES);
   for (const pair of sets) {
     assert.equal(pair.guided.kind, "GUIDED");
     assert.ok(pair.guided.keywords?.includes("/"));

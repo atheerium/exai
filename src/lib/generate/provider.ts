@@ -5,6 +5,7 @@
 // prompt builder, and response parser so each provider file stays thin.
 
 import type { GeneratedSource, GeneratedTask, GeneratedTextCandidate, GeneratedTopic } from "@/types";
+import { rulePrescribesTable } from "@/lib/export/tables";
 import type { GenContext } from "./index";
 
 const SYSTEM = [
@@ -339,16 +340,49 @@ const CHOICE_LABEL_RULE =
  * stops the drift in the first place — the same lesson as stating the word band
  * numerically rather than as "about N words".
  */
-const TASK_SET_SCHEMA_NOTE =
-  ' Return the JSON object exactly in this shape: {"sets":[{"tasks":[TASK,…]}]} with exactly 3 sets. ' +
-  "Every task is a flat object with the keys: prompt, instruction, answer, marks, skill (the value \"READING\"), " +
-  "family. Do NOT key the output by family name, do NOT return one array per family, and do NOT nest items " +
-  "under a family key. Each family contributes exactly the number of items listed in its itemCount, as separate " +
-  "task objects inside the tasks array, in the order the families were given.";
+/** How many proposals a generation call should return. See `candidateCount`. */
+export const DEFAULT_CANDIDATES = 1;
+
+/**
+ * Proposals per generation call.
+ *
+ * ONE by default (user decision, 2026-10-12): the teacher asked for an exam, not
+ * for three of them. Generating three of everything meant four calls returned
+ * ~3x the content while the teacher saw one — on a free tier already capped at
+ * ~8000 tokens per minute, that tripled the cost of the run the teacher actually
+ * wanted.
+ *
+ * Alternatives remain available on demand: the replacement panel and the
+ * rewrite path ask for them explicitly. `AI_CANDIDATES=3` restores the previous
+ * behaviour globally for a deployment that wants a choice up front.
+ *
+ * Read per call rather than cached at module load, matching `chain.ts`: a
+ * runtime env change must take effect without a restart.
+ */
+export function candidateCount(): number {
+  const raw = Number(process.env.AI_CANDIDATES);
+  return Number.isInteger(raw) && raw >= 1 && raw <= 3 ? raw : DEFAULT_CANDIDATES;
+}
+
+/** `with exactly N sets` / `with N different candidates`, matching what is asked for. */
+function countNote(n: number, noun: string): string {
+  return ` with exactly ${n} ${noun}`;
+}
 
 /** `family (exactly N items, M marks)` — the counts, spelled out. */
 function familyCountNote(families: TaskFamilySpec[]): string {
   return families.map((f) => `${f.family} (exactly ${f.itemCount} item(s), ${f.marks} marks)`).join(", ");
+}
+
+function taskSetSchemaNote(n: number): string {
+  return (
+    ` Return the JSON object exactly in this shape: {"sets":[{"tasks":[TASK,…]}]}` +
+    ` with exactly ${n} set${n === 1 ? "" : "s"}. ` +
+    "Every task is a flat object with the keys: prompt, instruction, answer, marks, skill (the value \"READING\"), " +
+    "family. Do NOT key the output by family name, do NOT return one array per family, and do NOT nest items " +
+    "under a family key. Each family contributes exactly the number of items listed in its itemCount, as separate " +
+    "task objects inside the tasks array, in the order the families were given."
+  );
 }
 
 const PARAGRAPH_NOTE =
@@ -431,7 +465,7 @@ function itemText(item: any): string {
  * present as a non-empty array. A partial reply is rejected, not silently
  * shipped with a missing section.
  */
-function assembleFromFamilyKeyed(json: any, families: TaskFamilySpec[]): unknown[] | null {
+function assembleFromFamilyKeyed(json: any, families: TaskFamilySpec[], wanted: number): unknown[] | null {
   if (!json || typeof json !== "object" || Array.isArray(json)) return null;
   const keys = Object.keys(json);
   if (keys.length === 0) return null;
@@ -474,11 +508,11 @@ function assembleFromFamilyKeyed(json: any, families: TaskFamilySpec[]): unknown
       family: spec.family,
     });
   }
-  // The model returns ONE family-keyed reply per call. Presenting it as three
-  // identical sets keeps the "3 alternatives" contract without inventing
-  // content. Wrapped in the same `{tasks}` shape the normal path produces so
-  // both routes share one downstream parser.
-  return [tasks, tasks, tasks].map((t) => ({ tasks: t }));
+  // The model returns ONE family-keyed reply per call. Presenting it as `wanted`
+  // identical sets keeps the alternatives contract without inventing content.
+  // Wrapped in the same `{tasks}` shape the normal path produces so both routes
+  // share one downstream parser.
+  return Array.from({ length: Math.max(1, wanted) }, () => ({ tasks }));
 }
 
 export interface TaskFamilySpec {
@@ -538,17 +572,18 @@ export function parseTaskSets(
   json: any,
   count: number,
   marksTotal: number,
-  families?: TaskFamilySpec[]
+  families?: TaskFamilySpec[],
+  wanted: number = candidateCount()
 ): GeneratedTask[][] {
   let sets = candidateList(json, "sets");
-  if ((!sets || sets.length < 3) && families) {
-    const assembled = assembleFromFamilyKeyed(json, families);
+  if ((!sets || sets.length < wanted) && families) {
+    const assembled = assembleFromFamilyKeyed(json, families, wanted);
     if (assembled) sets = assembled;
   }
-  if (!sets || sets.length < 3) {
-    throw new Error(shapeError("task sets", json, 3));
+  if (!sets || sets.length < wanted) {
+    throw new Error(shapeError("task sets", json, wanted));
   }
-  return sets.slice(0, 3).map((set: any) => {
+  return sets.slice(0, wanted).map((set: any) => {
     const raw = Array.isArray(set?.tasks) ? set.tasks : [];
     const tasks = families ? regroupByFamily(raw, families, count) : raw;
     if (tasks.length !== count) throw new Error(`AI output has ${tasks.length} tasks (expected ${count}).`);
@@ -606,6 +641,7 @@ function shapeError(what: string, json: any, expected: number): string {
  */
 export function createCompatibleGenerators(config: () => ProviderConfig) {
   async function generateTextCandidates(ctx: GenContext): Promise<GeneratedTextCandidate[]> {
+    const n = candidateCount();
     const json = await chat(
       config(),
       {
@@ -616,18 +652,20 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
           'Write an original, level-appropriate reading passage of about ' + ctx.length +
           ' words on the topic "' + ctx.topic + '".' +
           keywordNote(ctx) + difficultyNote(ctx) + PARAGRAPH_NOTE + coherenceNote(ctx) + SOURCE_NOTE +
-          ' Return exactly {"candidates":[{"title":"...","text":"...","source":{"title":"...","author":"...","publication":"...","url":"...","adaptationNote":"..."}}]} with 3 different candidates.',
+          ' Return exactly {"candidates":[{"title":"...","text":"...","source":{"title":"...","author":"...","publication":"...","url":"...","adaptationNote":"..."}}]}' +
+          countNote(n, "different candidate" + (n === 1 ? "" : "s")) + '.',
       },
       { temperature: TEMPERATURE.prose }
     );
     const candidates = candidateList(json, "candidates");
-    if (!candidates || candidates.length < 3) throw new Error(shapeError("text candidates", json, 3));
+    if (!candidates || candidates.length < n) throw new Error(shapeError("text candidates", json, n));
     return candidates
-      .slice(0, 3)
+      .slice(0, n)
       .map((c: any) => ({ title: String(c?.title ?? ""), text: String(c?.text ?? ""), source: parseSource(c?.source) }));
   }
 
   async function generatePartOneCandidates(ctx: GenContext) {
+    const n = candidateCount();
     const families = ctx.guide.partOne.map((f) => ({
       family: f.family,
       marks: f.marks,
@@ -652,7 +690,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
         `Each family must contribute exactly this many items: ${familyCountNote(families)}. ` +
-        TASK_SET_SCHEMA_NOTE,
+        taskSetSchemaNote(n),
       families,
       },
       { temperature: TEMPERATURE.structured }
@@ -661,11 +699,17 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
   }
 
   async function generateTextExplorationCandidates(ctx: GenContext) {
-    const skills = ctx.guide.textExploration.skills.map((s) => ({
+    const n = candidateCount();
+    const guideSkills = ctx.guide.textExploration.skills;
+    // `tableRequired` is sent as what the ALLOWLIST says, not what the raw guide
+    // flag says. The two can disagree on a legacy rule, and telling the model
+    // "true" for a task the validator will reject is a contradiction it cannot
+    // resolve. See `export/tables.ts`.
+    const skills = guideSkills.map((s) => ({
       skill: s.skill,
       marks: s.marks,
       instruction: s.instruction,
-      tableRequired: s.tableRequired,
+      tableRequired: rulePrescribesTable(s),
     }));
     const json = await chat(
       config(),
@@ -685,18 +729,36 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
         `Produce exactly ${ctx.guide.textExploration.skills.length} task objects, one per skill, in the order given. ` +
-        TASK_SET_SCHEMA_NOTE,
+        taskSetSchemaNote(n),
       skills,
         },
         { temperature: TEMPERATURE.structured }
       );
-    return parseTaskSets(json, 5, ctx.guide.marks.textExploration);
+    const sets = parseTaskSets(json, guideSkills.length, ctx.guide.marks.textExploration);
+    // STAMP, don't validate. The skill decides the table allowlist
+    // (`taskHasTable`), and the model frequently omits or misspells `skill` —
+    // which made a correctly-tabular morphology task fail with "must not carry a
+    // table", an error that blamed the task instead of the missing field. The
+    // guide already knows which skill sits in which position, so the field is
+    // written here and the echo is discarded.
+    return sets.map((set) =>
+      set.map((task, i) => {
+        const spec = guideSkills[i];
+        return spec
+          ? { ...task, skill: spec.skill, marks: spec.marks, family: task.family ?? spec.family }
+          : task;
+      })
+    );
   }
 
   async function generateRewriteCandidates(
     ctx: GenContext,
     opts: { text: string; title?: string; target: "simpler" | "harder" }
   ): Promise<GeneratedTextCandidate[]> {
+    // Rewrites are an explicit "give me options" action, so this is the one
+    // place that asks for more than the configured default: the teacher clicked
+    // simplify/harder precisely to compare versions.
+    const n = 3;
     const direction =
       opts.target === "simpler"
         ? "Rewrite the passage to be SIMPLER: shorter sentences, fewer subordinate clauses, plainer vocabulary, same meaning and content."
@@ -711,14 +773,15 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         request:
           direction + PARAGRAPH_NOTE +
           ` Keep the same number of paragraphs (${ctx.paragraphCount ?? 3}) and the same topic.` + coherenceNote(ctx) +
-          ' Keep the same title and topic. Return exactly {"candidates":[{"title":"...","text":"..."}]} with 3 different rewritten versions of about the same length.',
+          ' Keep the same title and topic. Return exactly {"candidates":[{"title":"...","text":"..."}]}' +
+          countNote(n, "different rewritten version") + ' of about the same length.',
       },
       { temperature: TEMPERATURE.prose }
     );
     const candidates = candidateList(json, "candidates");
-    if (!candidates || candidates.length < 3) throw new Error("AI output missing rewrite candidates.");
+    if (!candidates || candidates.length < n) throw new Error(shapeError("rewrite candidates", json, n));
     return candidates
-      .slice(0, 3)
+      .slice(0, n)
       .map((c: any) => ({
         title: String(c?.title ?? opts.title ?? ""),
         text: String(c?.text ?? ""),
@@ -728,6 +791,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
   async function generateWritingCandidates(
     ctx: GenContext
   ): Promise<{ guided: GeneratedTopic; free: GeneratedTopic | null }[]> {
+    const n = candidateCount();
     const w = ctx.guide.writing;
     if (w.singleTopic) {
       const json = await chat(
@@ -738,13 +802,13 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
           marksTotal: w.marks,
           request:
             'Write ONE integrated-situation writing topic for the BEM middle-school exam: Topic 1 GUIDED (same broad theme as the text, a situation, instructions and slash-separated key words). This is the ONLY topic; there is no free topic.' + keywordNote(ctx) +
-            ' Return {"sets":[{"guided":{"kind":"GUIDED","title","situation","instruction","keywords","form","marks"}}]} with 3 different sets.',
+            ' Return {"sets":[{"guided":{"kind":"GUIDED","title","situation","instruction","keywords","form","marks"}}]}' + countNote(n, "different set" + (n === 1 ? "" : "s")) + '.',
         },
         { temperature: TEMPERATURE.structured }
       );
       const sets = candidateList(json, "sets");
-      if (!sets || sets.length < 3) throw new Error("AI output missing writing sets.");
-      return sets.slice(0, 3).map((set: any) => {
+      if (!sets || sets.length < n) throw new Error(shapeError("writing sets", json, n));
+      return sets.slice(0, n).map((set: any) => {
         const g = set?.guided;
         if (!g) throw new Error("AI output missing guided topic.");
         return {
@@ -771,13 +835,13 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         request:
           'Write two writing topics: Topic 1 GUIDED (same broad theme as the text, a situation, instructions and slash-separated key words) and Topic 2 FREE (different situation, no key words).' + keywordNote(ctx) +
           ' Return {"sets":[{"guided":{"kind":"GUIDED","title","situation","instruction","keywords","form","marks"},' +
-          '"free":{"kind":"FREE","title","situation","instruction","form","marks"}}]} with 3 different sets.',
+          '"free":{"kind":"FREE","title","situation","instruction","form","marks"}}]}' + countNote(n, "different set" + (n === 1 ? "" : "s")) + '.',
       },
       { temperature: TEMPERATURE.structured }
     );
     const sets = candidateList(json, "sets");
-    if (!sets || sets.length < 3) throw new Error("AI output missing writing sets.");
-    return sets.slice(0, 3).map((set: any) => {
+    if (!sets || sets.length < n) throw new Error(shapeError("writing sets", json, n));
+    return sets.slice(0, n).map((set: any) => {
       const g = set?.guided;
       const f = set?.free;
       if (!g || !f) throw new Error("AI output missing guided/free topics.");

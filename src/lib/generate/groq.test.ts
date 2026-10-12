@@ -1,6 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { DEFAULT_CANDIDATES } from "./provider";
 import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, generateRewriteCandidates, validateCandidate } from "./index";
 
 function makePartOneTasks() {
@@ -114,7 +115,8 @@ const input = {
 
 test("groq provider: text candidates flow through the stub and validate", async () => {
   const candidates = await generateTextCandidates(buildContext(input));
-  assert.equal(candidates.length, 3);
+  // One proposal by default (user decision 2026-10-12); alternatives are on demand.
+  assert.equal(candidates.length, DEFAULT_CANDIDATES);
   for (const c of candidates) {
     assert.ok(c.text.length > 50);
     assert.ok(c.title);
@@ -125,7 +127,7 @@ test("groq provider: text candidates flow through the stub and validate", async 
 
 test("groq provider: part one sets validate", async () => {
   const sets = await generatePartOneCandidates(buildContext(input));
-  assert.equal(sets.length, 3);
+  assert.equal(sets.length, DEFAULT_CANDIDATES);
   for (const set of sets) {
     const v = validateCandidate("PART_ONE", set, buildContext(input).guide.marks.partOne);
     assert.ok(v.ok, v.issues.join("; "));
@@ -134,7 +136,7 @@ test("groq provider: part one sets validate", async () => {
 
 test("groq provider: text exploration sets validate", async () => {
   const sets = await generateTextExplorationCandidates(buildContext(input));
-  assert.equal(sets.length, 3);
+  assert.equal(sets.length, DEFAULT_CANDIDATES);
   for (const set of sets) {
     const v = validateCandidate("TEXT_EXPLORATION", set, buildContext(input).guide.marks.textExploration);
     assert.ok(v.ok, v.issues.join("; "));
@@ -143,7 +145,7 @@ test("groq provider: text exploration sets validate", async () => {
 
 test("groq provider: writing sets validate", async () => {
   const sets = await generateWritingCandidates(buildContext(input));
-  assert.equal(sets.length, 3);
+  assert.equal(sets.length, DEFAULT_CANDIDATES);
   for (const pair of sets) {
     const v = validateCandidate("WRITING", pair);
     assert.ok(v.ok, v.issues.join("; "));

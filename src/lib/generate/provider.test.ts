@@ -8,6 +8,7 @@ import {
   parseTaskSets,
   candidateList as listFor,
   TEMPERATURE,
+  DEFAULT_CANDIDATES,
   createCompatibleGenerators,
   type ProviderConfig,
 } from "./provider";
@@ -258,13 +259,16 @@ test("parseSource: fills defaults and flags external citations", () => {
   assert.equal(cited?.adaptationNote, "Adapted for classroom use.");
 });
 
-test("parseTaskSets: enforces three sets, task count and marks total", () => {
+test("parseTaskSets: enforces the requested set count, task count and marks total", () => {
   const set = (marks: number[]) => ({ tasks: marks.map((m) => ({ prompt: "q", marks: m })) });
 
-  assert.throws(() => parseTaskSets({ sets: [set([1]), set([1])] }, 1, 1), /missing task sets/);
-  assert.throws(() => parseTaskSets({ sets: [set([1, 1]), set([1, 1]), set([1])] }, 2, 2), /expected 2/);
-  assert.throws(() => parseTaskSets({ sets: [set([1]), set([1]), set([2])] }, 1, 1), /marks total/);
-  assert.throws(() => parseTaskSets({ sets: "nope" }, 1, 1), /missing task sets/);
+  // `wanted` is passed explicitly so these assertions do not move when the
+  // default proposal count changes.
+  assert.throws(() => parseTaskSets({ sets: [set([1]), set([1])] }, 1, 1, undefined, 3), /missing task sets/);
+  // Asked for 3 sets, so the third (which has 1 task instead of 2) is reached.
+  assert.throws(() => parseTaskSets({ sets: [set([1, 1]), set([1, 1]), set([1])] }, 2, 2, undefined, 3), /expected 2/);
+  assert.throws(() => parseTaskSets({ sets: [set([1]), set([1]), set([2])] }, 1, 1, undefined, 3), /marks total/);
+  assert.throws(() => parseTaskSets({ sets: "nope" }, 1, 1, undefined, 3), /missing task sets/);
 });
 
 test("parseTaskSets: keeps only the first three sets and coerces fields", () => {
@@ -405,7 +409,7 @@ const CAPTURED = {
 
 test("parseTaskSets recovers a family-keyed reply using the guide as authority", () => {
   const sets = parseTaskSets(CAPTURED, 4, 7, FAMILIES);
-  assert.equal(sets.length, 3, "the 3-alternatives contract is preserved");
+  assert.equal(sets.length, DEFAULT_CANDIDATES, "one proposal by default");
   // 14 ITEMS become 4 TASKS: a family is a task, its itemCount is how many
   // items that task prints. That is the whole point of the adapter.
   const tasks = sets[0];
@@ -463,7 +467,7 @@ test("a correctly-shaped reply still takes the normal path", () => {
     })),
   };
   const sets = parseTaskSets(good, 4, 7, FAMILIES);
-  assert.equal(sets.length, 3);
+  assert.equal(sets.length, DEFAULT_CANDIDATES);
   assert.equal(sets[0].length, 4);
 });
 
