@@ -783,31 +783,43 @@ it.
 
 Set by user instruction and by live measurement on 2026-10-11.
 
-### 12.1 One topic across every paragraph
+### 12.1 Passage coherence: prompt-enforced, never mechanically enforced
 
-A generated passage opened on advertising, moved to ancient monuments, then
-traditional music, then archaeologists. Four paragraphs, four subjects: the
-result reads as four unrelated texts stapled together, and the questions have no
-stable referent.
+Two failures shaped this, in sequence.
 
-Enforced in two places, because one alone is not enough:
+**Drift** (2026-10-11): a passage ran advertising -> ancient monuments -> music
+-> archaeologists. Four paragraphs, four subjects.
 
-| Half | Where | What it does |
-|---|---|---|
-| Instruction | `coherenceNote()` in `provider.ts` | States the paragraph count, names the topic, and requires the arc lead → aspects → close |
-| Mechanical | `checkTopicAnchoring()` in `grounding.ts` | Rejects any paragraph that mentions neither the topic nor a teacher keyword |
+**The chant** (2026-10-12): after the first fix demanded the topic "in every
+paragraph", passages opened every paragraph with "Exploring the ancient world..."
+A prompt that demands a literal token and a validator that accepts it teaches
+the model to paste the token.
 
-**What this guarantees: anchoring, not coherence.** Every paragraph names the
-topic somewhere. It does **not** prove a paragraph develops it — one token
-mentioning the topic does not make the rest of the paragraph on-subject. Do not
-describe the passage as fully coherent on this evidence.
+So `coherenceNote` now asks for prose properties, not tokens: a
+claim -> development -> evidence arc; subjects carried across paragraph
+boundaries and referred back to with pronouns, synonyms and related words; the
+topic named ONCE in the opening; an explicit ban on pasting the full phrase into
+every paragraph and on starting consecutive paragraphs the same way; teacher
+keywords woven in naturally rather than repeated.
 
-Two deliberate exemptions, both to avoid false rejections on good passages:
+**The mechanical checks are advisory** (`checkTopicAnchoring` logs, never fails
+the exam). Enforcing them was tried twice and both times rejected good passages:
 
-- **Short paragraphs** (under 12 words) are skipped. A one-sentence closer that
-  merely refers back is normal prose, not drift.
-- **Matching is by whole phrase**, not stem or prefix, so "digital literacy"
-  cannot be anchored by a paragraph that merely contains "digital".
+| Attempt | Result |
+|---|---|
+| Per-paragraph anchoring | Rejected 4/4 live passages. The topic is the curriculum LABEL; a passage about Neolithic settlements says "prehistoric", not "ancient". Also CAUSED the chant. |
+| Adjacent-paragraph lexical overlap | Teacher's reference article scored 5 and 7 shared content words — but real good passages scored 3/1 and 0/2. The 0 was held together by pronoun chains ("These burial chambers...", "Such findings..."), which are excluded because "they"/"these" are too common to be evidence. |
+
+Both measurements are recorded in `grounding.ts` so neither is retried blind.
+
+Verified live after the fix: the topic appears in 1 of 3 paragraphs instead of
+3 of 3, with the passage shaped as Babylon (claim) -> clay tablets and the
+excavation (evidence) -> consequence for modern legal systems (conclusion).
+
+**What is still hard-enforced** is only what is exactly computable: the word band,
+the paragraph count, and the schema. Topicality, cohesion and semantic
+answerability are prompt-enforced, in the same category, because a mechanical
+proxy for any of them rejects good writing.
 
 ### 12.2 Paragraph count is a teacher choice: 3 or 4, default 3
 
