@@ -385,11 +385,16 @@ function taskSetSchemaNote(n: number): string {
   );
 }
 
+// Kept only for the rewrite path, which re-writes an EXISTING passage and must
+// not impose the teacher's paragraph count; the TEXT path gets the exact count
+// from coherenceNote, where it used to contradict PARAGRAPH_NOTE's "3-5".
 const PARAGRAPH_NOTE =
-  " Write the passage as 3-5 coherent paragraphs separated by blank lines (\\n\\n).";
+  " Write the passage as coherent paragraphs separated by blank lines (\\n\\n).";
 
 export const SOURCE_NOTE =
-  ' A source citation is obligatory: include a "source" object with title, author, publication, url and adaptationNote for every candidate. If the passage is fully original, say so in adaptationNote and leave url null.';
+  ' Include a "source" object for every candidate. This passage is written for the exam, so it is ORIGINAL: ' +
+  "set adaptationNote to \"Original passage written for this exam.\" and leave author, publication and url null. " +
+  "Never invent an author, publication or URL -- a fabricated citation would be printed on the paper.";
 
 export function difficultyNote(ctx: GenContext): string {
   if (!ctx.difficulty) return "";
@@ -651,7 +656,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         request:
           'Write an original, level-appropriate reading passage of about ' + ctx.length +
           ' words on the topic "' + ctx.topic + '".' +
-          keywordNote(ctx) + difficultyNote(ctx) + PARAGRAPH_NOTE + coherenceNote(ctx) + SOURCE_NOTE +
+          keywordNote(ctx) + difficultyNote(ctx) + coherenceNote(ctx) + SOURCE_NOTE +
           ' Return exactly {"candidates":[{"title":"...","text":"...","source":{"title":"...","author":"...","publication":"...","url":"...","adaptationNote":"..."}}]}' +
           countNote(n, "different candidate" + (n === 1 ? "" : "s")) + '.',
       },
@@ -666,12 +671,16 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
 
   async function generatePartOneCandidates(ctx: GenContext) {
     const n = candidateCount();
-    const families = ctx.guide.partOne.map((f) => ({
+    const guideFamilies = ctx.guide.partOne;
+    // Send the ALLOWLIST's answer, not the raw guide flag, for the same reason
+    // Text Exploration does: Part One is NEVER tabular, so any `true` here is a
+    // contradiction the model cannot resolve against PART_ONE_TABLE_RULE.
+    const families = guideFamilies.map((f) => ({
       family: f.family,
       marks: f.marks,
       instruction: f.exactWording ?? f.instruction,
       exactWording: f.exactWording,
-      tableRequired: f.tableRequired,
+      tableRequired: rulePrescribesTable({ skill: f.family }),
       itemCount: f.itemCount,
       constraints: f.constraints,
     }));
@@ -683,9 +692,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
       request:
         'Generate reading-comprehension tasks on the passage topic with EXACTLY the families, marks, instructions, item counts, and table requirements below. ' +
         groundingRule(ctx) +
-        'Set 0 must use exactly these families. Sets 1 and 2 must use DIFFERENT task types for the same skills/marks ' +
-        '(e.g. MCQ instead of open questions, YES/NO/Not-Given instead of True/False, matching instead of paragraph ID, ordering instead of title choice). ' +
-        'For tasks with tableRequired=true, include a "table" field with headers and rows. ' +
+        'Use exactly these families, in this order. ' +
         PART_ONE_TABLE_RULE +
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
@@ -695,7 +702,23 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
       },
       { temperature: TEMPERATURE.structured }
     );
-    return parseTaskSets(json, ctx.guide.partOne.length, ctx.guide.marks.partOne, families);
+    const sets = parseTaskSets(json, guideFamilies.length, ctx.guide.marks.partOne, families);
+    // STAMP, don't validate: marks/skill/family come from the guide by position.
+    // The model still supplies wording and answers, which is all we want from it.
+    return sets.map((set) =>
+      set.map((task, i) => {
+        const spec = guideFamilies[i];
+        return spec
+          ? {
+              ...task,
+              skill: "READING",
+              marks: spec.marks,
+              family: spec.family,
+              instruction: task.instruction || (spec.exactWording ?? spec.instruction),
+            }
+          : task;
+      })
+    );
   }
 
   async function generateTextExplorationCandidates(ctx: GenContext) {
@@ -722,9 +745,8 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'Generate the five language tasks (vocabulary, morphology, phonology, grammar, discourse) with EXACTLY the skills, marks, instructions, and table requirements below. ' +
         'Stay appropriate to level, skill and Ministry requirements. ' +
         groundingRule(ctx) +
-        'Set 0 must use the standard families. Sets 1 and 2 must use DIFFERENT task types for the same skills/marks ' +
-        '(e.g. synonym match instead of meaning, prefix/suffix instead of word family, stress pattern instead of sound class, choose correct form instead of rewrite, jumbled sentences instead of gap fill). ' +
-        'For tasks with tableRequired=true, include a "table" field with headers and rows. ' +
+        'Use exactly these skills, in this order. ' +
+        'For a skill whose tableRequired is true, include a "table" field with headers and rows; for every other skill omit the "table" field entirely, not an empty one. ' +
         PART_TWO_TABLE_RULE +
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
@@ -798,9 +820,11 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         config(),
         {
           ...basePrompt(ctx),
+          ...passageField(ctx),
           kind: "WRITING",
           marksTotal: w.marks,
           request:
+            'The "passage" field is the reading the teacher will print; the situation must be recognisably about the same theme as that passage. ' +
             'Write ONE integrated-situation writing topic for the BEM middle-school exam: Topic 1 GUIDED (same broad theme as the text, a situation, instructions and slash-separated key words). This is the ONLY topic; there is no free topic.' + keywordNote(ctx) +
             ' Return {"sets":[{"guided":{"kind":"GUIDED","title","situation","instruction","keywords","form","marks"}}]}' + countNote(n, "different set" + (n === 1 ? "" : "s")) + '.',
         },
@@ -819,7 +843,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
             instruction: String(g.instruction ?? w.instruction ?? w.guidedInstruction),
             keywords: g.keywords ? String(g.keywords) : undefined,
             form: String(g.form ?? w.forms[0]),
-            marks: Number(g.marks ?? w.marks),
+            marks: w.marks,
           },
           free: null,
         };
@@ -830,9 +854,11 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
       config(),
       {
         ...basePrompt(ctx),
+        ...passageField(ctx),
         kind: "WRITING",
         marksTotal: w.marks,
         request:
+          'The "passage" field is the reading the teacher will print; the guided topic must be recognisably about the same theme as that passage. ' +
           'Write two writing topics: Topic 1 GUIDED (same broad theme as the text, a situation, instructions and slash-separated key words) and Topic 2 FREE (different situation, no key words).' + keywordNote(ctx) +
           ' Return {"sets":[{"guided":{"kind":"GUIDED","title","situation","instruction","keywords","form","marks"},' +
           '"free":{"kind":"FREE","title","situation","instruction","form","marks"}}]}' + countNote(n, "different set" + (n === 1 ? "" : "s")) + '.',
@@ -853,7 +879,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
           instruction: String(g.instruction ?? w.guidedInstruction),
           keywords: g.keywords ? String(g.keywords) : undefined,
           form: String(g.form ?? w.forms[0]),
-          marks: Number(g.marks ?? w.marks),
+          marks: w.marks,
         },
         free: {
           kind: "FREE",
@@ -861,7 +887,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
           situation: String(f.situation ?? ""),
           instruction: String(f.instruction ?? w.freeInstruction),
           form: String(f.form ?? "a paragraph"),
-          marks: Number(f.marks ?? w.marks),
+          marks: w.marks,
         },
       };
     });

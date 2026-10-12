@@ -426,13 +426,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
     } else if (type === "TASK_ALT" && body.taskId && lookup?.task) {
       const task = lookup.task;
+      // Ground the replacement in the passage the teacher will actually print.
+      // Without this, ctx has no groundingText: the model is told nothing about
+      // the passage, checkTaskLinkage no-ops, and a replacement task can be
+      // unanswerable from the text it claims to test. The passage is already
+      // stored on the TEXT section; reuse it rather than regenerating.
+      const textSection = sectionOf(exam.sections, "TEXT");
+      let storedText = "";
+      try {
+        storedText = JSON.parse(textSection?.content ?? "{}").text ?? "";
+      } catch {
+        storedText = "";
+      }
+      const altCtx = storedText ? { ...ctx, groundingText: storedText } : ctx;
       const guideMarks = task.section.type === "PART_ONE" ? ctx.guide.marks.partOne : ctx.guide.marks.textExploration;
       const sets = task.section.type === "PART_ONE"
-        ? await generatePartOneCandidates(ctx)
-        : await generateTextExplorationCandidates(ctx);
+        ? await generatePartOneCandidates(altCtx)
+        : await generateTextExplorationCandidates(altCtx);
       const issues: string[] = [];
-      for (const set of sets.slice(1)) {
-        const v = validateCandidate(task.section.type as "PART_ONE" | "TEXT_EXPLORATION", set, guideMarks, { guide: ctx.guide });
+      // Validate every set, not just the alternatives: the primary is what gets
+      // persisted, and it was previously trusted without a check.
+      for (const set of sets) {
+        const v = validateCandidate(task.section.type as "PART_ONE" | "TEXT_EXPLORATION", set, guideMarks, {
+          guide: ctx.guide,
+          groundingText: storedText || undefined,
+        });
         if (!v.ok) issues.push(...v.issues);
       }
       if (issues.length > 0) {
