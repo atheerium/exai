@@ -530,6 +530,13 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
             collapsed={paramsCollapsed && hasConfig}
             onToggleCollapse={() => setParamsCollapsed((c) => !c)}
             onSubmit={submitParameters}
+            // Only after a config is persisted: the full-exam call reads grade,
+            // unit and per-section marks from it, so it cannot run on an unsaved
+            // form. The confirmation dialog is the SAME one the top-bar button
+            // uses, so overwriting an existing exam is never a surprise.
+            onGenerateFullExam={hasConfig ? () => generateFullExam(false) : undefined}
+            fullExamBusy={generating === "FULL_EXAM"}
+            anyGenerationBusy={!!generating}
           />
         </section>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Sparkles, Info, ChevronDown, ChevronUp, Pencil } from "lucide-react";
+import { Sparkles, Info, ChevronDown, ChevronUp, Pencil, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +24,37 @@ interface Catalog {
   >;
 }
 
+/**
+ * The one-click full-generation control.
+ *
+ * Rendered in BOTH the expanded form and the collapsed summary bar, because the
+ * stage collapses automatically as soon as a config exists
+ * (`useState(!!exam.config)`) — the collapsed bar is what the teacher actually
+ * sees after setting parameters, so putting the button only in the form would
+ * hide it exactly when it is most wanted.
+ */
+function FullExamAction({
+  onRun,
+  busy,
+  disabled,
+  size,
+  className,
+}: {
+  onRun: () => void;
+  busy: boolean;
+  disabled: boolean;
+  size?: "sm" | "lg";
+  className?: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <Button type="button" size={size} className={className} onClick={onRun} disabled={disabled || busy}>
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+      {busy ? t("builder.fullExamRunning") : t("builder.fullExam")}
+    </Button>
+  );
+}
+
 const LEVEL_LABELS: Record<string, string> = {
   middle: "Middle school",
   secondary: "Secondary school",
@@ -34,10 +65,22 @@ export function ParametersStage({
   collapsed,
   onToggleCollapse,
   onSubmit,
+  onGenerateFullExam,
+  fullExamBusy,
+  anyGenerationBusy,
 }: {
   exam: ExamDto;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  /**
+   * One-click full generation. Rendered only once parameters are SAVED, because
+   * the full-exam call needs a persisted config to read grade, unit and marks
+   * from. The form's own submit button saves and then generates the passage
+   * alone, which is the cheaper first step and stays that way.
+   */
+  onGenerateFullExam?: () => void;
+  fullExamBusy?: boolean;
+  anyGenerationBusy?: boolean;
   onSubmit: (config: {
     level: string;
     grade: string;
@@ -142,10 +185,20 @@ export function ParametersStage({
             {config.teacherKeywords ? ` · "${config.teacherKeywords}"` : ""}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={onToggleCollapse}>
-          <Pencil className="h-3.5 w-3.5" />
-          {t("builder.editParameters")}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {onGenerateFullExam && (
+            <FullExamAction
+              onRun={onGenerateFullExam}
+              busy={!!fullExamBusy}
+              disabled={!!anyGenerationBusy}
+              size="sm"
+            />
+          )}
+          <Button variant="outline" size="sm" onClick={onToggleCollapse}>
+            <Pencil className="h-3.5 w-3.5" />
+            {t("builder.editParameters")}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -328,6 +381,21 @@ export function ParametersStage({
           </Button>
         </div>
       </form>
+
+      {onGenerateFullExam && (
+        // Not a form submit: it must not re-save parameters or re-run the
+        // passage call, only build every section.
+        <div className="border-t-2 border-foreground/10 pt-4">
+          <FullExamAction
+            onRun={onGenerateFullExam}
+            busy={!!fullExamBusy}
+            disabled={!!anyGenerationBusy}
+            size="lg"
+            className="w-full"
+          />
+          <p className="mt-2 text-xs text-muted-foreground">{t("builder.fullExamHelp")}</p>
+        </div>
+      )}
     </div>
   );
 }

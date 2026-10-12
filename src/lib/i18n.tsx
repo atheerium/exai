@@ -62,6 +62,7 @@ export const DICT = {
     "builder.paragraphsHelp": "The passage keeps one topic across every paragraph.",
     "builder.fullExam": "Generate full exam",
     "builder.fullExamRunning": "Generating...",
+    "builder.fullExamHelp": "Builds the passage, Part One, Text Exploration and Writing in one go. Costs 4 generations and can replace everything already in this exam.",
     "builder.fullExamConfirmTitle": "Replace this exam?",
     "builder.fullExamConfirmBody":
       "This exam already has content. Generating a full exam replaces the passage, all tasks and the writing topics with a new draft. Your current version is saved in the version history, so you can go back if you prefer.",
@@ -214,6 +215,7 @@ export const DICT = {
     "builder.paragraphsHelp": "Le texte garde un seul thème dans tous ses paragraphes.",
     "builder.fullExam": "Générer l'examen complet",
     "builder.fullExamRunning": "Génération...",
+    "builder.fullExamHelp": "Produit le texte, la compréhension, l'exploration et l'expression en une seule fois. Coûte 4 générations et peut remplacer tout ce qui existe déjà dans cet examen.",
     "builder.fullExamConfirmTitle": "Remplacer cet examen ?",
     "builder.fullExamConfirmBody":
       "Cet examen contient déjà du contenu. Générer un examen complet remplace le texte, toutes les tâches et les sujets de production par un nouveau brouillon. Votre version actuelle est conservée dans l'historique des versions, vous pourrez y revenir si vous préférez.",
