@@ -25,7 +25,7 @@ export type SectionId = "params" | "text" | "partOne" | "partTwo" | "writing" | 
 /** Destructive actions that need an explicit, translated confirmation. */
 export type PendingConfirmKind = "overwrite" | "regenText" | "rewrite";
 
-type PendingConfirm = {
+export type PendingConfirm = {
   kind: PendingConfirmKind;
   confirm: () => void;
   /** A second real choice, when one exists. */
@@ -537,6 +537,13 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
             onGenerateFullExam={hasConfig ? () => generateFullExam(false) : undefined}
             fullExamBusy={generating === "FULL_EXAM"}
             anyGenerationBusy={!!generating}
+            hasContent={hasText || hasPartOne || hasPartTwo || hasWriting}
+            confirm={
+              pendingConfirm
+                ? { kind: pendingConfirm.kind, hasAlternative: !!pendingConfirm.alternative }
+                : null
+            }
+            onResolveConfirm={resolveConfirm}
           />
         </section>
 

@@ -44,7 +44,11 @@ export function FullExamButton({
         {busy ? t("builder.fullExamRunning") : t("builder.fullExam")}
       </Button>
 
-      {confirm && <ConfirmDialog kind={confirm.kind} hasAlternative={confirm.hasAlternative} onResolve={onResolve} />}
+      {/* No dialog here. `Modal` is a fixed inset-0 overlay, so a second
+          instance would stack a second dimmer and a second focus trap on top of
+          the one the Parameters stage already renders. The dialog lives there
+          only; it appears wherever the teacher pressed the button because it is
+          an overlay, not because of where it sits in the DOM. */}
     </>
   );
 }
@@ -54,7 +58,12 @@ export function FullExamButton({
  * falls back to an untranslated native dialog. `regenText` is the case with two
  * genuinely different outcomes, so it gets two buttons; the rest are yes/no.
  */
-function ConfirmDialog({
+/**
+ * Exported because the Parameters stage renders the SAME dialog for its own
+ * full-exam button. Duplicating it would mean two copies of the wording and the
+ * alternative/confirm/cancel logic to keep in step.
+ */
+export function ConfirmDialog({
   kind,
   hasAlternative,
   onResolve,

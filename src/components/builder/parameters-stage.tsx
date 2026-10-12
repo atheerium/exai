@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
+import { ConfirmDialog } from "./full-exam-button";
+import type { PendingConfirmKind } from "./builder";
 import type { ExamDto } from "@/types";
 import { getGuide } from "@/data/guides";
 import { ALLOWED_PARAGRAPH_COUNTS, DEFAULT_PARAGRAPH_COUNT } from "@/lib/guide";
@@ -39,18 +41,20 @@ function FullExamAction({
   disabled,
   size,
   className,
+  replacing,
 }: {
   onRun: () => void;
   busy: boolean;
   disabled: boolean;
   size?: "sm" | "lg";
   className?: string;
+  replacing?: boolean;
 }) {
   const { t } = useI18n();
   return (
     <Button type="button" size={size} className={className} onClick={onRun} disabled={disabled || busy}>
       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-      {busy ? t("builder.fullExamRunning") : t("builder.fullExam")}
+      {busy ? t("builder.fullExamRunning") : replacing ? t("builder.fullExamReplace") : t("builder.fullExam")}
     </Button>
   );
 }
@@ -68,6 +72,9 @@ export function ParametersStage({
   onGenerateFullExam,
   fullExamBusy,
   anyGenerationBusy,
+  hasContent,
+  confirm: confirmPrompt,
+  onResolveConfirm,
 }: {
   exam: ExamDto;
   collapsed?: boolean;
@@ -81,6 +88,22 @@ export function ParametersStage({
   onGenerateFullExam?: () => void;
   fullExamBusy?: boolean;
   anyGenerationBusy?: boolean;
+  /**
+   * True once the exam holds anything, which makes the button a REPLACE rather
+   * than a create. The API still refuses without an explicit confirm; this only
+   * tells the teacher that before they click, instead of surprising them with a
+   * dialog afterwards.
+   */
+  hasContent?: boolean;
+  /**
+   * The overwrite confirmation. The Parameters stage renders the SAME dialog the
+   * top-bar button uses, because the 409 it answers is raised by the button the
+   * teacher just pressed -- a dialog that appears in a different corner of the
+   * page is easy to miss, and a missed dialog looks exactly like "the button
+   * only generated the text".
+   */
+  confirm?: { kind: PendingConfirmKind; hasAlternative: boolean } | null;
+  onResolveConfirm?: (which: "confirm" | "alternative" | "cancel") => void;
   onSubmit: (config: {
     level: string;
     grade: string;
@@ -177,6 +200,7 @@ export function ParametersStage({
     const config = exam.config;
     const streamLabel = config.stream ? ` · ${config.stream}` : "";
     return (
+      <>
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0 space-y-0.5">
           <h2 className="text-lg font-extrabold tracking-tight">{t("builder.parameters")}</h2>
@@ -186,11 +210,13 @@ export function ParametersStage({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {/* Rendered here, not only in the top bar: see onResolveConfirm. */}
           {onGenerateFullExam && (
             <FullExamAction
               onRun={onGenerateFullExam}
               busy={!!fullExamBusy}
               disabled={!!anyGenerationBusy}
+              replacing={hasContent}
               size="sm"
             />
           )}
@@ -200,6 +226,10 @@ export function ParametersStage({
           </Button>
         </div>
       </div>
+      {confirmPrompt && onResolveConfirm ? (
+        <ConfirmDialog kind={confirmPrompt.kind} hasAlternative={confirmPrompt.hasAlternative} onResolve={onResolveConfirm} />
+      ) : null}
+      </>
     );
   }
 
@@ -390,12 +420,16 @@ export function ParametersStage({
             onRun={onGenerateFullExam}
             busy={!!fullExamBusy}
             disabled={!!anyGenerationBusy}
+            replacing={hasContent}
             size="lg"
             className="w-full"
           />
           <p className="mt-2 text-xs text-muted-foreground">{t("builder.fullExamHelp")}</p>
         </div>
       )}
+      {confirmPrompt && onResolveConfirm ? (
+        <ConfirmDialog kind={confirmPrompt.kind} hasAlternative={confirmPrompt.hasAlternative} onResolve={onResolveConfirm} />
+      ) : null}
     </div>
   );
 }
