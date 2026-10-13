@@ -47,6 +47,12 @@ const TABLE_MAX_WIDTH = 400;
  */
 const LINE_HEIGHT = BODY * 1.14;
 const ITEM_ADVANCE = BODY * 1.22;
+/**
+ * Whitespace between two stacked items, added ON TOP of the height each one
+ * actually occupied. The rhythm of the official paper lives here, which is why
+ * line spacing is a constant and not an emergent property of the font metrics.
+ */
+const ITEM_GAP = BODY * 0.36;
 
 /**
  * Phonetic / IPA characters.
@@ -395,14 +401,25 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     return cursor - x;
   };
 
-  const drawItem = (item: PaperItem, y: number) => {
+  /**
+   * Draws one lettered item and returns the height it actually occupied.
+   *
+   * The return value exists because an item WRAPS: GAP_FILL and long
+   * comprehension questions are frequently two or three lines, and the caller
+   * used to advance a fixed one-line height regardless, so the overflow was
+   * drawn straight over whatever came next. That stayed invisible until a word
+   * bank appeared below the items — the centred bank landed on top of the last
+   * item's second line.
+   */
+  const drawItem = (item: PaperItem, y: number): number => {
     font(BODY, true).fillColor("#000000").text(`${item.label}`, left + ITEM_INDENT, y, { lineBreak: false });
 
     const labelWidth = doc.widthOfString(`${item.label} `);
     const body = item.ref ? `${item.text} ${item.ref}` : item.text;
-    doc.font(faceFor(item.text, false, false)).fontSize(BODY).fillColor("#000000").text(item.text, left + ITEM_INDENT + labelWidth, y, {
-      width: contentWidth - ITEM_INDENT - labelWidth,
-    });
+    const width = contentWidth - ITEM_INDENT - labelWidth;
+    doc.font(faceFor(item.text, false, false)).fontSize(BODY);
+    const height = doc.heightOfString(item.text, { width });
+    doc.fillColor("#000000").text(item.text, left + ITEM_INDENT + labelWidth, y, { width });
 
     if (item.ref) {
       const refX = left + ITEM_INDENT + labelWidth + doc.widthOfString(item.text) + 3;
@@ -415,6 +432,7 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
         .text(GAP_LEADER, leaderX, y, { width: left + contentWidth - leaderX, lineBreak: false });
     }
     doc.x = left;
+    return height;
   };
 
   const drawTable = (table: PaperTable) => {
@@ -499,14 +517,34 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     doc.y = stemY + stemH + 2;
 
     for (const line of task.lead) {
-      font(BODY).fillColor("#000000").text(line, left + ITEM_INDENT, doc.y, {
-        width: contentWidth - ITEM_INDENT,
-      });
+      // Measured for the same reason as items: a lead line that wraps must not
+      // run into the items below it.
+      const width = contentWidth - ITEM_INDENT;
+      font(BODY);
+      const height = doc.heightOfString(line, { width });
+      doc.fillColor("#000000").text(line, left + ITEM_INDENT, doc.y, { width });
       doc.x = left;
-      doc.moveDown(0.06);
+      doc.y += height + ITEM_GAP * 0.5;
     }
 
     let y = doc.y;
+    // The word bank belongs between the instruction and the first item, so the
+    // student can read the candidate words before meeting the sentences. Centred
+    // and hyphen-separated, like the official paper.
+    if (task.wordList) {
+      const bank = task.wordList.join(" - ");
+      font(BODY);
+      const height = doc.heightOfString(bank, { width: contentWidth });
+      if (y + height > doc.page.height - doc.page.margins.bottom) {
+        doc.addPage();
+        if (header) drawRunningHeader(header);
+        y = doc.y;
+      }
+      font(BODY).fillColor("#000000").text(bank, left, y, { width: contentWidth, align: "center" });
+      doc.x = left;
+      y += height + ITEM_GAP;
+    }
+
     if (task.items.some((i) => i.referent)) {
       // Referent items share lines two-up, exactly as the official papers print them.
       let x = left + ITEM_INDENT;
@@ -531,13 +569,17 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     }
 
     for (const item of task.items) {
-      if (y + BODY * 1.5 > doc.page.height - doc.page.margins.bottom) {
+      // Measure first, then break: a two-line item needs a different decision
+      // from a one-line one, and the old fixed `BODY * 1.5` guess was wrong for
+      // both when the item wrapped.
+      const width = contentWidth - ITEM_INDENT - doc.widthOfString(`${item.label} `);
+      const height = doc.font(faceFor(item.text, false, false)).fontSize(BODY).heightOfString(item.text, { width });
+      if (y + height > doc.page.height - doc.page.margins.bottom) {
         doc.addPage();
         if (header) drawRunningHeader(header);
         y = doc.y;
       }
-      drawItem(item, y);
-      y += BODY * 1.5;
+      y += drawItem(item, y) + ITEM_GAP;
     }
     doc.y = y;
     doc.x = left;
@@ -621,17 +663,6 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
       case "task":
         drawTask(block.task);
         break;
-
-      case "wordList": {
-        doc.moveDown(0.1);
-        font(BODY).fillColor("#000000").text(block.words.join(" - "), left, doc.y, {
-          width: contentWidth,
-          align: "center",
-        });
-        doc.x = left;
-        doc.y += BODY * 1.4;
-        break;
-      }
 
       case "table":
         doc.moveDown(0.2);

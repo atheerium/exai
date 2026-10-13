@@ -108,6 +108,15 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                     {line}
                   </p>
                 ))}
+                {block.task.wordList && (
+                  // Centred, between the instruction and the first item, like
+                  // the PDF and DOCX. The preview showed no bank while the
+                  // downloads printed one, so the teacher reviewed a different
+                  // task from the one the students would get.
+                  <p className="mt-1 text-center text-[15px] italic leading-snug">
+                    {block.task.wordList.join(" - ")}
+                  </p>
+                )}
                 {block.task.items.map((item) => (
                   <p key={item.label} className="pl-8 text-[15px] leading-snug">
                     {/* Label and text are separated by exactly one space; a fixed

@@ -18,6 +18,11 @@ import {
 import { countWords } from "./rng";
 import { checkTaskLinkage, checkTopicAnchoring, type LinkableTask } from "./grounding";
 import { taskHasTable } from "@/lib/export/tables";
+// The word-bank reader lives with the layout that prints it, so the shape the
+// parser accepts and the shape the paper renders cannot drift. `export/paper.ts`
+// imports only `assemble`, `referents` and `tables`, none of which import back
+// into `generate/`, so this is not a cycle.
+import { extractWordBank } from "@/lib/export/paper";
 import type { GenerationRequest } from "@/types";
 import * as mock from "./mock";
 import { createCompatibleGenerators } from "./provider";
@@ -446,6 +451,19 @@ export function validateCandidate(
             }
           } else if (task.table) {
             issues.push(`Task ${i + 1} must not carry a table; only tabular Part Two tasks may.`);
+          }
+          // A word-bank task whose bank never arrived. Checked here rather than
+          // at render time because a task can only be repaired from an issue
+          // string: by the time the paper is built the run is already committed
+          // and the teacher is looking at `List: ["brain's", ...]` printed as
+          // question a). `extractWordBank` accepts every bank shape the model has
+          // been seen to produce, so this is not a demand for one shape.
+          if (rule.family === "GAP_FILL" && task.prompt) {
+            if (extractWordBank(task.prompt).words.length === 0) {
+              issues.push(
+                `Task ${i + 1} refers to a list of words but no word list was provided; it must begin with one line like "List: [word1, word2, word3]".`
+              );
+            }
           }
           // itemCount where prescribed (Part One)
           if (rule.itemCount != null) {

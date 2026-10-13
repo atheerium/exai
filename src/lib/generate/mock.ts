@@ -805,9 +805,22 @@ function generateTextExplorationPrimary(
     };
   } else {
     const d = theme.discourse;
+    // The word bank is part of the CONTRACT, not decoration: GAP_FILL's
+    // instruction refers to "the list given", so a prompt without one produces an
+    // unanswerable question. The validator rejects it (and the mock must honour
+    // the same rules as the real providers, or every test that exercises a
+    // validator rule through the mock silently stops covering that rule).
+    //
+    // Shape matches `WORD_BANK_RULE`: `List: [a, b, c]`, one line, first.
+    const bank = d.options.join(", ");
+    // One SENTENCE per line for a word-bank task, because that is what the paper
+    // prints: the parser treats bare lines as items, so a single line holding
+    // three sentences became one giant question a) rather than a), b), c).
+    const sentences = d.text.split(/(?<=[.!?])\s+/).filter(Boolean);
+    const isWordBank = skillRule.instruction.toLowerCase().includes("list");
     const task: GeneratedTask = {
       skill: "DISCOURSE",
-      prompt: d.text,
+      prompt: isWordBank ? `List: [${bank}]\n${sentences.join("\n")}` : d.text,
       instruction: skillRule.instruction,
       answer: d.options.filter((o) => d.answers.includes(o)).join(", "),
       marks: skillRule.marks,

@@ -34,7 +34,20 @@ export interface PaperTask {
   instruction: string;
   lead: string[];
   items: PaperItem[];
-  wordList: string | null;
+  /**
+   * The candidate words a GAP_FILL (or word-bank) task draws from, or null.
+   *
+   * A list, not a string: it is printed as a centred `a - b - c` line, so it must
+   * never carry its own separator. Extracted from the prompt by
+   * `extractWordBank`.
+   *
+   * Renderers draw it INSIDE the task block — after the instruction, before the
+   * first item — because that is where the official paper puts it and where a
+   * student needs it: the words must be readable before the sentences that use
+   * them. It was previously a separate top-level block, which could only ever
+   * print after every item (useless) or require the task block to be split.
+   */
+  wordList: string[] | null;
   table: PaperTable | null;
   /** Carried for the table allowlist; not rendered. */
   skill?: string | null;
@@ -53,7 +66,6 @@ export type PaperBlock =
   | { kind: "instruction"; text: string }
   | { kind: "passage"; title: string | null; paragraphs: string[]; emphasis: string[] }  | { kind: "sourceNote"; text: string }
   | { kind: "task"; task: PaperTask }
-  | { kind: "wordList"; words: string[] }
   | { kind: "table"; table: PaperTable }
   | { kind: "topic"; topic: PaperTopic }
   | { kind: "colophon"; text: string };
@@ -110,6 +122,108 @@ const FIELD_LABEL = /^[A-Z][A-Za-z ]{0,24}:(?:\s|$)/;
 /** A markdown table separator row ("--- | ---"), which is scaffolding, not content. */
 const TABLE_SEPARATOR = /^[\s|:-]+$/;
 const GAP = /(?:→|:)?\s*\.{3,}\s*$/;
+
+// ---- Word banks ------------------------------------------------------------
+//
+// GAP_FILL ("Fill in the gaps with words from the list given") needs a bank of
+// candidate words printed above the sentences, centred and hyphen-separated.
+//
+// Teacher report 2026-10-13: the bank arrived as
+//
+//   List: ["brain's", "scarcity", "ethical", "researchers", "manipulation"]
+//
+// and every shape in `parseTaskBody` read that line as an ordinary item, so it
+// printed as `a) List: ["brain's", ...]` in raw JSON and pushed the real
+// sentences to b) c) d).
+//
+// The prompt cannot be the guarantee: nothing in `provider.ts` ever specifies a
+// bank shape, so the model improvises one per run -- hyphen-separated yesterday,
+// JSON today, a bulleted list tomorrow. So the PARSER accepts all of them and
+// strips the line before any shape logic runs. The prompt may still *request*
+// one shape; it just no longer decides.
+const BANK_PREFIX = /^(?:list|words?|word bank|lexis)\s*:\s*(.+)$/i;
+/**
+ * "researcher - eating - intake", apostrophes allowed so "brain's" matches.
+ *
+ * Whitespace AROUND each hyphen is mandatory, which is what makes the shape
+ * unambiguous. Without it `well-being - open-minded - far-reaching` also matches
+ * — the separator and the intra-word hyphen are indistinguishable — and the
+ * bank then comes out as `well - being - open - minded - far - reaching`. A
+ * bank containing an intra-word hyphen is therefore left alone rather than
+ * guessed at; the `List:` prefix remains available for it.
+ */
+const HYPHEN_LIST = /^[A-Za-z']+(?:\s+-\s+[A-Za-z']+){2,}$/;
+/**
+ * How many leading non-empty lines may be scanned for a bank.
+ *
+ * A bank belongs directly under the instruction, but the window is three lines
+ * rather than one: the model also puts the bank after the sentences sometimes,
+ * and extracting it there still beats printing `a) List: ["brain's", ...]`. Past
+ * the window the line belongs to whatever item it sits in and is left alone.
+ */
+const MAX_BANK_SCAN_LINES = 3;
+
+function cleanBankWord(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^[-–•*\s]+/, "")
+    .replace(/^["'“‘]+|["'”’]+$/g, "")
+    .trim();
+}
+
+/**
+ * The words in one candidate line, or null when the line is not a bank.
+ *
+ * Three accepted shapes, all requiring a separator so a normal sentence is never
+ * swallowed: a bare hyphen list, a prefixed bracketed array, or a prefixed
+ * comma/semicolon list. Fewer than two words is rejected -- a one-word "bank"
+ * is a sentence fragment ("Word: excavation" in a morphology task), and
+ * misreading it would delete a real line from the paper.
+ */
+function wordBankFromLine(line: string): string[] | null {
+  if (HYPHEN_LIST.test(line)) return splitBankWords(line.split(/\s+-\s+/));
+
+  const prefixed = BANK_PREFIX.exec(line);
+  if (!prefixed) return null;
+  let body = prefixed[1].trim();
+  const bracketed = /^\[([\s\S]*)\]$/.exec(body);
+  if (bracketed) body = bracketed[1];
+  return splitBankWords(body.split(/[,;]/));
+}
+
+function splitBankWords(parts: string[]): string[] | null {
+  const words = parts.map(cleanBankWord).filter(Boolean);
+  if (words.length < 2) return null;
+  // Each entry must be a word or a short phrase, never a clause. Without this a
+  // prefixed line carrying a full sentence would be deleted from the paper.
+  if (words.some((w) => w.length > 40 || w.trim().split(/\s+/).length > 3)) return null;
+  return words;
+}
+
+/**
+ * Pull the word bank out of a task prompt and hand back the rest.
+ *
+ * Runs BEFORE `parseTaskBody` rather than after, because once the line is an
+ * item its letter is already assigned -- and a bank is not a question, so it
+ * must never be lettered in the first place.
+ *
+ * Only the FIRST bank is taken: one task has one bank, and a later `List:` line
+ * belongs to whatever item it sits in.
+ */
+export function extractWordBank(prompt: string): { words: string[]; rest: string } {
+  const lines = prompt.split("\n");
+  let scanned = 0;
+  for (let i = 0; i < lines.length && scanned < MAX_BANK_SCAN_LINES; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    scanned += 1;
+    const words = wordBankFromLine(line);
+    if (!words) continue;
+    lines.splice(i, 1);
+    return { words, rest: lines.join("\n") };
+  }
+  return { words: [], rest: prompt };
+}
 const UNDERLINED = /^"([^"]+)"\s*\(underlined\)$/;
 // "(§2)" — the paragraph an item refers back to, printed inline on the paper.
 const PARA_REF = /\s*\(§\s*(\d+)\s*\)/;
@@ -329,17 +443,20 @@ export function resolveReferents(tasks: PaperTask[], passage: string): { applied
   return { applied, rejected };
 }
 
-// "researcher - eating - intake" printed centred under the task stem.
-const HYPHEN_LIST = /^[A-Za-z]+(?:\s*-\s*[A-Za-z]+){2,}$/;
-
 function toPaperTask(task: ExportTask, number: number): PaperTask {
-  const { lead, items } = parseTaskBody(task.prompt, task.instruction);
+  // The bank is removed from the prompt before parsing, so it is absent from
+  // BOTH `items` (it is not a question) and `lead` (which `drawTask` prints
+  // line by line). Previously `wordList` was derived with `lead.find(...)` but
+  // the line stayed in `lead`, so the PDF printed a recognised bank twice: once
+  // indented under the stem and once centred.
+  const bank = extractWordBank(task.prompt);
+  const { lead, items } = parseTaskBody(bank.rest, task.instruction);
   return {
     number,
     instruction: task.instruction.trim(),
     lead,
     items,
-    wordList: lead.find((l) => HYPHEN_LIST.test(l.trim())) ?? null,
+    wordList: bank.words.length > 0 ? bank.words : null,
     table: task.table && task.table.headers.length > 0 ? task.table : null,
     skill: task.skill ?? null,
     family: task.family ?? null,
@@ -405,7 +522,6 @@ export function buildPaper(doc: ExportDocument): Paper {
       // extra Word/Refers-to chart would only duplicate them.
       const isReferentTask = task.items.some((i) => i.referent);
       blocks.push({ kind: "task", task });
-      if (task.wordList) blocks.push({ kind: "wordList", words: task.wordList.split(/\s*-\s*/) });
       // Tables are allowlisted by section and skill (user instruction,
       // 2026-10-11): Part A never carries one, and Part B only for the tabular
       // skills. Stripping here rather than migrating means exams saved before

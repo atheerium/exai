@@ -476,7 +476,7 @@ rendered. "Gap" means the item ends in a dotted leader the student writes into.
 | 4A/4B/4C/4D Phonology tables | "Classify the following words according to..." | 3-4 words | classification chart, blank answer cells |
 | 4E Silent letter | "Circle or write the silent letter in each of the following words." | — | lettered words |
 | 4F Rhyming pairs | "Match the pairs that rhyme." | exactly 2 pairs | lettered pairs |
-| 5A Gap fill with list | "Fill in the gaps with words from the list given." | 4 gaps / 4 words, or 4 gaps / 6 words | passage with `___` gaps, then Gap/Word chart |
+| 5A Gap fill with list | "Fill in the gaps with words from the list given." | 4 gaps / 4 words, or 4 gaps / 6 words | **word bank centred `a - b - c` between the instruction and the first item**, then one lettered sentence per gap |
 | 5B Open gap fill | "Fill in the gaps so that the text makes sense." | 4 gaps, no list | passage with `___` gaps |
 | 5C Paragraph reordering | "Reorder the following sentences to get a coherent passage." | 4 statements | lettered sentences |
 | 5D Dialogue completion | "Imagine what A or B says, and complete the following dialogue." | 3 missing utterances | dialogue with gaps |
@@ -1045,3 +1045,45 @@ pass before anything is written. The transport's 30s per-fetch cap says nothing
 about the run. Verified live with `AI_RUN_BUDGET_MS=3000`: stopped at 3.3s with
 *"The time budget for this run is spent: a question section could not be started.
 4 chain entries were left untried."*
+
+### 12.10 Word banks are extracted in code, never left to the model
+
+A task whose instruction says "from the list given" carries a **word bank**,
+printed centred `a - b - c` **between the instruction and the first item** — the
+student must be able to read the words before meeting the sentences.
+
+`extractWordBank()` (`export/paper.ts`) pulls the bank out of `task.prompt`
+**before** `parseTaskBody` runs, so it can never become an item. Placement
+before parsing is the whole point: once the line is an item it already has a
+letter, and a bank is not a question.
+
+Accepted shapes, all requiring a separator so an ordinary sentence is never
+swallowed:
+
+| Shape | Example |
+|---|---|
+| Prefixed bracketed list | `List: ["brain's", "scarcity", "ethical"]` |
+| Prefixed bare list | `List: a, b, c` — prefixes `List:`, `Word:`, `Words:`, `Word bank:`, `Lexis:`, case-insensitive |
+| Hyphen list | `researcher - eating - intake` |
+
+- **Whitespace around each hyphen is mandatory** (`a - b - c`). Without it
+  `well-being - open-minded` also matches, and the bank comes out as
+  `well - being - open - minded`. A bank with an intra-word hyphen is left
+  alone rather than guessed at.
+- Apostrophes are allowed: `brain's` failed the old ASCII-only matcher.
+- Fewer than two words is **never** a bank — `Word: excavation` is a morphology
+  field label, and deleting it would remove a real line from the paper.
+- Only the first three leading non-empty lines are scanned, so a `List:` line
+  deep inside an item is left where it is.
+- `WORD_BANK_RULE` in `provider.ts` *requests* `List: [word1, word2, word3]`
+  literally, because prose does not bind. It is a request, **not** the
+  guarantee: the model has been observed improvising (`List: ["brain's", ...]`,
+  teacher report 2026-10-13) when nothing was specified, and the parser accepts
+  every shape above regardless.
+- `validateCandidate` fails a `GAP_FILL` task with no detectable bank, so the
+  repair path can recover it. The mock honours the same rule.
+
+The bank is a field on `PaperTask`, not a top-level block. As a block it could
+only print after every item, and each renderer had to handle it separately —
+which is how it ended up in the PDF and the preview and **missing entirely from
+the DOCX**. `word-bank.test.ts` asserts the block kind cannot come back.

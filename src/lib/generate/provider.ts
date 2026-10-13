@@ -361,6 +361,20 @@ const PART_TWO_TABLE_RULE =
   "vocabulary matching, discourse gap-fill and grammar tasks must omit the \"table\" field entirely, " +
   "not an empty one. ";
 
+/**
+ * A task whose instruction says "from the list given" needs a bank of candidate
+ * words printed above it. The shape is stated literally because prose does not
+ * bind -- the same lesson as item counts and the word band.
+ *
+ * It is a REQUEST, not a dependency: `extractWordBank` in `export/paper.ts`
+ * accepts hyphen, bracketed-JSON and comma-list banks regardless, because the
+ * model has already been observed improvising (`List: ["brain's", ...]` on
+ * 2026-10-13) when nothing was specified. A bare word list must NOT be quoted
+ * or numbered -- it is printed centred and hyphen-separated by the layout.
+ */
+const WORD_BANK_RULE =
+  ' If the instruction refers to a list, bank or set of words to choose from, the FIRST line of that task\'s "prompt" must be that list in exactly this form: List: [word1, word2, word3] -- plain words inside the brackets, no quotes, no numbering, and no JSON objects. The sentences follow on the next lines. ';
+
 /** Official choice labels are lowercase letters with a closing parenthesis. */
 const CHOICE_LABEL_RULE =
   ' Multiple-choice options are labelled with a lowercase letter and a closing parenthesis -- "a)" "b)" "c)" "d)" -- one per line, never "a." or "A.". ';
@@ -764,6 +778,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         PART_TWO_TABLE_RULE +
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
+        WORD_BANK_RULE +
         `Produce exactly ${ctx.guide.textExploration.skills.length} task objects, one per skill, in the order given. ` +
         repairNote(ctx) +
         taskSetSchemaNote(n),

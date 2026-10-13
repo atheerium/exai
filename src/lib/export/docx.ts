@@ -271,6 +271,10 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
       })
     );
     for (const line of task.lead) children.push(p(line, { indent: INDENT }));
+    // Centred word bank, between the instruction and the first item, matching
+    // the PDF. Absent from the DOCX entirely before this, so a GAP_FILL task was
+    // unanswerable in Word.
+    if (task.wordList) children.push(p(task.wordList.join(" - "), { align: "center" }));
     for (const item of task.items) children.push(itemParagraph(item));
   };
 
