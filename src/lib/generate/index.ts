@@ -60,10 +60,20 @@ export interface GenContext {
    * previous reply, verbatim. Undefined on a first call.
    *
    * Re-rolling the same prompt at the same temperature tends to reproduce the
-   * same mistake, so one corrective call is allowed. See `repairPassage` in
+   * same mistake, so one corrective call is allowed. See `repairGeneration` in
    * full-exam.ts for why it is bounded at one attempt.
    */
   repairOf?: string;
+  /**
+   * Epoch ms after which this run must not start another generation.
+   *
+   * Set ONLY by `generateFullExam`, and named by the stage in the thrown error.
+   * Per-section generation is left unbounded: it is one call, the teacher is
+   * waiting on a single button, and the transport's own 30s cap already applies.
+   * A full exam is four sequential sections with a bounded repair each, so a
+   * chain that keeps advancing on throttles can spend minutes producing nothing.
+   */
+  runDeadlineMs?: number;
 }
 
 export function buildContext(input: {
@@ -79,6 +89,11 @@ export function buildContext(input: {
   difficulty?: string | null;
   groundingText?: string | null;
   paragraphCount?: number | null;
+  /**
+   * Epoch ms after which no further generation may START. Carried straight
+   * through to the returned context; see `GenContext.runDeadlineMs`.
+   */
+  runDeadlineMs?: number;
 }): GenContext {
   const rules = resolveRules({
     level: input.level,
@@ -103,7 +118,26 @@ export function buildContext(input: {
     difficulty: input.difficulty ?? null,
     groundingText: input.groundingText ?? null,
     paragraphCount: normaliseParagraphCount(input.paragraphCount),
+    runDeadlineMs: input.runDeadlineMs,
   };
+}
+
+/**
+ * How long one full-exam run may take, in ms.
+ *
+ * 120s is the point past which a browser fetch is likely to be abandoned or
+ * timed out by an intermediary anyway, so spending longer buys nothing: the exam
+ * is all-or-nothing and would be discarded either way. `AI_RUN_BUDGET_MS`
+ * overrides it for a paid provider or a higher TPM quota; a malformed or
+ * non-positive value falls back to the default rather than disabling the budget,
+ * because an accidental `0` would read as "no limit" and silently restore the
+ * hang.
+ */
+const DEFAULT_RUN_BUDGET_MS = 120_000;
+
+export function runBudgetMs(): number {
+  const raw = Number(process.env.AI_RUN_BUDGET_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_RUN_BUDGET_MS;
 }
 
 /**
@@ -153,6 +187,45 @@ type GeneratorImpl = {
 };
 
 /**
+ * Human-readable names for the stages of a full exam, used in the deadline
+ * error. The teacher needs to know WHICH part gave up, not that "something
+ * timed out" — the whole exam is all-or-nothing, so a bare timeout would read as
+ * a total failure with no cause.
+ */
+function stageName(ctx?: Pick<GenContext, "runDeadlineMs" | "repairOf" | "groundingText">): string {
+  if (ctx?.repairOf) return "a repair attempt";
+  if (ctx?.groundingText) return "a question section";
+  return "the passage";
+}
+
+/** Throws when the budget is gone, naming the stage and what was skipped. */
+function assertDeadline(
+  ctx: Pick<GenContext, "runDeadlineMs" | "repairOf" | "groundingText"> | undefined,
+  entryKey: string,
+  skipped: string[]
+): void {
+  const deadlineMs = ctx?.runDeadlineMs;
+  if (!deadlineMs) return;
+  if (Date.now() < deadlineMs) return;
+  const suffix = skipped.length
+    ? ` ${skipped.length} chain entr${skipped.length === 1 ? "y was" : "ies were"} left untried.`
+    : "";
+  // No duration is printed: `runDeadlineMs` is an absolute timestamp, so any
+  // number derived from it here would be nonsense to the teacher reading it.
+  throw new ChainError(
+    "budget",
+    entryKey,
+    "",
+    `The time budget for this run is spent: ${stageName(ctx)} could not be started.${suffix}`
+  );
+}
+
+/** Names of the entries after index `i`, for the deadline message. */
+function remainingEntries(configs: { providerLabel: string; model: string }[], i: number): string[] {
+  return configs.slice(i + 1).map((c) => `${c.providerLabel}:${c.model}`);
+}
+
+/**
  * Run one generation across the configured chain, advancing only when the next
  * entry could plausibly do better (see `shouldAdvance`).
  *
@@ -160,7 +233,10 @@ type GeneratorImpl = {
  * knowledge of this exam's guide rules, so retrying elsewhere just spends the
  * fallback quota to arrive at the same 422.
  */
-async function withChain<T>(run: (impl: GeneratorImpl) => Promise<T>): Promise<T> {
+async function withChain<T>(
+  run: (impl: GeneratorImpl) => Promise<T>,
+  ctx?: Pick<GenContext, "runDeadlineMs">
+): Promise<T> {
   const entries = chainFromEnv();
   if (entries.length === 0) {
     // No provider key at all: run offline rather than fail, but SAY so. The mock
@@ -197,6 +273,11 @@ async function withChain<T>(run: (impl: GeneratorImpl) => Promise<T>): Promise<T
     const entryKey = `${cfg.providerLabel}:${cfg.model}`;
     if (blockedEntries.has(entryKey)) continue;
 
+    // Checked BEFORE dialling, not after: the point is not to spend the
+    // remaining budget on a call that cannot finish. Only the full-exam flow sets
+    // a deadline, so per-section generation is unaffected.
+    assertDeadline(ctx, entryKey, remainingEntries(configs, i));
+
     try {
       const out = await run(createCompatibleGenerators(() => cfg));
       lastServingEntry = entryKey;
@@ -225,28 +306,28 @@ async function withChain<T>(run: (impl: GeneratorImpl) => Promise<T>): Promise<T
 // persists candidates so the replacement panel can offer them (PRD 15.3).
 
 export async function generateTextCandidates(ctx: GenContext): Promise<GeneratedTextCandidate[]> {
-  return withChain((i) => Promise.resolve(i.generateTextCandidates(ctx)));
+  return withChain((i) => Promise.resolve(i.generateTextCandidates(ctx)), ctx);
 }
 
 export async function generatePartOneCandidates(ctx: GenContext): Promise<GeneratedTask[][]> {
-  return withChain((i) => Promise.resolve(i.generatePartOneCandidates(ctx)));
+  return withChain((i) => Promise.resolve(i.generatePartOneCandidates(ctx)), ctx);
 }
 
 export async function generateTextExplorationCandidates(ctx: GenContext): Promise<GeneratedTask[][]> {
-  return withChain((i) => Promise.resolve(i.generateTextExplorationCandidates(ctx)));
+  return withChain((i) => Promise.resolve(i.generateTextExplorationCandidates(ctx)), ctx);
 }
 
 export async function generateWritingCandidates(
   ctx: GenContext
 ): Promise<{ guided: GeneratedTopic; free: GeneratedTopic | null }[]> {
-  return withChain((i) => Promise.resolve(i.generateWritingCandidates(ctx)));
+  return withChain((i) => Promise.resolve(i.generateWritingCandidates(ctx)), ctx);
 }
 
 export async function generateRewriteCandidates(
   ctx: GenContext,
   opts: { text: string; title?: string; target: "simpler" | "harder" }
 ): Promise<GeneratedTextCandidate[]> {
-  return withChain((i) => Promise.resolve(i.generateRewriteCandidates(ctx, opts)));
+  return withChain((i) => Promise.resolve(i.generateRewriteCandidates(ctx, opts)), ctx);
 }
 
 function countItems(task: GeneratedTask): number {

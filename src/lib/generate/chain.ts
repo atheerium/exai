@@ -41,8 +41,23 @@ export interface ResolvedChainEntry extends ProviderConfig {
   entry: ChainEntry;
 }
 
-/** Error classes the advance policy keys off. */
-export type ChainFailure = "auth" | "unavailable" | "throttle" | "server" | "content" | "validation";
+/**
+ * Error classes the advance policy keys off.
+ *
+ * `budget` is the run deadline being spent (see `GenContext.runDeadlineMs`).
+ * It is terminal by construction — `assertDeadline` throws it before dialling,
+ * outside the retry loop — but it is classified so callers can tell "the free
+ * tier gave up" apart from "the provider is broken", and it must never advance:
+ * the next entry would be refused by the same check.
+ */
+export type ChainFailure =
+  | "auth"
+  | "unavailable"
+  | "throttle"
+  | "server"
+  | "content"
+  | "validation"
+  | "budget";
 
 export class ChainError extends Error {
   readonly failure: ChainFailure;

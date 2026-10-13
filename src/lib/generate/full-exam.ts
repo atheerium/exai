@@ -28,10 +28,12 @@ import {
   generateTextCandidates,
   generateTextExplorationCandidates,
   generateWritingCandidates,
+  runBudgetMs,
   validateCandidate,
   type GenContext,
 } from "./index";
 import { trimPassageToBand } from "./trim";
+import { ChainError } from "./chain";
 import type { GeneratedTask, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 
 export const FULL_EXAM_SECTIONS = ["TEXT", "PART_ONE", "TEXT_EXPLORATION", "WRITING"] as const;
@@ -194,8 +196,31 @@ async function settle<T>(run: () => Promise<T>): Promise<PromiseSettledResult<T>
 /** Narrowing helper: `unwrap` only returns null after pushing an issue. */
 function unwrap<T>(res: PromiseSettledResult<T>, section: FullExamSection, issues: FullExamResult["issues"]): T | null {
   if (res.status === "fulfilled") return res.value;
+  // A spent budget is a whole-run condition, not a per-section fault. Reporting
+  // it once per remaining section would give the teacher three identical lines
+  // and hide which section actually ran out of time.
+  if (isBudgetError(res.reason)) {
+    // Only the first one: the sections after it will trip the same check
+    // instantly, and three identical lines hide which part ran out of time.
+    if (!issues.some((i) => i.messages[0]?.startsWith(BUDGET_PREFIX))) {
+      issues.push({ section, messages: [msg(res.reason)] });
+    }
+    return null;
+  }
   issues.push({ section, messages: [`Could not generate this section: ${msg(res.reason)}`] });
   return null;
+}
+
+/**
+ * Marks a run-level (not section-level) failure. Matching on the message prefix
+ * is deliberate: it is the one string the budget error is built from, and it
+ * keeps the whole-run/section distinction out of `FullExamIssue`, which the API
+ * contract already returns verbatim to the teacher.
+ */
+const BUDGET_PREFIX = "The time budget for this run is spent";
+
+function isBudgetError(e: unknown): boolean {
+  return e instanceof ChainError && e.failure === "budget";
 }
 
 /**
@@ -207,6 +232,16 @@ function unwrap<T>(res: PromiseSettledResult<T>, section: FullExamSection, issue
  */
 export async function generateFullExam(input: FullExamInput): Promise<FullExamResult> {
   const issues: FullExamResult["issues"] = [];
+  // One deadline for the whole run, not per call: the teacher pressed one button
+  // and is watching it spin. Four sequential sections plus a bounded repair each,
+  // on a chain that advances on throttles, can otherwise spend minutes before
+  // admitting failure — and since the run is all-or-nothing, every one of those
+  // minutes produces nothing at all. Measured live 2026-10-13: a single run
+  // reached 199s of chain-walking on blocked/overloaded models.
+  //
+  // Overridable for a slower provider or a larger TPM quota. Read once here
+  // rather than per call so every section of a run shares one budget.
+  const runDeadlineMs = Date.now() + runBudgetMs();
   const baseCtx = buildContext({
     level: input.level,
     grade: input.grade,
@@ -219,6 +254,7 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
     teacherKeywords: input.teacherKeywords,
     difficulty: input.difficulty,
     paragraphCount: input.paragraphCount,
+    runDeadlineMs,
   });
 
   // ---- Phase A: the passage -------------------------------------------------
