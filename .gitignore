@@ -8,6 +8,9 @@ prisma/dev.db-journal
 .env
 .vercel
 
+# direnv shim that exports SUPABASE_ACCESS_TOKEN for the exaai-supabase MCP server
+.envrc
+
 # Screenshots produced during UI review passes (root or docs/)
 /*.png
 docs/screenshot-*.png

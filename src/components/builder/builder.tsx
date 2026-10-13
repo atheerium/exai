@@ -25,6 +25,23 @@ export type SectionId = "params" | "text" | "partOne" | "partTwo" | "writing" | 
 /** Destructive actions that need an explicit, translated confirmation. */
 export type PendingConfirmKind = "overwrite" | "regenText" | "rewrite";
 
+/**
+ * The parameters form payload. Declared once so the save path, the
+ * save-then-full-exam path and the stage component cannot drift apart.
+ */
+export interface ParametersConfig {
+  level: string;
+  grade: string;
+  stream?: string | null;
+  length: number;
+  paragraphCount?: number;
+  unit: string;
+  topic: string;
+  customTopic: boolean;
+  teacherKeywords?: string | null;
+  difficulty?: string | null;
+}
+
 export type PendingConfirm = {
   kind: PendingConfirmKind;
   confirm: () => void;
@@ -398,17 +415,12 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
     toast("Previous version restored", "success");
   }
 
-  async function submitParameters(config: {
-    level: string;
-    grade: string;
-    stream?: string | null;
-    length: number;
-    unit: string;
-    topic: string;
-    customTopic: boolean;
-    teacherKeywords?: string | null;
-    difficulty?: string | null;
-  }) {
+  /**
+   * Persist the parameters. Shared by both submit paths so the payload and the
+   * error handling cannot drift: the only difference between them is what runs
+   * afterwards (passage alone, or the whole exam).
+   */
+  async function saveConfig(config: ParametersConfig): Promise<boolean> {
     flushSave();
     try {
       const res = await apiFetch(`/api/exams/${exam.id}`, {
@@ -419,10 +431,31 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setExam(data);
-      await generate("TEXT");
+      return true;
     } catch (e: unknown) {
       toast(e instanceof Error ? e.message : "Could not save parameters.", "error");
+      return false;
     }
+  }
+
+  async function submitParameters(config: ParametersConfig) {
+    if (await saveConfig(config)) await generate("TEXT");
+  }
+
+  /**
+   * Save the parameters, then build the whole exam.
+   *
+   * The button used to require a saved config before it would even render, which
+   * made "generate the text" the only available first action -- the teacher had
+   * to do the very thing the button existed to avoid (teacher report,
+   * 2026-10-13). Saving here means the full exam is reachable in one click from
+   * a valid form, and the passage is still generated as part of it.
+   *
+   * Strictly sequential: if the save fails, nothing is generated, so a rejected
+   * config can never produce an exam built from stale parameters.
+   */
+  async function submitAndGenerateFullExam(config: ParametersConfig) {
+    if (await saveConfig(config)) await generateFullExam(false);
   }
 
   return (
@@ -535,6 +568,7 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
             // form. The confirmation dialog is the SAME one the top-bar button
             // uses, so overwriting an existing exam is never a surprise.
             onGenerateFullExam={hasConfig ? () => generateFullExam(false) : undefined}
+            onSaveAndGenerateFullExam={hasConfig ? undefined : submitAndGenerateFullExam}
             fullExamBusy={generating === "FULL_EXAM"}
             anyGenerationBusy={!!generating}
             hasContent={hasText || hasPartOne || hasPartTwo || hasWriting}

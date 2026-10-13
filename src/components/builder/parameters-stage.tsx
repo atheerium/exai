@@ -9,7 +9,7 @@ import { Select } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
 import { ConfirmDialog } from "./full-exam-button";
-import type { PendingConfirmKind } from "./builder";
+import type { ParametersConfig, PendingConfirmKind } from "./builder";
 import type { ExamDto } from "@/types";
 import { getGuide } from "@/data/guides";
 import { ALLOWED_PARAGRAPH_COUNTS, DEFAULT_PARAGRAPH_COUNT } from "@/lib/guide";
@@ -70,6 +70,7 @@ export function ParametersStage({
   onToggleCollapse,
   onSubmit,
   onGenerateFullExam,
+  onSaveAndGenerateFullExam,
   fullExamBusy,
   anyGenerationBusy,
   hasContent,
@@ -86,6 +87,13 @@ export function ParametersStage({
    * alone, which is the cheaper first step and stays that way.
    */
   onGenerateFullExam?: () => void;
+  /**
+   * Save-then-build-the-whole-exam. Wired to the same button when the form has
+   * NOT been saved yet, so the teacher can generate a complete exam in one click
+   * from a fresh form instead of being forced through Save (which only generates
+   * the passage).
+   */
+  onSaveAndGenerateFullExam?: (config: ParametersConfig) => void;
   fullExamBusy?: boolean;
   anyGenerationBusy?: boolean;
   /**
@@ -104,18 +112,7 @@ export function ParametersStage({
    */
   confirm?: { kind: PendingConfirmKind; hasAlternative: boolean } | null;
   onResolveConfirm?: (which: "confirm" | "alternative" | "cancel") => void;
-  onSubmit: (config: {
-    level: string;
-    grade: string;
-    stream?: string | null;
-    length: number;
-    paragraphCount?: number;
-    unit: string;
-    topic: string;
-    customTopic: boolean;
-    teacherKeywords?: string | null;
-    difficulty: string | null;
-  }) => Promise<void>;
+  onSubmit: (config: ParametersConfig) => Promise<void>;
 }) {
   const { t } = useI18n();
   const [catalog, setCatalog] = React.useState<Catalog | null>(null);
@@ -170,6 +167,31 @@ export function ParametersStage({
 
   const valid = level && grade && unit && topic && (!streams.length || stream);
 
+  /**
+   * The full-exam button is offered as soon as the FORM is valid, not only once
+   * a config is saved. Gating it on `hasConfig` meant the only reachable first
+   * action was "generate the text", which is precisely what the button exists to
+   * avoid. Saving is handled by the parent, so an invalid payload still cannot
+   * reach generation.
+   */
+  const fullExamRunnable = !!(onGenerateFullExam || onSaveAndGenerateFullExam) && !!valid;
+
+  /** The payload both submit paths send, built once so they cannot drift. */
+  function currentConfig(): ParametersConfig {
+    return {
+      level,
+      grade,
+      stream: streams.length ? stream : null,
+      length,
+      paragraphCount,
+      unit,
+      topic: customTopic ? topic : topic,
+      customTopic,
+      teacherKeywords: teacherKeywords?.trim() ? teacherKeywords.trim() : null,
+      difficulty: difficulty ?? "Standard",
+    };
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!valid) {
@@ -178,18 +200,7 @@ export function ParametersStage({
     }
     setBusy(true);
     try {
-      await onSubmit({
-        level,
-        grade,
-        stream: streams.length ? stream : null,
-        length,
-        paragraphCount,
-        unit,
-        topic: customTopic ? topic : topic,
-        customTopic,
-        teacherKeywords: teacherKeywords?.trim() ? teacherKeywords.trim() : null,
-        difficulty: difficulty ?? "Standard",
-      });
+      await onSubmit(currentConfig());
     } finally {
       setBusy(false);
     }
@@ -412,14 +423,19 @@ export function ParametersStage({
         </div>
       </form>
 
-      {onGenerateFullExam && (
-        // Not a form submit: it must not re-save parameters or re-run the
-        // passage call, only build every section.
+      {(fullExamRunnable || onGenerateFullExam) && (
+        // Not a form submit: it must not re-run the passage call, only build
+        // every section. When the config is NOT yet saved it saves first, so a
+        // complete exam is one click from a fresh form (teacher report
+        // 2026-10-13) instead of forcing Save -> passage -> full exam.
         <div className="border-t-2 border-foreground/10 pt-4">
           <FullExamAction
-            onRun={onGenerateFullExam}
+            onRun={() => {
+              if (onSaveAndGenerateFullExam) onSaveAndGenerateFullExam(currentConfig());
+              else onGenerateFullExam?.();
+            }}
             busy={!!fullExamBusy}
-            disabled={!!anyGenerationBusy}
+            disabled={!!anyGenerationBusy || !fullExamRunnable}
             replacing={hasContent}
             size="lg"
             className="w-full"
