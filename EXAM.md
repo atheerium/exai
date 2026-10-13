@@ -993,14 +993,29 @@ marks)`). Told only "EXACTLY the item counts below", the model does not bind.
 
 ### 12.8 One repair attempt, bounded
 
-`repairPassage()` in `full-exam.ts` allows exactly **one** corrective call, and
-only for the passage, carrying the validator's own issue strings back to the
-model verbatim.
+`repairGeneration()` in `full-exam.ts` allows exactly **one** corrective call per
+section — the passage, and each of Part One, Text Exploration and Writing —
+carrying the validator's own issue strings back to the model verbatim.
 
 - Different from `withRetry()`, which only helps with *transport* failures. A
   validation failure means the model answered and was wrong; re-rolling the same
   prompt at the same temperature reproduces the same mistake.
 - Bounded at one because a prompt that must satisfy a validator becomes a
   conversation, and conversations cost more tokens than they save on a free tier.
+- At most three extra calls per exam, and only on the failure path.
 - When the repair fails, the **original** issues are returned, never the
-  repair's downstream symptom.
+  repair's downstream symptom — and never a transport error from the retry.
+- The repair is re-validated with the **identical** opts, `groundingText`
+  included. Checking a "repaired" section more loosely than the original would let
+  exactly the defect being repaired through.
+
+**The issue strings must reach the prompt.** `ctx.repairOf` also travels as a
+payload field, and on its own it is inert: before 2026-10-13 no task request string
+mentioned it, so a "repaired" Part One call was byte-identical to the failed one.
+`repairNote(ctx)` is appended to the Part One, Text Exploration and Writing
+requests — the same trap `passageField()`/`groundingRule()` already had. Any new
+generator that can be repaired must append it too.
+
+Measured live the same day: a run that failed on three ungrounded vocabulary
+targets made its corrective call, the chain ran out of capacity mid-repair, and
+the run returned the original three issues rather than a 429.
