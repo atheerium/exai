@@ -89,6 +89,11 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
  * validator already speaks in terms a teacher reads, e.g. "Generated text has 2
  * paragraph(s) instead of 3" or "Paragraph 2 does not mention ... off-topic".
  *
+ * Used for the passage AND for every task section. Task sections previously had
+ * transport retry only, so one bad vocabulary target ("Task 1 targets \"urge\"",
+ * which does not occur in the passage — teacher report 2026-10-13) discarded a
+ * whole exam of otherwise correct work with no second chance.
+ *
  * Bounded at ONE attempt, and only for the passage. Two reasons:
  *   - A prompt that must satisfy a validator becomes a conversation, and a
  *     conversation with a free-tier model costs more tokens than it saves.
@@ -99,18 +104,19 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
  * If the repair fails, the ORIGINAL issues are returned, not the repair's: the
  * teacher should see the real problem, not a downstream symptom of the retry.
  */
-async function repairPassage(
-  generate: (issues: string[]) => Promise<GeneratedTextCandidate[]>,
-  validate: (c: GeneratedTextCandidate) => { ok: boolean; issues: string[] },
-  baseIssues: string[]
-): Promise<{ candidates: GeneratedTextCandidate[] | null; issues: string[] }> {
+export async function repairGeneration<T>(
+  generate: (issues: string[]) => Promise<T[]>,
+  validate: (c: T) => { ok: boolean; issues: string[] },
+  baseIssues: string[],
+  opts: { emptyIssue: string; /** What the repaired list's first element is called. */ noun: string }
+): Promise<{ candidates: T[] | null; issues: string[] }> {
   try {
     const repaired = await generate(baseIssues);
     const candidate = repaired[0];
-    const check = candidate ? validate(candidate) : { ok: false, issues: ["no passage returned"] };
+    const check = candidate ? validate(candidate) : { ok: false, issues: [opts.emptyIssue] };
     // The whole list is returned, not just the primary: the alternatives offered
     // in the replacement panel must come from the SAME call, or the panel would
-    // offer passages unrelated to the one that passed validation.
+    // offer material unrelated to the one that passed validation.
     if (check.ok) return { candidates: repaired, issues: [] };
     return { candidates: null, issues: baseIssues };
   } catch {
@@ -142,6 +148,38 @@ function repairContext(ctx: GenContext, issues: string[]): GenContext {
  */
 function isOnlyLengthIssue(issues: string[]): boolean {
   return issues.length > 0 && issues.every((i) => /word count .* is outside the expected range/.test(i));
+}
+
+/**
+ * Validate a section, and on failure give the model exactly one corrective call.
+ *
+ * Returns the replacement payload when the repair succeeded, `null` when the
+ * original was already fine, and pushes the ORIGINAL issue strings when the
+ * repair failed. Returning `null` for "already fine" and for "repair failed" is
+ * why the caller pushes issues here rather than after: this is the only place
+ * that knows which happened.
+ */
+async function maybeRepair<T>(
+  section: FullExamSection,
+  regenerate: (issues: string[]) => Promise<T[]>,
+  validate: (value: T) => { ok: boolean; issues: string[] },
+  initial: { ok: boolean; issues: string[] },
+  sink: FullExamResult["issues"]
+): Promise<T | null> {
+  if (initial.ok) return null;
+
+  const repaired = await repairGeneration<T>(
+    regenerate,
+    validate,
+    initial.issues,
+    { emptyIssue: "no content returned", noun: section }
+  );
+  if (!repaired.candidates) {
+    sink.push({ section, messages: initial.issues });
+    return null;
+  }
+  console.warn(`[generate] ${section} failed validation, repaired on one retry: ${initial.issues[0]}`);
+  return repaired.candidates[0];
 }
 
 /** `Promise.allSettled([p])` for one promise, so `unwrap` keeps one signature. */
@@ -237,10 +275,11 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
       // The prompt already states the paragraph count and the one-topic rule, so
       // a miss here is usually a near miss worth one corrective call.
       const repaired = await withRetry(() =>
-        repairPassage(
+        repairGeneration(
           (issues) => generateTextCandidates(repairContext(baseCtx, issues)),
           validatePassage,
-          check.issues
+          check.issues,
+          { emptyIssue: "no passage returned", noun: "passage" }
         )
       );
       if (!repaired.candidates) {
@@ -284,23 +323,57 @@ export async function generateFullExam(input: FullExamInput): Promise<FullExamRe
   const explorationSets = unwrap(explorationRes, "TEXT_EXPLORATION", issues);
   const writingCands = unwrap(writingRes, "WRITING", issues);
 
-  if (partOneSets) {
-    const v = validateCandidate("PART_ONE", partOneSets[0], ctx.guide.marks.partOne, {
-      guide: ctx.guide,
-      groundingText,
-    });
-    if (!v.ok) issues.push({ section: "PART_ONE", messages: v.issues });
-  }
-  if (explorationSets) {
-    const v = validateCandidate("TEXT_EXPLORATION", explorationSets[0], ctx.guide.marks.textExploration, {
-      guide: ctx.guide,
-      groundingText,
-    });
-    if (!v.ok) issues.push({ section: "TEXT_EXPLORATION", messages: v.issues });
-  }
+  // Each section gets ONE repair attempt when validation fails, exactly like the
+  // passage. Re-validates with the IDENTICAL opts -- including `groundingText` --
+  // because a "repaired" section that was checked more loosely than the original
+  // would let exactly the defect we are repairing through.
+  //
+  // Bounded at one per section, and only on the failure path: at most three
+  // extra calls for a whole exam. The ORIGINAL issues are returned when the
+  // repair fails, never the repair's own, so the teacher sees the real reason.
+  const p1Opts = { guide: ctx.guide, groundingText } as const;
+  const p1Check = (tasks: GeneratedTask[]) =>
+    validateCandidate("PART_ONE", tasks, ctx.guide.marks.partOne, p1Opts);
+  const p1Validation = partOneSets
+    ? await maybeRepair(
+        "PART_ONE",
+        (rIssues) => generatePartOneCandidates(repairContext(ctx, rIssues)),
+        (sets) => p1Check(sets),
+        p1Check(partOneSets[0]),
+        issues
+      )
+    : null;
+  if (p1Validation) partOneSets![0] = p1Validation;
+
+  const teOpts = { guide: ctx.guide, groundingText } as const;
+  const teCheck = (tasks: GeneratedTask[]) =>
+    validateCandidate("TEXT_EXPLORATION", tasks, ctx.guide.marks.textExploration, teOpts);
+  const teValidation = explorationSets
+    ? await maybeRepair(
+        "TEXT_EXPLORATION",
+        (rIssues) => generateTextExplorationCandidates(repairContext(ctx, rIssues)),
+        (sets) => teCheck(sets),
+        teCheck(explorationSets[0]),
+        issues
+      )
+    : null;
+  if (teValidation) explorationSets![0] = teValidation;
+
   if (writingCands) {
-    const v = validateCandidate("WRITING", writingCands[0], undefined, { singleTopic: input.singleTopic });
-    if (!v.ok) issues.push({ section: "WRITING", messages: v.issues });
+    const wOpts = { singleTopic: input.singleTopic } as const;
+    // `payload` is `unknown` at the validator, so the shape stays the caller's
+    // business: typing the parameter as the generator's own return type keeps the
+    // repair generic without a cast.
+    const wCheck = (cands: Awaited<ReturnType<typeof generateWritingCandidates>>[number]) =>
+      validateCandidate("WRITING", cands, undefined, wOpts);
+    const wValidation = await maybeRepair(
+      "WRITING",
+      (rIssues) => generateWritingCandidates(repairContext(ctx, rIssues)),
+      (cands) => wCheck(cands),
+      wCheck(writingCands[0]),
+      issues
+    );
+    if (wValidation) writingCands[0] = wValidation;
   }
 
   // All-or-nothing: any issue at all aborts the whole run.

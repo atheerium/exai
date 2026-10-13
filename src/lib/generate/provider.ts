@@ -222,11 +222,25 @@ export const TEMPERATURE = {
  * `checkTopicAnchoring` in grounding.ts, which rejects any paragraph that does
  * not mention the topic or a teacher keyword. Prompt alone is not trusted.
  */
+/**
+ * The corrective instruction for a repair attempt, shared by EVERY generator.
+ *
+ * `ctx.repairOf` also travels in the payload as a bare field, and on its own it
+ * is inert: no task prompt referred to it, so a "repaired" Part One call was
+ * byte-identical to the one that had just failed. Every request string must
+ * append this.
+ */
+function repairNote(ctx: GenContext): string {
+  if (!ctx.repairOf) return "";
+  return (
+    ` Your previous attempt was rejected for exactly these reasons: ${ctx.repairOf}. ` +
+    "Fix exactly that and change nothing else."
+  );
+}
+
 function coherenceNote(ctx: GenContext): string {
   const paragraphs = ctx.paragraphCount ?? 3;
-  const repair = ctx.repairOf
-    ? ` Your previous attempt was rejected: ${ctx.repairOf}. Fix exactly that and change nothing else.`
-    : "";
+  const repair = repairNote(ctx);
   // The band is stated numerically, not just "about N words". Live on Groq
   // 2026-10-11: told only "about 120 words", the model returned 156 and 172,
   // and both were rejected against the ±20% band the validator actually
@@ -696,6 +710,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
         `Each family must contribute exactly this many items: ${familyCountNote(families)}. ` +
+        repairNote(ctx) +
         taskSetSchemaNote(n),
       families,
       },
@@ -750,6 +765,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
         `Produce exactly ${ctx.guide.textExploration.skills.length} task objects, one per skill, in the order given. ` +
+        repairNote(ctx) +
         taskSetSchemaNote(n),
       skills,
         },
@@ -825,7 +841,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
           request:
             'The "passage" field is the reading the teacher will print; the situation must be recognisably about the same theme as that passage. ' +
             'Write ONE integrated-situation writing topic for the BEM middle-school exam: Topic 1 GUIDED (same broad theme as the text, a situation, instructions and slash-separated key words). This is the ONLY topic; there is no free topic.' + keywordNote(ctx) +
-            ' Return {"sets":[{"guided":{"kind":"GUIDED","title","situation","instruction","keywords","form","marks"}}]}' + countNote(n, "different set" + (n === 1 ? "" : "s")) + '.',
+            ' Return {"sets":[{"guided":{"kind":"GUIDED","title","situation","instruction","keywords","form","marks"}}]}' + countNote(n, "different set" + (n === 1 ? "" : "s")) + '.' + repairNote(ctx),
         },
         { temperature: TEMPERATURE.structured }
       );
@@ -860,7 +876,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
           'The "passage" field is the reading the teacher will print; the guided topic must be recognisably about the same theme as that passage. ' +
           'Write two writing topics: Topic 1 GUIDED (same broad theme as the text, a situation, instructions and slash-separated key words) and Topic 2 FREE (different situation, no key words).' + keywordNote(ctx) +
           ' Return {"sets":[{"guided":{"kind":"GUIDED","title","situation","instruction","keywords","form","marks"},' +
-          '"free":{"kind":"FREE","title","situation","instruction","form","marks"}}]}' + countNote(n, "different set" + (n === 1 ? "" : "s")) + '.',
+          '"free":{"kind":"FREE","title","situation","instruction","form","marks"}}]}' + countNote(n, "different set" + (n === 1 ? "" : "s")) + '.' + repairNote(ctx),
       },
       { temperature: TEMPERATURE.structured }
     );

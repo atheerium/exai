@@ -56,6 +56,34 @@ before(async () => {
           family: "WORD_MEANING",
         })),
       }));
+      // Writing asks for topics, not tasks; the stub answers by echoing the
+      // request's own shape so `parseLooseJson`/the writer parser both succeed.
+      if (payload?.kind === "WRITING") {
+        const setsW = [
+          {
+            guided: {
+              kind: "GUIDED",
+              title: "My favourite invention",
+              situation: "You have won a prize.",
+              instruction: "Write about it.",
+              keywords: ["invention"],
+              form: "email",
+              marks: 5,
+            },
+            free: {
+              kind: "FREE",
+              title: "A person I admire",
+              situation: "",
+              instruction: "Write about them.",
+              form: "paragraph",
+              marks: 5,
+            },
+          },
+        ];
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ sets: setsW }) } }] }));
+        return;
+      }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ sets }) } }] }));
     });
@@ -119,6 +147,56 @@ test("the prompt names the passage field it must ground on", async () => {
     "must not claim the passage arrives as prose above the request"
   );
 });
+
+// A repair is only a repair if the model is TOLD what was wrong. `repairOf`
+// travels in the payload, and a payload field no request string mentions is
+// inert -- the "corrected" call was byte-identical to the failed one.
+const ISSUE = 'Task 1 targets "urge", which does not occur in the passage.';
+
+function repairCtx() {
+  return { ...ctx(PASSAGE), repairOf: ISSUE };
+}
+
+type Section = {
+  label: string;
+  repair: (g: any) => Promise<unknown>;
+  fresh: (g: any) => Promise<unknown>;
+};
+
+const SECTIONS: Section[] = [
+  {
+    label: "Part One",
+    repair: (g: any) => g.generatePartOneCandidates(repairCtx()),
+    fresh: (g: any) => g.generatePartOneCandidates(ctx(PASSAGE)),
+  },
+  {
+    label: "Text Exploration",
+    repair: (g: any) => g.generateTextExplorationCandidates(repairCtx()),
+    fresh: (g: any) => g.generateTextExplorationCandidates(ctx(PASSAGE)),
+  },
+  {
+    label: "Writing",
+    repair: (g: any) => g.generateWritingCandidates(repairCtx()),
+    fresh: (g: any) => g.generateWritingCandidates(ctx(PASSAGE)),
+  },
+];
+
+for (const section of SECTIONS) {
+  test(`${section.label} repair request carries the validator's own complaint`, async () => {
+    sent = [];
+    await section.repair(createCompatibleGenerators(config));
+    assert.equal(sent.length, 1);
+    const request = String(sent[0].request);
+    assert.match(request, /rejected for exactly these reasons/i, "request must name the failure");
+    assert.ok(request.includes("urge"), "the failing target itself must be quoted back");
+  });
+
+  test(`${section.label} request stays clean when nothing was rejected`, async () => {
+    sent = [];
+    await section.fresh(createCompatibleGenerators(config));
+    assert.doesNotMatch(String(sent[0].request), /rejected for exactly these reasons/i);
+  });
+}
 
 test("no passage field is sent when no passage exists", async () => {
   sent = [];
