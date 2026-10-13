@@ -1019,3 +1019,29 @@ generator that can be repaired must append it too.
 Measured live the same day: a run that failed on three ungrounded vocabulary
 targets made its corrective call, the chain ran out of capacity mid-repair, and
 the run returned the original three issues rather than a 429.
+
+### 12.9 The run has a time budget
+
+`GenContext.runDeadlineMs` is an epoch ms after which no generation may
+**start**. Set only by `generateFullExam`; per-section generation is one call
+behind a single button and stays unbounded.
+
+- Checked in `withChain` **before dialling**. Placement is the point: after
+  dialling, the call has already been paid for.
+- 120s default, `AI_RUN_BUDGET_MS` to override for a paid tier or a higher TPM
+  quota. A malformed or non-positive value falls back to the default rather than
+  disabling the cap — `0` read literally means "no limit" and would restore the
+  hang.
+- The error names the **stage** ("the passage", "a question section", "a repair
+  attempt") and how many chain entries went untried. The run is all-or-nothing,
+  so a bare timeout reads as a total failure with no cause.
+- `budget` is a terminal failure class: thrown outside the retry loop, never
+  advances (the next entry is refused by the same check), and reported **once
+  for the whole run** rather than once per remaining section.
+
+Reason: measured live 2026-10-13, one run reached 199s of chain-walking across
+blocked and overloaded models and produced nothing, because every section must
+pass before anything is written. The transport's 30s per-fetch cap says nothing
+about the run. Verified live with `AI_RUN_BUDGET_MS=3000`: stopped at 3.3s with
+*"The time budget for this run is spent: a question section could not be started.
+4 chain entries were left untried."*
