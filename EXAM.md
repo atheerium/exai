@@ -1087,3 +1087,39 @@ The bank is a field on `PaperTask`, not a top-level block. As a block it could
 only print after every item, and each renderer had to handle it separately —
 which is how it ended up in the PDF and the preview and **missing entirely from
 the DOCX**. `word-bank.test.ts` asserts the block kind cannot come back.
+
+### 12.11 Tabular tasks: the field is demanded literally, the answers are blanked in code
+
+Two measured failures (2026-10-13, live runs through a logging proxy):
+
+1. **The model omitted the `table` field** on roughly half of runs, even though
+   the payload said `tableRequired: true` for MORPHOLOGY and PHONOLOGY and the
+   request said to include one. The run is all-or-nothing, so a missing chart
+   discarded an otherwise correct exam.
+2. Having produced the chart, **the model filled in its own answers**
+   (`"preservation"`, `"documentation"` in the derivation chart), which
+   `checkTaskLinkage` rejected — and those cells **print on the paper**.
+   `assemble.ts` never reads the `answer` field precisely so answers cannot leak;
+   a prefilled table cell walks straight past that.
+
+Both are now deterministic:
+
+- `tableRequirementNote(skills)` names each tabular skill individually, with its
+  marks and a literal skeleton:
+  `"MORPHOLOGY" (1.5 marks) MUST carry a "table" field, exactly like this:
+  "table": {"headers": ["...","..."], "rows": [["first item", ""]]}`.
+  Naming them one by one matters because the two charts differ in shape, and a
+  generic rule ("only morphology and phonology carry a table") did not bind.
+  The headers are a **skeleton**, not hard-coded: phonology headers are IPA
+  symbols the guide cannot prescribe.
+- `blankAnswerCells()` empties every cell past column 0, applied in the same
+  stamping step that already writes `skill`/`marks`/`family` from the guide.
+  Column 0 is the given material for every task type in the corpus — the rule
+  `checkTaskLinkage` already enforces — so this enforces it rather than
+  inventing a second one. No live guide sets `solvedExampleRow` (declared on the
+  rule type, set by none of them), so there is no solved-example row to spare.
+
+Measured: 6 live runs after the change, **0** failing on a missing or prefilled
+table (4 passed; the 2 failures were an ungrounded vocabulary target and
+free-tier capacity, both pre-existing classes). Before it, every run failed on
+one of the two.

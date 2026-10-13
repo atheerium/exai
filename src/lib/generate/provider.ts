@@ -362,6 +362,51 @@ const PART_TWO_TABLE_RULE =
   "not an empty one. ";
 
 /**
+ * Per-skill, literal "you must emit this field" instructions for the tabular
+ * skills.
+ *
+ * `PART_TWO_TABLE_RULE` states the rule and the model still omitted the field on
+ * roughly half of runs (measured live 2026-10-13 through a logging proxy: the
+ * payload correctly said `tableRequired: true` for MORPHOLOGY and PHONOLOGY, and
+ * the reply carried no `table` key for either). The repair pass recovered it
+ * when capacity allowed and failed the whole exam when it did not.
+ *
+ * This is the same lesson as `PART_ONE_TABLE_RULE` and the item counts: being
+ * told a rule is not the same as being told the exact field, and prose does not
+ * bind where a named shape does. Naming each skill separately matters because the
+ * two tables are shaped differently -- one is a derivation chart, the other a
+ * classification chart whose headers are phonetic symbols the guide cannot
+ * prescribe, which is precisely why we ask for a skeleton instead of hard-coding
+ * headers here.
+ */
+/**
+ * Empties every cell a student is meant to fill, keeping column 0.
+ *
+ * Column 0 is the given material for every task type in the corpus (see
+ * `checkTaskLinkage`, which enforces the same rule); everything to its right is
+ * an answer. A model that pre-fills those cells has produced the answer key, and
+ * `assemble.ts` never reads the `answer` field precisely so that answers cannot
+ * reach the paper -- a prefilled table cell would walk straight past that.
+ */
+function blankAnswerCells(table: { headers: string[]; rows: string[][] }): { headers: string[]; rows: string[][] } {
+  return {
+    headers: [...table.headers],
+    rows: table.rows.map((row) => [row[0] ?? "", ...row.slice(1).map(() => "")]),
+  };
+}
+
+function tableRequirementNote(
+  skills: { skill: string; marks: number; tableRequired: boolean }[]
+): string {
+  const tabular = skills.filter((s) => s.tableRequired);
+  if (tabular.length === 0) return "";
+  const each = tabular
+    .map((s) => `"${s.skill}" (${s.marks} marks) MUST carry a "table" field, exactly like this: "table": {"headers": ["...","..."], "rows": [["first item", ""]]} — one row per item, every student-filled cell an EMPTY string, and the headers chosen to match that task's instruction`)
+    .join("; ");
+  return ` Required fields, one per skill: ${each}. `;
+}
+
+/**
  * A task whose instruction says "from the list given" needs a bank of candidate
  * words printed above it. The shape is stated literally because prose does not
  * bind -- the same lesson as item counts and the word band.
@@ -776,6 +821,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'Use exactly these skills, in this order. ' +
         'For a skill whose tableRequired is true, include a "table" field with headers and rows; for every other skill omit the "table" field entirely, not an empty one. ' +
         PART_TWO_TABLE_RULE +
+        tableRequirementNote(skills) +
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
         WORD_BANK_RULE +
@@ -796,9 +842,21 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
     return sets.map((set) =>
       set.map((task, i) => {
         const spec = guideSkills[i];
-        return spec
-          ? { ...task, skill: spec.skill, marks: spec.marks, family: task.family ?? spec.family }
-          : task;
+        if (!spec) return task;
+        const stamped = { ...task, skill: spec.skill, marks: spec.marks, family: task.family ?? spec.family };
+        // Same reasoning as the fields above: computed, not generated. A tabular
+        // task's cells past column 0 ARE the student's answers, so the model
+        // filling them in is not a style problem -- it is an answer key printed on
+        // the paper. `checkTaskLinkage` already defines column 0 as the given
+        // material for every task type in the corpus, so this enforces that same
+        // rule instead of inventing a new one. Measured live 2026-10-13: the model
+        // returned "preservation"/"documentation" in the morphology chart, which
+        // failed the whole exam although the table was otherwise correct.
+        //
+        // No live guide sets `solvedExampleRow` (it is declared on the rule type
+        // and set by none of them), so there is no solved-example row to spare.
+        if (rulePrescribesTable(spec) && stamped.table) stamped.table = blankAnswerCells(stamped.table);
+        return stamped;
       })
     );
   }
