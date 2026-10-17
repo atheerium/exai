@@ -24,6 +24,7 @@ model User {
   favourites   FavouriteTask[]
   customTasks  CustomTask[]
   passwordResets PasswordResetToken[]
+  feedback     ExamFeedback[]
 }
 
 model Session {
@@ -46,6 +47,7 @@ model Exam {
   sources      Source[]
   generations  Generation[]
   revisions    ExamRevision[]
+  feedback     ExamFeedback[]
   lastOpenedAt DateTime     @default(now())
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -226,4 +228,43 @@ model ExamRevision {
   createdAt DateTime @default(now())
 
   @@index([examId, createdAt])
+}
+
+// Teacher feedback on a finished draft (one row per user per exam).
+//
+// This is a SIGNAL TO US about which task families produce output teachers
+// reject. It must never flow back into generation: tuning prompts against
+// self-reported ratings is reward hacking, not improvement. Nothing in
+// `src/lib/generate/` may read this table.
+//
+// `comment` length is enforced in the zod schema (`feedbackSchema`), not by
+// the database, so the limit is one place (the route) rather than two that
+// can disagree.
+model ExamFeedback {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating    String // "UP" | "DOWN"
+  comment   String? // optional, max 2000 chars (zod), null when left blank
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([examId, userId]) // re-submitting upserts rather than piling up rows
+  @@index([examId])
+}
+
+// How often a teacher throws away generated output, per task family. The one
+// place a teacher discards a generated task is the TASK_ALT branch of
+// /api/exams/[id]/generate, so `rejected` is the only rejection signal we
+// have. `applied` counts alternatives a teacher kept; it is incremented by the
+// replace route.
+model TaskFamilyStat {
+  id        String   @id @default(cuid())
+  family    String   @unique // e.g. TRUE_FALSE, MORPHOLOGY
+  skill     String? // Part B only; null for Part One
+  rejected  Int      @default(0) // times a teacher regenerated/replaced this family
+  applied   Int      @default(0) // times a teacher applied an alternative they then kept
+  updatedAt DateTime @updatedAt
 }

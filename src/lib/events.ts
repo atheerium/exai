@@ -25,7 +25,8 @@ export type EventName =
   | "generation_failed"
   | "password_reset_requested"
   | "password_reset_completed"
-  | "exam_revision_restored";
+  | "exam_revision_restored"
+  | "exam_feedback";
 
 export async function track(name: EventName, opts: { userId?: string; examId?: string; meta?: Record<string, unknown> } = {}) {
   try {

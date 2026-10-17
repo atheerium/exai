@@ -4,6 +4,8 @@ import { requireUser, requireCsrf } from "@/lib/auth";
 import { loadExamDto, touchLastOpened } from "@/lib/serialize";
 import { track } from "@/lib/events";
 import { captureRevision } from "@/lib/revisions";
+import { familyKeyFor } from "@/lib/feedback";
+import { recordFamilyStat } from "@/lib/feedback-data";
 import { getGuide } from "@/data/guides";
 import type { EventName } from "@/lib/events";
 
@@ -32,6 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!exam) return null;
 
       let event: EventName | null = null;
+      let appliedFamily: { family: string; skill: string | null } | null = null;
       let revisionLabel: string | null = null;
 
       if (body.kind === "TEXT") {
@@ -81,6 +84,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         await tx.generation.create({ data: { examId: id, type: "TASK_ALT", provider: "select", status: "OK" } });
         event = "task_replaced";
         revisionLabel = "Task replaced";
+        // The teacher KEPT an alternative, which is the opposite signal to a
+        // rejection: this family is recoverable. Recorded outside the tenant
+        // transaction below, so analytics can never fail a replacement.
+        appliedFamily = familyKeyFor(task);
       } else if (body.kind === "TOPIC" && body.topicId) {
         const topic = await tx.topic.findFirst({ where: { id: body.topicId, section: { examId: id } } });
         if (!topic) throw new Error("NOT_FOUND_TOPIC");
@@ -107,12 +114,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (revisionLabel) await captureRevision(id, revisionLabel, tx);
       await touchLastOpened(id, user.id, tx);
       const dto = await loadExamDto(id, user.id, tx);
-      return { tag: "OK", dto, event } as const;
+      return { tag: "OK", dto, event, appliedFamily } as const;
     });
 
     if (!result) return NextResponse.json({ error: "Exam not found." }, { status: 404 });
     if (result.tag === "OK") {
       if (result.event) await track(result.event, { userId: user.id, examId: id });
+      if (result.appliedFamily) await recordFamilyStat(result.appliedFamily, "applied");
       return NextResponse.json(result.dto);
     }
     return NextResponse.json({ error: result.issues.join(" ") }, { status: 422 });

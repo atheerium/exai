@@ -16,6 +16,7 @@ import { WritingStage } from "./writing-stage";
 import { PreviewStage } from "./preview-stage";
 import { VersionsButton, VersionsModal } from "./versions-modal";
 import { FullExamButton } from "./full-exam-button";
+import { ExamFeedback } from "./exam-feedback";
 import { apiFetch } from "@/lib/api-client";
 import { mergePatch } from "@/lib/merge-patch";
 import { checkTaskLinkage } from "@/lib/generate/grounding";
@@ -755,6 +756,12 @@ export function Builder({ initialExam }: { initialExam: ExamDto }) {
             <PreviewStage exam={exam} />
           )}
         </section>
+      </div>
+
+      {/* Teacher feedback on the finished draft. Below the last section and
+          outside the preview: it is a report to us, not part of the paper. */}
+      <div className="pt-6">
+        <ExamFeedback examId={exam.id} />
       </div>
 
       {/* VersionsModal */}

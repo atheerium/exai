@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { loadFeedbackOverview } from "@/lib/feedback-data";
 
 // Operator monitoring view (PRD sections 27, 29, US-030): AI generation
 // ledger, product funnel events and guide governance metadata, admin-gated.
@@ -10,7 +11,7 @@ export default async function OpsPage() {
   if (!user) redirect("/login");
   if (!isAdmin(user)) notFound();
 
-  const [generations, eventCounts, guides, recentEvents] = await Promise.all([
+  const [generations, eventCounts, guides, recentEvents, feedbackOverview] = await Promise.all([
     prisma.generation.findMany({
       orderBy: { createdAt: "desc" },
       take: 30,
@@ -23,7 +24,12 @@ export default async function OpsPage() {
     }),
     prisma.guideConfig.findMany({ orderBy: { key: "asc" } }),
     prisma.productEvent.findMany({ orderBy: { createdAt: "desc" }, take: 15 }),
+    loadFeedbackOverview(),
   ]);
+  // The same loader `/api/ops/feedback` uses. The two used to query separately
+  // and had already drifted (createdAt/30 there, updatedAt/20 here), so a
+  // teacher's action and the dashboard could report different numbers.
+  const { exams: examFeedback, families: familyStats } = feedbackOverview;
 
   const totalCostEstimates = {
     total: generations.length,
@@ -115,6 +121,70 @@ export default async function OpsPage() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-lg font-semibold">Teacher feedback</h2>
+        <p className="mb-3 text-sm text-muted-foreground">
+          What teachers said about a draft. Never fed back into generation.
+        </p>
+        <div className="overflow-x-auto rounded-xl border bg-card">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b bg-secondary/40 text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">Rating</th>
+                <th className="px-3 py-2">Exam</th>
+                <th className="px-3 py-2">Comment</th>
+                <th className="px-3 py-2">When</th>
+              </tr>
+            </thead>
+            <tbody>
+              {examFeedback.map((f) => (
+                <tr key={`${f.examId}-${f.createdAt.toISOString()}`} className="border-b last:border-0">
+                  <td className="px-3 py-2 font-medium">{f.rating === "UP" ? "Good" : "Not useful"}</td>
+                  <td className="max-w-[180px] truncate px-3 py-2">{f.title}</td>
+                  <td className="max-w-[320px] truncate px-3 py-2 text-muted-foreground">{f.comment ?? ""}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{new Date(f.createdAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {examFeedback.length === 0 && (
+          <p className="mt-3 text-sm text-muted-foreground">No teacher has rated an exam yet.</p>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-lg font-semibold">Task families teachers reject</h2>
+        <p className="mb-3 text-sm text-muted-foreground">
+          Counted when a teacher regenerates a task. Sorted by rejections.
+        </p>
+        <div className="overflow-x-auto rounded-xl border bg-card">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b bg-secondary/40 text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">Family</th>
+                <th className="px-3 py-2">Skill</th>
+                <th className="px-3 py-2">Rejected</th>
+                <th className="px-3 py-2">Applied</th>
+              </tr>
+            </thead>
+            <tbody>
+              {familyStats.map((f) => (
+                <tr key={f.family} className="border-b last:border-0">
+                  <td className="px-3 py-2 font-mono text-xs">{f.family}</td>
+                  <td className="px-3 py-2">{f.skill ?? "-"}</td>
+                  <td className="px-3 py-2 font-medium">{f.rejected}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{f.applied}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {familyStats.length === 0 && (
+          <p className="mt-3 text-sm text-muted-foreground">No task has been regenerated yet.</p>
+        )}
       </section>
     </div>
   );

@@ -369,6 +369,56 @@ CREATE POLICY exam_revision_owner_delete ON "ExamRevision"
   );
 
 -- =============================================================================
+-- 15. EXAM_FEEDBACK (exam-scoped: teacher rating plus free-text comment)
+-- =============================================================================
+-- Same shape as ExamRevision: one row per (exam, user), so ownership is
+-- reached through the exam. The comment is teacher-authored free text, which
+-- is the one thing here that would be embarrassing to leak sideways, so it
+-- gets the same second layer as everything else. This is NOT the primary
+-- control: Prisma connects as the table owner, so plain ENABLE is bypassed and
+-- the routes must keep their per-query userId clauses (they do).
+
+ALTER TABLE "ExamFeedback" ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY exam_feedback_owner_select ON "ExamFeedback"
+  FOR SELECT USING (
+    EXISTS (SELECT 1 FROM "Exam" WHERE "Exam"."id" = "ExamFeedback"."examId" AND "Exam"."userId" = public.current_user_id())
+  );
+
+CREATE POLICY exam_feedback_owner_insert ON "ExamFeedback"
+  FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM "Exam" WHERE "Exam"."id" = "ExamFeedback"."examId" AND "Exam"."userId" = public.current_user_id())
+  );
+
+CREATE POLICY exam_feedback_owner_update ON "ExamFeedback"
+  FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM "Exam" WHERE "Exam"."id" = "ExamFeedback"."examId" AND "Exam"."userId" = public.current_user_id())
+  );
+
+-- =============================================================================
+-- 16. TASK_FAMILY_STAT (global aggregate, no tenant key)
+-- =============================================================================
+-- Rejection counters per task family. There is no userId and no examId: the row
+-- is an aggregate, and aggregates must not be per-user readable. Reads are
+-- admin-only because only /ops aggregates them.
+--
+-- The write is deliberately NOT gated on an RLS identity: the increment runs on
+-- the global client from the TASK_ALT branch of /api/exams/[id]/generate,
+-- outside withRls, exactly like track() writing ProductEvent. A policy keyed on
+-- current_user_id() there would fail for a plain teacher under a future FORCE.
+
+ALTER TABLE "TaskFamilyStat" ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY task_family_stat_auth_insert ON "TaskFamilyStat"
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY task_family_stat_auth_update ON "TaskFamilyStat"
+  FOR UPDATE USING (true);
+
+CREATE POLICY task_family_stat_admin_select ON "TaskFamilyStat"
+  FOR SELECT USING (public.is_admin());
+
+-- =============================================================================
 -- GRANTS
 -- =============================================================================
 
@@ -388,3 +438,5 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON "FavouriteTask" TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON "CustomTask" TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON "PasswordResetToken" TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON "ExamRevision" TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "ExamFeedback" TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON "TaskFamilyStat" TO authenticated;

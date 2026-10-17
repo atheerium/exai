@@ -5,6 +5,7 @@ import { loadExamDto, touchLastOpened } from "@/lib/serialize";
 import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, generateRewriteCandidates, validateCandidate, providerName } from "@/lib/generate";
 import { generateFullExam, FULL_EXAM_QUOTA_COST } from "@/lib/generate/full-exam";
 import { track } from "@/lib/events";
+import { recordFamilyStat } from "@/lib/feedback-data";
 import { captureRevision } from "@/lib/revisions";
 import { getGuide } from "@/data/guides";
 import type { GeneratedSource, GeneratedTask, GeneratedTextCandidate, GeneratedTopic } from "@/types";
@@ -95,7 +96,7 @@ type Phase2Data =
   | { kind: "PART_ONE" | "TEXT_EXPLORATION"; sets: GeneratedTask[][] }
   | { kind: "WRITING"; cands: { guided: GeneratedTopic; free: GeneratedTopic | null }[]; singleTopic: boolean }
   | { kind: "REWRITE"; rewriteResult: GeneratedTextCandidate[]; target: "simpler" | "harder" }
-  | { kind: "TASK_ALT"; sets: GeneratedTask[][]; task: { id: string; order: number; section: { id: string; type: string } } }
+  | { kind: "TASK_ALT"; sets: GeneratedTask[][]; task: { id: string; order: number; family?: string | null; skill?: string | null; section: { id: string; type: string } } }
   | { kind: "TOPIC_ALT"; cands: { guided: GeneratedTopic; free: GeneratedTopic | null }[]; topic: { id: string; kind: string }; singleTopic: boolean };
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -616,6 +617,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         await tx.task.update({ where: { id: task.id }, data: { candidates: JSON.stringify(candidates) } });
         await log("OK");
         await track("task_replaced", { userId: user.id, examId: id, meta: { kind: "generate_more" } });
+        // This branch is the ONE place a teacher throws away generated output, so
+        // the family counter is the only honest measure of which families produce
+        // work teachers reject. Analytics only, and deliberately outside any
+        // tenant transaction (the global client, like `track`): it must never be
+        // able to fail a generation that has already succeeded.
+        await recordFamilyStat(task, "rejected");
       } else if (phase2Data.kind === "TOPIC_ALT") {
         const { cands, topic } = phase2Data;
         const topicSets = topic.kind === "GUIDED"
