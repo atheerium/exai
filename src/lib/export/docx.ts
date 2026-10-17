@@ -8,6 +8,7 @@ import {
   TableCell,
   WidthType,
   BorderStyle,
+  HeightRule,
   AlignmentType,
   Footer,
   PageNumberElement,
@@ -15,7 +16,8 @@ import {
 } from "docx";
 import type { ExportDocument } from "./assemble";
 import type { PaperItem, PaperTable, PaperTask, PaperTopic } from "./paper";
-import { buildPaper } from "./paper";
+import { buildPaper, WORD_BANK_SEPARATOR } from "./paper";
+import { BLANK_ROW_HEIGHT } from "./tables";
 
 const BODY = 20;
 const INDENT = 360;
@@ -67,13 +69,21 @@ type RunOpts = {
 const t = (text: string, opts: RunOpts = {}) =>
   new TextRun({ text, font: FONT, size: opts.size ?? BODY, color: opts.color ?? "111827", ...opts });
 
+/**
+ * Table text size, in half-points, so it matches the PDF's 12pt body exactly.
+ * The old value (17, i.e. 8.5pt) made DOCX tables print visibly smaller than the
+ * PDF's beside them; with 1pt borders and 32pt rows the table is a focal element
+ * and a font mismatch is the first thing a reader notices.
+ */
+const TABLE_TEXT_SIZE = 24;
+
 const GRID = {
-  top: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
-  bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
-  left: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
-  right: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
-  insideH: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
-  insideV: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+  top: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
+  bottom: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
+  left: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
+  right: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
+  insideH: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
+  insideV: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
 };
 
 const NO_BORDERS = {
@@ -225,28 +235,45 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
   const drawTable = (table: PaperTable) => {
     // Official style (user screenshot, 2026-10-11): table centred, headers bold
     // italic and centred. PDF equivalent: TABLE_MAX_WIDTH in pdf.ts.
+    const colCount = table.headers.length;
+    const cellWidth = Math.floor((100 / colCount) * 100) / 100;
+
     const headerRow = new TableRow({
       tableHeader: true,
       children: table.headers.map(
         (h) =>
           new TableCell({
             borders: GRID,
-            children: [p(h, { size: 17, bold: true, italics: true, align: "center" })],
+            width: { size: cellWidth, type: WidthType.PERCENTAGE },
+            children: [p(h, { size: TABLE_TEXT_SIZE, bold: true, italics: true, align: "center" })],
           })
       ),
     });
+
     const dataRows = table.rows.map(
       (row) =>
         new TableRow({
-          children: row.map(
-            (cell) =>
-              new TableCell({
-                borders: GRID,
-                children: [p(cell || " ", { size: 17 })],
-              })
-          ),
+          // A row the student writes in is at least BLANK_ROW_HEIGHT tall even
+          // when every cell is blank (user instruction, 2026-10-13): an empty
+          // row that collapses to one text line leaves nowhere to write.
+          height: { value: BLANK_ROW_HEIGHT * 20, rule: HeightRule.ATLEAST },
+          children: table.headers.map((_, ci) => {
+            const cell = row[ci] ?? "";
+            const dotted = /^\.+$/.test(cell.trim());
+            return new TableCell({
+              borders: GRID,
+              width: { size: cellWidth, type: WidthType.PERCENTAGE },
+              children: [
+                p(cell || " ", {
+                  size: TABLE_TEXT_SIZE,
+                  align: dotted ? "center" : "left",
+                }),
+              ],
+            });
+          }),
         })
     );
+
     children.push(
       new Paragraph({ spacing: { after: 0 }, children: [t("", { size: 2 })] })
     );
@@ -274,7 +301,7 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
     // Centred word bank, between the instruction and the first item, matching
     // the PDF. Absent from the DOCX entirely before this, so a GAP_FILL task was
     // unanswerable in Word.
-    if (task.wordList) children.push(p(task.wordList.join(" - "), { align: "center" }));
+    if (task.wordList) children.push(p(task.wordList.join(WORD_BANK_SEPARATOR), { align: "center" }));
     for (const item of task.items) children.push(itemParagraph(item));
   };
 

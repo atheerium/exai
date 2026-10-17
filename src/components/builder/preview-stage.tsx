@@ -5,7 +5,8 @@ import { Download, FileText, FileDown, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 import { assembleDocument, type ExportDocument } from "@/lib/export/assemble";
-import { buildPaper } from "@/lib/export/paper";
+import { buildPaper, WORD_BANK_SEPARATOR } from "@/lib/export/paper";
+import { BLANK_ROW_HEIGHT } from "@/lib/export/tables";
 import type { ExamDto } from "@/types";
 
 export function PreviewStage({ exam }: { exam: ExamDto }) {
@@ -112,9 +113,10 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                   // Centred, between the instruction and the first item, like
                   // the PDF and DOCX. The preview showed no bank while the
                   // downloads printed one, so the teacher reviewed a different
-                  // task from the one the students would get.
-                  <p className="mt-1 text-center text-[15px] italic leading-snug">
-                    {block.task.wordList.join(" - ")}
+                  // task from the one the students would get. The separator is
+                  // the shared constant so all three surfaces print ` – `.
+                  <p className="mt-1 text-center text-[15px] leading-snug">
+                    {block.task.wordList.join(WORD_BANK_SEPARATOR)}
                   </p>
                 )}
                 {block.task.items.map((item) => (
@@ -136,12 +138,22 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
 
           case "table":
             return (
+              // Centred and narrower than the text block, equal thirds, 1pt
+              // borders, centred bold-italic headers and a row tall enough to
+              // write in -- the same rules as pdf.ts/docx.ts, so the teacher
+              // reviews the paper the students will get.
               <div key={bi} className="mt-3 overflow-x-auto">
-                <table className="w-full border-collapse border border-foreground text-sm">
+                <table
+                  className="mx-auto border-collapse border-2 border-foreground bg-white text-[13px]"
+                  style={{ width: "70%" }}
+                >
                   <thead>
                     <tr>
                       {block.table.headers.map((h, hi) => (
-                        <th key={hi} className="border border-foreground px-3 py-2 text-left font-semibold text-foreground">
+                        <th
+                          key={hi}
+                          className="w-1/3 border-2 border-foreground px-3 py-2 text-center font-bold italic"
+                        >
                           {h}
                         </th>
                       ))}
@@ -149,12 +161,23 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                   </thead>
                   <tbody>
                     {block.table.rows.map((row, ri) => (
-                      <tr key={ri}>
-                        {row.map((cell, ci) => (
-                          <td key={ci} className="border border-foreground px-3 py-2 align-top">
-                            {cell || "\u00a0"}
-                          </td>
-                        ))}
+                      <tr key={ri} style={{ height: `${BLANK_ROW_HEIGHT}px` }}>
+                        {block.table.headers.map((_, ci) => {
+                          const cell = row[ci] ?? "";
+                          const dotted = /^\.+$/.test(cell.trim());
+                          return (
+                            <td
+                              key={ci}
+                              className="w-1/3 border-2 border-foreground px-3 py-2 align-middle"
+                              style={{ textAlign: dotted ? "center" : "left" }}
+                            >
+                              {/* A dotted cell must never wrap: a wrapped leader
+                                  breaks the row height the other cells are drawn
+                                  against. */}
+                              <span className="whitespace-nowrap">{cell}</span>
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>

@@ -467,13 +467,13 @@ rendered. "Gap" means the item ends in a dotted leader the student writes into.
 | 1A Synonyms/antonyms | "Find in the text words or phrases that are closest in meaning to..." / "...opposite in meaning to..." | 2-3 items, paragraph numbers given | target words **bold+underlined** in the passage, `(§N)` + gap per item |
 | 1B Matching table | "Match the following words with their corresponding synonyms / opposites / definitions." | 2-3 items | Word/Definition chart, answer column blank |
 | 1C Definition match | "Find words in the text whose definitions follow:" | 2-3 items | lettered items with gaps |
-| 2A Chart completion | "Complete the chart as shown in the example." | 1 solved example + 3-4 derived words | Word/Noun/Verb/Adjective chart, only the base word given |
+| 2A Chart completion | "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words." | 1 solved example + 3-4 derived words | **`Verb` \| `Noun` \| `Adjective`** chart: solved example row, then one row per target word with the given word printed and the other two cells as handwriting lines. No lettered items. |
 | 2B Affix separation | "Divide the following words into roots and affixes." / "Give the opposites of the following words keeping the same root." | 3-4 words | **centred** `a - b - c` word list, then Prefix/Root/Suffix chart |
 | 3A Sentence rephrasing | "Rewrite sentence B so that it means the same as sentence A." | 2-3 sentences | lettered sentences |
 | 3B Sentence combination | "Combine each pair of sentences with one of the connectors provided. Make changes where necessary." | 2-3 pairs | lettered pairs |
 | 3C Verb tense | "Give the correct form of the verbs in brackets." | 4 verbs in brackets | lettered sentences with bracketed verbs |
 | 3D Question formation | "Ask questions which the underlined words answer." | max 2 questions | lettered items |
-| 4A/4B/4C/4D Phonology tables | "Classify the following words according to..." | 3-4 words | classification chart, blank answer cells |
+| 4A/4B/4C/4D Phonology tables | "Classify the following words according to the pronunciation of the final /ed/ (or final /s/)." | 4 words | word bank **centred above** the table (`word – word – word – word`), then a 3-column sound chart — `/t/` `/d/` `/ɪd/` or `/s/` `/z/` `/ɪz/` — with **exactly one empty row** |
 | 4E Silent letter | "Circle or write the silent letter in each of the following words." | — | lettered words |
 | 4F Rhyming pairs | "Match the pairs that rhyme." | exactly 2 pairs | lettered pairs |
 | 5A Gap fill with list | "Fill in the gaps with words from the list given." | 4 gaps / 4 words, or 4 gaps / 6 words | **word bank centred `a - b - c` between the instruction and the first item**, then one lettered sentence per gap |
@@ -1123,3 +1123,45 @@ Measured: 6 live runs after the change, **0** failing on a missing or prefilled
 table (4 passed; the 2 failures were an ungrounded vocabulary target and
 free-tier capacity, both pre-existing classes). Before it, every run failed on
 one of the two.
+
+### 12.12 The three official Part B table structures are built in code
+
+`officialTable()` in `export/tables.ts` builds the tabular task's chart from the
+model's **content** (which words, which sound groups) and never from its
+**layout**. Headers, row count, the solved example and the handwriting lines are
+all computed. User instruction, 2026-10-13.
+
+| Structure | Headers | Rows |
+|---|---|---|
+| Affix separation | `prefix` \| `root` \| `suffix` | one empty row |
+| Word derivation | `Verb` \| `Noun` \| `Adjective` | solved example, then one target word per row |
+| Phonology | `/t/` `/d/` `/ɪd/` or `/s/` `/z/` `/ɪz/` | **exactly one** empty row |
+
+Why one row and not several: students do not write into a multi-row grid on these
+papers, they sort the whole word list into one box under each column header. The
+previous phonology table shipped two empty rows, which reads as a grid the
+official paper never has.
+
+Two consequences worth knowing:
+
+- **A tabular task prints no lettered items.** Its words live in the table cells
+  or the centred word bank, so `a) "fraudulent" ..........` above a derivation
+  chart would duplicate the row and turn a chart task back into a list.
+  `tabularTaskPrintsItems()` decides this.
+- **The solved example row is not an answer.** The instruction is "Complete the
+  chart as shown in the example", so the example IS the instruction. It uses a
+  different word family from every test row, which is why it is the one row the
+  answer-cell rule exempts. Dotted lines count as blank: a rule to write on is
+  not a value (`isBlankCell`).
+
+Headers are matched **by name, not position** (`derivationColumns`). A live model
+asked for `Verb | Noun | Adjective` has been seen to answer `Noun | Verb |
+Adjective`, or the older `Word | Noun | Verb | Adjective` where the base word has
+no column of its own; both still print in the official order.
+
+Inspect the grids in a rasterised PDF rather than trusting the code:
+
+```
+npx tsx scripts/table-check.ts
+pdftoppm -r 130 -png /tmp/opencode/examcheck/tables.pdf /tmp/opencode/examcheck/tbl
+```

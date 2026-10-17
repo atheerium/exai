@@ -5,6 +5,8 @@ import { buildPaper } from "./paper";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { arabicLine, arabicMixedRun, arabicPageFooter, isShaped } from "./arabic";
+import { BLANK_ROW_HEIGHT } from "./tables";
+import { WORD_BANK_SEPARATOR } from "./paper";
 
 // The official paper is set in a serif face (Times), not the sans-serif the
 // dashboard uses. Times-Bold / Times-Italic / Times-BoldItalic are pdfkit's
@@ -39,6 +41,12 @@ const PARA_GAP = 0.55;
  * 2026-10-11). DOCX mirrors this with TABLE_WIDTH_PCT.
  */
 const TABLE_MAX_WIDTH = 400;
+
+/**
+ * Table grid weight. 1pt solid black (user instruction, 2026-10-13). DOCX
+ * mirrors this with `GRID` in `docx.ts`, whose `size` is in eighths of a point.
+ */
+const TABLE_LINE_WIDTH = 1;
 
 /**
  * Vertical rhythm (user instruction, 2026-10-11: "reduce the line spacing by
@@ -435,11 +443,27 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     return height;
   };
 
+  /**
+   * Dotted cell content that fits the measured column, never more.
+   *
+   * `DOTTED` is a literal constant because DOCX and the preview cannot measure
+   * text, but the PDF can, and a leader that wraps onto a second line inside a
+   * 32pt cell breaks the row height. Shortened from the right, so the three
+   * surfaces agree whenever the constant fits (it does at body size in a third
+   * of the text block) and degrade the same way when it does not.
+   */
+  const fitDots = (text: string, textWidth: number): string => {
+    if (!/^\.+$/.test(text.trim())) return text;
+    const face = doc.font(REGULAR).fontSize(BODY);
+    let dots = text.trim();
+    while (dots.length > 3 && face.widthOfString(dots) > textWidth) dots = dots.slice(0, -1);
+    return dots;
+  };
+
   const drawTable = (table: PaperTable) => {
     const colCount = table.headers.length;
     const padX = 5;
     const padY = 5;
-    const minHeight = 20;
     const pageBottom = () => doc.page.height - doc.page.margins.bottom;
     let y = doc.y;
 
@@ -448,32 +472,41 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     // content width, which made a three-column affix chart span the whole page.
     const tableWidth = Math.min(contentWidth, TABLE_MAX_WIDTH);
     const x0 = left + (contentWidth - tableWidth) / 2;
+    // Equal thirds: every one of the three structures is a 3-column chart
+    // (user instruction, 2026-10-13), and `tableWidth / colCount` gives exactly
+    // that rather than the old proportional split.
     const colWidth = tableWidth / colCount;
     const textWidth = colWidth - padX * 2;
 
-    const measure = (cells: string[], bold: boolean): number => {
+    /**
+     * Row height: a row the student writes in is `BLANK_ROW_HEIGHT` tall even
+     * when empty, and a row carrying text is at least as tall as that text.
+     */
+    const measure = (cells: string[]): number => {
       let tallest = 0;
       for (const cell of cells) {
         // Measure in the face the cell will actually be drawn in, or phonetic
         // cells wrap against the wrong metrics.
-        doc.font(faceFor(cell || " ", bold, false)).fontSize(BODY - 1);
+        doc.font(faceFor(cell || " ", false, false)).fontSize(BODY);
         tallest = Math.max(tallest, doc.heightOfString(cell || " ", { width: textWidth }));
       }
-      return Math.max(minHeight, tallest + padY * 2);
+      return Math.max(BLANK_ROW_HEIGHT, tallest + padY * 2);
     };
 
-    const headerH = measure(table.headers, true);
-    if (y + headerH + minHeight > pageBottom()) {
+    const headerH = measure(table.headers);
+    if (y + headerH + BLANK_ROW_HEIGHT > pageBottom()) {
       doc.addPage();
       if (header) drawRunningHeader(header);
       y = doc.y;
     }
 
-    doc.save().lineWidth(0.8).strokeColor("#000000");
+    // 1pt solid black grid, no shading (user instruction, 2026-10-13). Cell
+    // fill is left white, which is the page, so nothing is painted.
+    doc.save().lineWidth(TABLE_LINE_WIDTH).strokeColor("#000000");
     table.headers.forEach((h, ci) => {
       const x = x0 + ci * colWidth;
       doc.rect(x, y, colWidth, headerH).stroke();
-      doc.font(faceFor(h, true, true)).fontSize(BODY - 1).fillColor("#000000").text(h, x + padX, y + padY, {
+      doc.font(faceFor(h, true, true)).fontSize(BODY).fillColor("#000000").text(h, x + padX, y + padY, {
         width: textWidth,
         align: "center",
       });
@@ -481,17 +514,22 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     y += headerH;
 
     table.rows.forEach((row) => {
-      const h = measure(row, false);
+      const h = measure(row);
       if (y + h > pageBottom()) {
         doc.addPage();
         if (header) drawRunningHeader(header);
         y = doc.y;
       }
-      row.forEach((cell, ci) => {
+      row.forEach((rawCell, ci) => {
         const x = x0 + ci * colWidth;
         doc.rect(x, y, colWidth, h).stroke();
+        const cell = fitDots(rawCell ?? "", textWidth);
         const body = cell || " ";
-        doc.font(faceFor(body, false, false)).fontSize(BODY - 1).fillColor("#000000").text(body, x + padX, y + padY, { width: textWidth });
+        // A dotted cell is centred: it is a handwriting rule, and centring it is
+        // what makes it read as one. A given word stays flush left.
+        const align = /^\.+$/.test(cell.trim()) ? "center" : "left";
+        doc.font(faceFor(body, false, false)).fontSize(BODY).fillColor("#000000")
+          .text(body, x + padX, y + padY, { width: textWidth, align });
       });
       y += h;
     });
@@ -532,7 +570,7 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     // student can read the candidate words before meeting the sentences. Centred
     // and hyphen-separated, like the official paper.
     if (task.wordList) {
-      const bank = task.wordList.join(" - ");
+      const bank = task.wordList.join(WORD_BANK_SEPARATOR);
       font(BODY);
       const height = doc.heightOfString(bank, { width: contentWidth });
       if (y + height > doc.page.height - doc.page.margins.bottom) {

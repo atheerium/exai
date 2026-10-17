@@ -13,6 +13,7 @@ import http from "node:http";
 import { createCompatibleGenerators, type ProviderConfig } from "./provider";
 import { buildContext } from "./index";
 import { GRADES, getGuide } from "@/data/guides";
+import { isBlankCell } from "@/lib/export/tables";
 
 let server: http.Server;
 let port = 0;
@@ -64,11 +65,19 @@ before(async () => {
           family: "WORD_MEANING",
           ...(tabular.has(r.skill)
             ? {
-                table: {
-                  headers: ["Word", "Derived form"],
-                  // Prefilled on purpose.
-                  rows: [["curiosity", "curious"]],
-                },
+                // Wrong column order and every cell filled, on purpose: the shape
+                // the model actually returns. `officialTable` maps by header NAME
+                // and rebuilds the chart, so this must still print legally.
+                table:
+                  r.skill === "MORPHOLOGY"
+                    ? {
+                        headers: ["Adjective", "Noun", "Verb"],
+                        rows: [
+                          ["corrupt", "corruption", "to corrupt"],
+                          ["fraudulent", "", ""],
+                        ],
+                      }
+                    : { headers: ["Word", "Derived form"], rows: [["curiosity", "curious"]] },
               }
             : {}),
         })),
@@ -246,9 +255,16 @@ test("each tabular skill is named with its marks and the literal field", async (
       `${skill.skill} must be named individually, with its marks and the field`
     );
   }
-  // The skeleton, not hard-coded headers: phonology headers are IPA symbols the
-  // guide cannot prescribe.
-  assert.match(request, /"table": \{"headers": \["\.\.\.","\.\.\."\]/);
+  // The shapes are now stated per skill, literally, because the generic
+  // skeleton did not bind. They are a REQUEST: `officialTable` rebuilds the
+  // layout from whatever arrives, so this asserts the model is told the real
+  // shape rather than that it obeyed.
+  assert.match(request, /"headers": \["Verb","Noun","Adjective"\]/);
+  assert.match(request, /\["to corrupt","corruption","corrupt"\]/);
+  assert.match(request, /"headers": \["prefix","root","suffix"\]/);
+  assert.match(request, /\["\/t\/","\/d\/","\/ɪd\/"\]/);
+  assert.match(request, /\["\/s\/","\/z\/","\/ɪz\/"\]/);
+  assert.match(request, /exactly ONE row, all three cells EMPTY/i);
 });
 
 test("a non-tabular skill is never told to emit a table", async () => {
@@ -267,19 +283,65 @@ test("a non-tabular skill is never told to emit a table", async () => {
 });
 
 test("a table's answer cells are emptied by code, not trusted from the model", async () => {
-  // The stub replies with "curious" in the Derived form column. Those cells print
-  // on the paper, and `assemble.ts` never reads the `answer` field precisely so
-  // that answers cannot leak -- a prefilled table cell walks straight past that.
+  // The stub fills in every cell it is given. Those cells print on the paper, and
+  // `assemble.ts` never reads the `answer` field precisely so that answers cannot
+  // leak -- a prefilled table cell walks straight past that.
   sent = [];
   const sets = await createCompatibleGenerators(config).generateTextExplorationCandidates(ctx(PASSAGE));
   const tabular = sets[0].filter((t) => t.table);
   assert.ok(tabular.length > 0, "fixture must produce tabular tasks");
   for (const task of tabular) {
-    for (const row of task.table!.rows) {
-      assert.equal(row[0], "curiosity", "column 0 is the given material and must survive");
-      assert.deepEqual(row.slice(1), [""], "every answer cell must be empty");
+    // A derivation chart's row 0 is the SOLVED EXAMPLE and is fully filled by
+    // design: the instruction is "Complete the chart as shown in the example",
+    // so the example is the instruction, not an answer. It is a different word
+    // family from every test row, so it cannot answer one.
+    const exampleRow = task.table!.headers.join(" ").toLowerCase().includes("verb") ? 1 : 0;
+    for (const row of task.table!.rows.slice(exampleRow)) {
+      // Only one cell per row may hold material; everything else is the student's.
+      const filled = row.filter((cell) => !isBlankCell(cell));
+      assert.ok(filled.length <= 1, `at most one given cell per row, got ${JSON.stringify(row)}`);
     }
   }
+  // The phonology table is a classification chart: one row, nothing in it. Which
+  // sound group it names depends on the task wording, which this stub does not
+  // give, so either official triple is correct here.
+  const phonology = tabular.find((t) => (t.skill ?? "").toUpperCase() === "PHONOLOGY");
+  const groups: string[][] = [["/t/", "/d/", "/ɪd/"], ["/s/", "/z/", "/ɪz/"]];
+  assert.ok(
+    groups.some((g) => g.join() === phonology!.table!.headers.join()),
+    `official sound groups, got ${JSON.stringify(phonology!.table!.headers)}`
+  );
+  assert.deepEqual(phonology!.table!.rows, [["", "", ""]], "exactly ONE empty row to sort into");
+});
+
+test("an official chart is rebuilt in code, whatever order the model used", async () => {
+  // The shape the model returns is content, not layout: `officialTable` decides
+  // the headers, the example row and the dotted cells. This stub answers with the
+  // columns in the WRONG order and every cell filled, and the stamped table must
+  // still be the official one with no derived form left in it.
+  sent = [];
+  const sets = await createCompatibleGenerators(config).generateTextExplorationCandidates(ctx(PASSAGE));
+  const derivation = sets[0].find((t) => (t.skill ?? "").toUpperCase() === "MORPHOLOGY");
+  assert.ok(derivation?.table, "the morphology task must carry a table");
+  assert.deepEqual(
+    derivation.table!.headers,
+    ["Verb", "Noun", "Adjective"],
+    "canonical column order, whatever came back"
+  );
+  // Row 0 is the solved example; every later row has exactly one given word and
+  // dotted lines everywhere else.
+  assert.equal(derivation.table!.rows[0].filter(Boolean).length, 3, "the example row is fully solved");
+  for (const row of derivation.table!.rows.slice(1)) {
+    const given = row.filter((cell) => cell !== "" && !/^\.+$/.test(cell));
+    assert.equal(given.length, 1, `exactly one given word per row, got ${JSON.stringify(row)}`);
+  }
+  // The model's own second row (`fraudulent | fraud | to defraud`) is a TEST row
+  // with three derived answers in it. Only the given word may survive.
+  const testRows = derivation.table!.rows.slice(1);
+  assert.ok(testRows.length > 0, "the test row must survive the rebuild");
+  const survived = testRows.flat().filter((cell) => cell !== "" && !/^\.+$/.test(cell));
+  assert.deepEqual(survived, ["fraudulent"], "only the given word reaches the paper");
+  assert.ok(testRows.flat().every((cell) => cell === "" || cell === "fraudulent" || /^\.+$/.test(cell)));
 });
 
 test("a non-tabular task never gains a table from the blanking stamp", async () => {

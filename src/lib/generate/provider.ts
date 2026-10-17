@@ -5,7 +5,7 @@
 // prompt builder, and response parser so each provider file stays thin.
 
 import type { GeneratedSource, GeneratedTask, GeneratedTextCandidate, GeneratedTopic } from "@/types";
-import { rulePrescribesTable } from "@/lib/export/tables";
+import { officialTable, rulePrescribesTable, type RawTable } from "@/lib/export/tables";
 import { candidateCount, DEFAULT_CANDIDATES } from "./candidates";
 import type { GenContext } from "./index";
 
@@ -382,28 +382,79 @@ const PART_TWO_TABLE_RULE =
 /**
  * Empties every cell a student is meant to fill, keeping column 0.
  *
- * Column 0 is the given material for every task type in the corpus (see
- * `checkTaskLinkage`, which enforces the same rule); everything to its right is
- * an answer. A model that pre-fills those cells has produced the answer key, and
- * `assemble.ts` never reads the `answer` field precisely so that answers cannot
- * reach the paper -- a prefilled table cell would walk straight past that.
+ * @deprecated Superseded by `officialTable` in `export/tables.ts`, which rebuilds
+ * the whole chart (headers, row count, example row, dotted cells) instead of only
+ * blanking what came back. Kept as the fallback for a table whose kind cannot be
+ * recognised, where blanking past column 0 is still the right thing to do.
  */
-function blankAnswerCells(table: { headers: string[]; rows: string[][] }): { headers: string[]; rows: string[][] } {
+function blankAnswerCells(table: RawTable): RawTable {
   return {
     headers: [...table.headers],
     rows: table.rows.map((row) => [row[0] ?? "", ...row.slice(1).map(() => "")]),
   };
 }
 
+/** The official chart when the structure is recognisable, blanked otherwise. */
+function stampedTable(task: GeneratedTask, skill: string): RawTable {
+  return officialTaskTable(task, skill) ?? blankAnswerCells(task.table!);
+}
+
+/**
+ * Build the official table in code, replacing whatever shape came back.
+ *
+ * The model supplies CONTENT — which words, which sound groups, an example word
+ * family — and never layout. Headers, row count, the example row and the dotted
+ * cells are computed by `officialTable` (`export/tables.ts`), for the reason the
+ * rest of the pipeline already follows: a table shape requested in prose comes
+ * back wrong, and a prefilled answer cell is an answer key printed on the paper.
+ * The previous `blankAnswerCells` handled only the second half.
+ */
+function officialTaskTable(task: GeneratedTask, skill: string): RawTable | null {
+  return officialTable({
+    skill,
+    instruction: task.instruction,
+    prompt: task.prompt,
+    table: task.table ?? null,
+  });
+}
+
+/**
+ * Per-skill, literal "you must emit this field" instructions for the tabular
+ * skills.
+ *
+ * `PART_TWO_TABLE_RULE` states the rule and the model still omitted the field on
+ * roughly half of runs (measured live 2026-10-13 through a logging proxy: the
+ * payload correctly said `tableRequired: true` for MORPHOLOGY and PHONOLOGY, and
+ * the reply carried no `table` key for either). The repair pass recovered it
+ * when capacity allowed and failed the whole exam when it did not.
+ *
+ * The shapes below are what the official papers print, stated literally. They are
+ * a REQUEST: `officialTable` rebuilds the layout from whatever arrives, so a
+ * model that returns four columns in the wrong order, or omits the example, still
+ * prints a legal chart — it just loses content.
+ */
 function tableRequirementNote(
   skills: { skill: string; marks: number; tableRequired: boolean }[]
 ): string {
   const tabular = skills.filter((s) => s.tableRequired);
   if (tabular.length === 0) return "";
+  const SHAPES: Record<string, string> = {
+    MORPHOLOGY:
+      'MORPHOLOGY carries a derivation chart: "table": {"headers": ["Verb","Noun","Adjective"], "rows": ' +
+      '[["to corrupt","corruption","corrupt"], ["fraudulent","",""], ["","communication",""], ["to value","",""]]} — ' +
+      "the FIRST row is the solved example the instruction refers to (\"as shown in the example\") and must have all three cells " +
+      "filled with complete forms; every row after it carries exactly ONE given word, in a DIFFERENT column each time so all three " +
+      "parts of speech are tested, and its other two cells are EMPTY strings. If your task asks to divide words into roots and " +
+      'affixes instead, use "headers": ["prefix","root","suffix"] with exactly ONE row of three EMPTY strings.',
+    PHONOLOGY:
+      'PHONOLOGY carries a classification chart: "table": {"headers": ["/t/","/d/","/ɪd/"], "rows": [["","",""]]} for final ' +
+      "/ed/, or the same shape with \"headers\": [\"/s/\",\"/z/\",\"/ɪz/\"] for final /s/ — the three sound groups that match the classification your task " +
+      'asks for. Exactly ONE row, all three cells EMPTY: students sort the whole word list into one box under each column header.',
+  };
   const each = tabular
-    .map((s) => `"${s.skill}" (${s.marks} marks) MUST carry a "table" field, exactly like this: "table": {"headers": ["...","..."], "rows": [["first item", ""]]} — one row per item, every student-filled cell an EMPTY string, and the headers chosen to match that task's instruction`)
-    .join("; ");
-  return ` Required fields, one per skill: ${each}. `;
+    .map((s) => `"${s.skill}" (${s.marks} marks) MUST carry a "table" field. ${SHAPES[s.skill.toUpperCase()] ?? "Use the exact headers named in that task's instruction, and leave every cell the student must fill as an EMPTY string."}`)
+    .join(" ");
+  return ` Required fields, one per skill: ${each} `;
 }
 
 /**
@@ -847,15 +898,16 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         // Same reasoning as the fields above: computed, not generated. A tabular
         // task's cells past column 0 ARE the student's answers, so the model
         // filling them in is not a style problem -- it is an answer key printed on
-        // the paper. `checkTaskLinkage` already defines column 0 as the given
-        // material for every task type in the corpus, so this enforces that same
-        // rule instead of inventing a new one. Measured live 2026-10-13: the model
-        // returned "preservation"/"documentation" in the morphology chart, which
-        // failed the whole exam although the table was otherwise correct.
+        // the paper. `officialTable` goes further and rebuilds the chart itself.
         //
-        // No live guide sets `solvedExampleRow` (it is declared on the rule type
-        // and set by none of them), so there is no solved-example row to spare.
-        if (rulePrescribesTable(spec) && stamped.table) stamped.table = blankAnswerCells(stamped.table);
+        // Measured live 2026-10-13: the model returned "preservation"/
+        // "documentation" in the morphology chart, which failed the whole exam
+        // although the table was otherwise correct.
+        // Only rebuilt when the model SENT one. A missing table stays missing, so
+        // `validateCandidate` still fails it and the bounded repair call can retry
+        // -- synthesising an empty chart would turn a recoverable failure into a
+        // paper with a chart and no words to put in it.
+        if (rulePrescribesTable(spec) && stamped.table) stamped.table = stampedTable(stamped, spec.skill);
         return stamped;
       })
     );

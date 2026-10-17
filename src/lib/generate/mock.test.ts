@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getGuide, GUIDES } from "../../data/guides";
 import { candidateCount } from "./candidates";
+import { isBlankCell, tableKindFromHeaders } from "@/lib/export/tables";
 import {
   generateText,
   generateTextCandidates,
@@ -356,9 +357,13 @@ test("tableRequired follows the table allowlist, not the old blanket default", (
   }
 });
 
-test("generated tables leave the answer column empty for every grade and variant", () => {
+test("generated tables carry no answers for every grade and variant", () => {
   // The student-facing paper must never ship the answer key inside a table cell.
-  // Column 0 is the given stimulus; every later column is what the student fills in.
+  //
+  // Two printed cells are legitimately non-blank on a derivation chart: row 0 is
+  // the SOLVED EXAMPLE the instruction points at ("Complete the chart as shown in
+  // the example"), and the column holding the given word in each test row. The
+  // dotted lines count as blank: they are a rule to write on, not a value.
   for (const grade of Object.keys(GUIDES)) {
     for (let variant = 0; variant < 3; variant++) {
       const c = ctx({ grade, guide: getGuide(grade), seed: `exam:${grade}:u:t` });
@@ -366,12 +371,37 @@ test("generated tables leave the answer column empty for every grade and variant
       for (const task of tasks) {
         if (!task.table) continue;
         const label = `${grade} v${variant} ${task.family ?? task.skill}`;
-        for (const row of task.table.rows) {
-          for (let ci = 1; ci < row.length; ci++) {
-            assert.equal(row[ci], "", `${label}: column ${ci} ("${task.table.headers[ci]}") must be blank, got "${row[ci]}"`);
-          }
-        }
+        const derivation = tableKindFromHeaders(task.table.headers) === "derivation";
+        task.table.rows.forEach((row, ri) => {
+          if (derivation && ri === 0) return;
+          const filled = row.filter((cell) => !isBlankCell(cell));
+          assert.ok(
+            filled.length <= 1,
+            `${label}: at most one given cell per row, got ${JSON.stringify(row)}`
+          );
+        });
       }
+    }
+  }
+});
+
+test("every generated chart is one of the three official B structures", () => {
+  // The mock is the offline test double: if it drifts from the shape the live
+  // providers stamp, every test that exercises a validator rule through it
+  // silently stops covering that rule.
+  const c = ctx({ grade: "2as", guide: getGuide("2as"), seed: "exam:2as:u:t" });
+  const charts = generateTextExploration(c, 0).filter((t) => t.table);
+  assert.ok(charts.length > 0, "the Part Two section must carry charts");
+  for (const task of charts) {
+    const kind = tableKindFromHeaders(task.table!.headers);
+    assert.ok(kind, `${task.skill} table must match an official structure`);
+    assert.equal(task.table!.headers.length, 3, "three equal columns");
+    if (kind !== "derivation") {
+      // Affix and phonology: exactly ONE empty row to sort into. Students do not
+      // write into a multi-row grid on these papers.
+      assert.deepEqual(task.table!.rows, [["", "", ""]], `${task.skill}: one empty row`);
+    } else {
+      assert.equal(task.table!.rows[0].filter(Boolean).length, 3, "row 0 is the solved example");
     }
   }
 });

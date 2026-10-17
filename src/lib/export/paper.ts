@@ -12,11 +12,17 @@
 
 import type { ExportDocument, ExportHeader, ExportTask, ExportTopic } from "./assemble";
 import { isReferentWord, paragraphIndexOf } from "@/lib/generate/referents";
-import { taskHasTable } from "./tables";
+import { taskHasTable, tabularTaskPrintsItems, tableKindFromHeaders, type TableKind } from "./tables";
 
 export interface PaperTable {
   headers: string[];
   rows: string[][];
+  /**
+   * Which of the three official B structures this is (`export/tables.ts`). Null
+   * when the table matches none of them, which keeps the generic rendering rather
+   * than guessing.
+   */
+  kind: TableKind | null;
 }
 
 export interface PaperItem {
@@ -152,7 +158,7 @@ const BANK_PREFIX = /^(?:list|words?|word bank|lexis)\s*:\s*(.+)$/i;
  * bank containing an intra-word hyphen is therefore left alone rather than
  * guessed at; the `List:` prefix remains available for it.
  */
-const HYPHEN_LIST = /^[A-Za-z']+(?:\s+-\s+[A-Za-z']+){2,}$/;
+const HYPHEN_LIST = /^[A-Za-z']+(?:\s+[-–]\s+[A-Za-z']+){2,}$/;
 /**
  * How many leading non-empty lines may be scanned for a bank.
  *
@@ -224,6 +230,15 @@ export function extractWordBank(prompt: string): { words: string[]; rest: string
   }
   return { words: [], rest: prompt };
 }
+/**
+ * What separates the words of a printed bank: a spaced EN DASH (U+2013).
+ *
+ * ONEC typography (user instruction, 2026-10-13). Parsing accepts both the
+ * en dash and the plain hyphen, because the separator arrives from a model; the
+ * printed form does not vary, or the three surfaces would each pick their own.
+ */
+export const WORD_BANK_SEPARATOR = " – ";
+
 const UNDERLINED = /^"([^"]+)"\s*\(underlined\)$/;
 // "(§2)" — the paragraph an item refers back to, printed inline on the paper.
 const PARA_REF = /\s*\(§\s*(\d+)\s*\)/;
@@ -451,13 +466,23 @@ function toPaperTask(task: ExportTask, number: number): PaperTask {
   // indented under the stem and once centred.
   const bank = extractWordBank(task.prompt);
   const { lead, items } = parseTaskBody(bank.rest, task.instruction);
+  const table =
+    task.table && task.table.headers.length > 0
+      ? { headers: task.table.headers, rows: task.table.rows, kind: tableKindFromHeaders(task.table.headers) }
+      : null;
   return {
     number,
     instruction: task.instruction.trim(),
     lead,
-    items,
+    // A tabular task's words live in its table cells or its word bank, so the
+    // lettered items are not printed: `a) "fraudulent" ..........` above a chart
+    // that already prints `fraudulent` in the Adjective cell duplicates the row
+    // and turns a chart task back into a list (user instruction, 2026-10-13).
+    items: tabularTaskPrintsItems({ skill: task.skill, instruction: task.instruction, table: task.table })
+      ? items
+      : [],
     wordList: bank.words.length > 0 ? bank.words : null,
-    table: task.table && task.table.headers.length > 0 ? task.table : null,
+    table,
     skill: task.skill ?? null,
     family: task.family ?? null,
   };

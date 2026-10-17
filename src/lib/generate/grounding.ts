@@ -206,6 +206,8 @@ export function extractTaskTargets(task: LinkableTask): string[] {
 }
 
 /** Skills whose targets are expected to be literally present in the passage. */
+import { isBlankCell, tableKindFor } from "@/lib/export/tables";
+
 const LEXICAL_SKILLS: ReadonlySet<string> = new Set(["VOCABULARY", "MORPHOLOGY"]);
 
 /**
@@ -415,12 +417,29 @@ export function checkTaskLinkage(tasks: LinkableTask[], passage: string): string
     const label = `Task ${i + 1}`;
 
     // 1. Answer cells the student must fill are blank.
+    //
+    // Two exceptions, both printed material rather than answers (user
+    // instruction, 2026-10-13):
+    //
+    //   - a DERIVATION chart's row 0 is the solved example. The instruction is
+    //     "Complete the chart as shown in the example", so the example IS the
+    //     instruction; it uses a different word family from every test row and
+    //     therefore answers none of them.
+    //   - a cell holding only the dotted handwriting line is blank for this
+    //     purpose: `officialTable` fills the cells the student must derive with
+    //     it, and it is a rule to write on, not a value.
     if (task.table) {
+      const kind = tableKindFor(task.skill, task.table.headers, `${task.instruction ?? ""} ${task.prompt ?? ""}`);
+      const exemptExample = kind === "derivation";
       task.table.rows.forEach((row, r) => {
+        if (exemptExample && r === 0) return;
         row.forEach((cell, c) => {
           // Column 0 is the given material for every task type in the corpus;
           // every column to its right is a student's answer and must be empty.
-          if (c > 0 && cell.trim() !== "") {
+          // On a derivation chart the given word sits in whichever column the
+          // model chose, so the given cell is whichever is filled.
+          const isGiven = kind === "derivation" ? row.findIndex((value) => !isBlankCell(value)) === c : c === 0;
+          if (!isGiven && !isBlankCell(cell)) {
             issues.push(`${label} table row ${r + 1} column ${c + 1} is prefilled ("${cell.trim()}"); answer cells must be empty.`);
           }
         });

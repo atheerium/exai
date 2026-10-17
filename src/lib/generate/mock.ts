@@ -11,7 +11,14 @@ import { countWords, Seeded } from "./rng";
 import { candidateCount } from "./candidates";
 import { pickReferents } from "./referents";
 import { occursInPassage, passageVocabulary } from "./grounding";
-import { rulePrescribesTable, taskHasTable } from "@/lib/export/tables";
+import {
+  DERIVATION_EXAMPLE,
+  DERIVATION_HEADERS,
+  PHONOLOGY_GROUPS,
+  officialTable,
+  rulePrescribesTable,
+  taskHasTable,
+} from "@/lib/export/tables";
 import type { GeneratedSource, GeneratedTask, GeneratedText, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 
 export interface MockContext {
@@ -694,106 +701,103 @@ function generateTextExplorationPrimary(
     }
     return task;
   } else if (skillRule.skill === "MORPHOLOGY") {
+    // The official chart is built by `officialTable` in `export/tables.ts`, the
+    // same function the live providers stamp with. The mock must honour the same
+    // contract as the real providers, or every test that exercises a validator
+    // rule through it silently stops covering that rule (AGENTS.md).
+    //
     // Same intersection as VOCABULARY: the base word must be findable in the
     // passage, and the corpus must supply its word family so the answer key is
-    // real instead of three blank columns.
-    if (groundingText) {
-      const words = deriveGroundedMorphology(groundingText, 3, rng, theme);
-      if (!words) {
-        throw new Error(
-          "Cannot ground the morphology task: the passage shares no word with the unit vocabulary, " +
-            "so no word family can be drawn from it. Generate a different passage, or generate this section without passage grounding."
-        );
-      }
-      const rows = words.map((w) => ({
-        base: w.word.replace(/s$/, ""),
-        noun: w.family.noun ?? "",
-        verb: w.family.verb ?? "",
-        adj: w.family.adjective ?? "",
-      }));
-      return {
-        skill: "MORPHOLOGY",
-        family: "WORD_FAMILY",
-        prompt: rows.map((r, i) => `${i + 1}. "${r.base}" → ..........`).join("\n"),
-        instruction: skillRule.instruction,
-        answer: rows.map((r, i) => `${i + 1}. ${r.base}: noun ${r.noun}, verb ${r.verb}, adjective ${r.adj}`).join("\n"),
-        marks: skillRule.marks,
-        table: {
-          headers: ["Word", "Noun", "Verb", "Adjective"],
-          // Only the base word is given; every derived form is the answer.
-          rows: rows.map((r) => [r.base, "", "", ""]),
-        },
-      };
+    // real instead of three dotted cells.
+    const grounded = groundingText ? deriveGroundedMorphology(groundingText, 3, rng, theme) : null;
+    if (groundingText && !grounded) {
+      throw new Error(
+        "Cannot ground the morphology task: the passage shares no word with the unit vocabulary, " +
+          "so no word family can be drawn from it. Generate a different passage, or generate this section without passage grounding."
+      );
     }
+    const words = grounded ?? rng.take(theme.vocab, 3);
 
-    const words = rng.take(theme.vocab, 3);
-    const rows = words.map((w) => {
-      const noun = w.family.noun ?? "";
-      const verb = w.family.verb ?? "";
-      const adj = w.family.adjective ?? "";
-      return { base: w.word.replace(/s$/, ""), noun: noun || "—", verb: verb || "—", adj: adj || "—" };
+    /**
+     * One target word per row. The word is always the corpus entry itself — never
+     * one of its derived forms — because a derivation target has to occur in the
+     * passage (`checkTaskLinkage`) and `deriveGroundedMorphology` hands back
+     * passage words.
+     *
+     * It sits in the column matching the part of speech it actually is, so the
+     * three columns get used as the corpus allows rather than on a fixed order
+     * (user instruction, 2026-10-13). A word that is its own verb keeps the bare
+     * form: "to respect" is not the word the passage contains.
+     */
+    const targets = words.map((w) => {
+      const column = w.family.verb === w.word ? 0 : w.family.adjective === w.word ? 2 : 1;
+      return { column, word: w.word, entry: w };
     });
+
+    const given = targets.map((t) => {
+      const row = ["", "", ""];
+      row[t.column] = t.word;
+      return row;
+    });
+
     return {
       skill: "MORPHOLOGY",
       family: "WORD_FAMILY",
-      prompt: rows.map((r, i) => `${i + 1}. "${r.base}" → ..........`).join("\n"),
+      // The words live in the table cells, so the prompt is only the numbering
+      // the validator counts; `tabularTaskPrintsItems` stops the paper printing
+      // it as lettered questions.
+      prompt: targets.map((t, i) => `${i + 1}. "${t.word}" → ..........`).join("\n"),
       instruction: skillRule.instruction,
-      answer: rows.map((r, i) => `${i + 1}. noun: ${r.noun}, verb: ${r.verb}, adjective: ${r.adj}`).join("\n"),
+      answer: targets
+        .map(
+          (t, i) =>
+            `${i + 1}. from "${t.word}": verb ${t.entry.family.verb ?? "—"}, noun ${t.entry.family.noun ?? "—"}, adjective ${
+              t.entry.family.adjective ?? "—"
+            }`
+        )
+        .join("\n"),
       marks: skillRule.marks,
-      table: {
-        headers: ["Word", "Noun", "Verb", "Adjective"],
-        // Derived forms are the answers; only the base word is given.
-        rows: rows.map((r) => [r.base, "", "", ""]),
-      },
+      table: officialTable({
+        skill: "MORPHOLOGY",
+        instruction: skillRule.instruction,
+        table: { headers: [...DERIVATION_HEADERS], rows: [[...DERIVATION_EXAMPLE], ...given] },
+      }) ?? undefined,
     };
   } else if (skillRule.skill === "PHONOLOGY") {
     const useEd = rng.next() > 0.5;
+    const build = (words: string[], groups: readonly string[], classify: (word: string) => string | undefined) => ({
+      skill: "PHONOLOGY",
+      family: "SOUND_CLASS",
+      // The bank comes FIRST and in `List: [...]` form so `extractWordBank` finds
+      // it: these words are printed centred under the instruction, and the table
+      // below them is one empty box per sound group.
+      prompt: `List: [${words.join(", ")}]\nClassify the following words according to the pronunciation of the final ${useEd ? "-ed" : "-s"}.`,
+      instruction: skillRule.instruction,
+      answer: groups
+        .map((g) => `${g}: ${words.filter((w) => classify(w) === g).join(", ")}`)
+        .filter((s) => !s.endsWith(": "))
+        .join("\n"),
+      marks: skillRule.marks,
+      table: officialTable({
+        skill: "PHONOLOGY",
+        instruction: skillRule.instruction,
+        table: { headers: [...groups], rows: [[...groups].map(() => "")] },
+      }) ?? undefined,
+    });
+
     if (useEd) {
-      const words = rng.take(theme.vocab.filter((v) => v.finalEd), 5);
-      const groups = ["/t/", "/d/", "/ɪd/"] as const;
+      const edWords = rng.take(theme.vocab.filter((v) => v.finalEd), 4);
+      const words = edWords.map((w) => w.edWord ?? w.word);
       const map: Record<string, string> = { t: "/t/", d: "/d/", id: "/ɪd/" };
-      return {
-        skill: "PHONOLOGY",
-        family: "SOUND_CLASS",
-        prompt: `Classify the following words according to the pronunciation of the final "-ed".\n${words
-          .map((w) => w.edWord ?? w.word)
-          .join(" - ")}\n${groups.join(" | ")}`,
-        instruction: skillRule.instruction,
-        answer: groups
-          .map((g) => `${g}: ${words.filter((w) => map[w.finalEd!] === g).map((w) => w.edWord ?? w.word).join(", ")}`)
-          .filter((s) => !s.endsWith(": "))
-          .join("\n"),
-        marks: skillRule.marks,
-        table: {
-          headers: [...groups],
-          // Classification answers go in the body; the headers are the groups.
-          rows: [[...groups].map(() => ""), [...groups].map(() => "")],
-        },
-      };
-    } else {
-      const words = rng.take(theme.vocab.filter((v) => v.word.endsWith("s") || v.word.endsWith("z")), 4).map((v) => v.word);
-      const list = words.length >= 4 ? words : theme.vocab.slice(0, 4).map((v) => v.word);
-      const groups = ["/s/", "/z/", "/ɪz/"] as const;
-      const map: Record<string, string> = { s: "/s/", z: "/z/", iz: "/ɪz/" };
-      const classified = theme.vocab
-        .filter((v) => list.includes(v.word))
-        .map((v) => ({ word: v.word, pron: map[v.finalS] }));
-      return {
-        skill: "PHONOLOGY",
-        family: "SOUND_CLASS",
-        prompt: `Classify the following words according to the pronunciation of the final "-s".\n${list.join(" - ")}\n${groups.join(" | ")}`,
-        instruction: skillRule.instruction,
-        answer: groups
-          .map((g) => `${g}: ${classified.filter((c) => c.pron === g).map((c) => c.word).join(", ")}`)
-          .filter((s) => !s.endsWith(": "))
-          .join("\n"),
-        marks: skillRule.marks,
-        table: {
-          headers: [...groups],
-          rows: [[...groups].map(() => ""), [...groups].map(() => "")],
-        },
-      };
+      const index = new Map(edWords.map((w, i) => [w.edWord ?? w.word, map[w.finalEd ?? "t"] ?? "/t/"]));
+      return build(words, PHONOLOGY_GROUPS.ed, (word) => index.get(word));
     }
+    const sWords = rng.take(theme.vocab.filter((v) => v.word.endsWith("s") || v.word.endsWith("z")), 4);
+    const words = sWords.map((v) => v.word);
+    const list = words.length >= 4 ? words : theme.vocab.slice(0, 4).map((v) => v.word);
+    const map: Record<string, string> = { s: "/s/", z: "/z/", iz: "/ɪz/" };
+    const index = new Map(theme.vocab.map((v) => [v.word, map[v.finalS ?? "s"] ?? "/s/"]));
+    return build(list, PHONOLOGY_GROUPS.s, (word) => index.get(word));
   } else if (skillRule.skill === "GRAMMAR") {
     const exs = rng.take(theme.grammar, 2);
     return {

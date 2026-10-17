@@ -4,6 +4,7 @@ import { generateFullExam, FULL_EXAM_QUOTA_COST } from "./full-exam";
 import { occursInPassage, extractTaskTargets } from "./grounding";
 import { GRADES, GUIDES, getGuide } from "@/data/guides";
 import type { GeneratedTask } from "@/types";
+import { isBlankCell, tableKindFromHeaders } from "@/lib/export/tables";
 
 /** A valid (grade, unit, topic, length) tuple, read from the curriculum. */
 function paramsFor(grade: string, examId: string) {
@@ -76,14 +77,22 @@ test("referent targets occur in the generated passage", async () => {
   }
 });
 
-test("answer cells in task tables are empty", async () => {
+test("no answer reaches a task table", async () => {
+  // A derivation chart's row 0 is the SOLVED EXAMPLE and is fully filled on
+  // purpose: the instruction is "Complete the chart as shown in the example", so
+  // the example is the instruction. It uses a different word family from every
+  // test row, so it cannot answer one. Dotted lines count as blank: a rule to
+  // write on is not a value.
   const r = await generateFullExam(BASE);
   assert.equal(r.ok, true, JSON.stringify(r.issues));
   const all = [...r.partOne![0], ...r.textExploration![0]];
   for (const task of all) {
     if (!task.table) continue;
-    task.table.rows.forEach((row) => {
-      row.slice(1).forEach((cell) => assert.equal(cell.trim(), "", "answer cell prefilled"));
+    const derivation = tableKindFromHeaders(task.table.headers) === "derivation";
+    task.table.rows.forEach((row, ri) => {
+      if (derivation && ri === 0) return;
+      const filled = row.filter((cell) => !isBlankCell(cell));
+      assert.ok(filled.length <= 1, `answer cell prefilled: ${JSON.stringify(row)}`);
     });
   }
 });
