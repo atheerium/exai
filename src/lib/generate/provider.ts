@@ -9,12 +9,10 @@ import { officialTable, rulePrescribesTable, type RawTable } from "@/lib/export/
 import { candidateCount, DEFAULT_CANDIDATES } from "./candidates";
 import type { GenContext } from "./index";
 
-const SYSTEM = [
-  "You are Exaai, an assistant that helps Algerian English teachers create structured English exams.",
-  "You always reply with valid JSON only, matching the exact schema requested by the user. Never include extra text, markdown, or explanation.",
-  "Follow the official exam structure for the given grade exactly. Respect word counts, mark allocations, and skill categories.",
-  "Do not invent marks that conflict with the requested totals.",
-].join(" ");
+// The system prompt lives in its own file because every generation sends it and
+// it changes more often than anything else here. See that file for why it stays
+// this small and why request strings are not moved alongside it.
+import { SYSTEM_PROMPT as SYSTEM } from "./system-prompt";
 
 export interface ProviderConfig {
   apiKey: string | undefined;

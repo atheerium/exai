@@ -111,7 +111,47 @@ Three pdfkit traps, all documented in `EXAM.md` section 3: `underline` on a cont
 - Password reset: `randomBytes(32)` token, sha256-hashed at rest, single-use via `usedAt`, expires, and **deletes all sessions on reset**. `PasswordResetToken` SELECT is `USING (true)` in `rls.sql` — intentional, since the unguessable hash is the capability secret. Mailer (`src/lib/mailer.ts`) returns the link as `devUrl` when `NODE_ENV !== "production"`; in production it **throws without `SMTP_HOST`** (fail-closed).
 - Repo has **zero** `@ts-ignore` / `@ts-expect-error` / `eslint-disable`. The single `as any` in production code is `src/app/api/exams/[id]/route.ts:30` (`req.json()`). Keep it that way.
 
-## AI generation
+## AI generation — 90% of this app, read this before touching it
+
+Generation is the product. The exam is a **proposal** the teacher edits before printing; nothing reaches a student without a human in the loop. Read this section before changing any prompt, validator or generator.
+
+### Where the prompts are
+
+| What | File | Notes |
+|---|---|---|
+| **System prompt** | `src/lib/generate/system-prompt.ts` | `SYSTEM_PROMPT`, four lines, sent on **every** call. Extracted from `provider.ts` because it is the most-edited string in the app and a constant buried in a 1000-line transport file is a trap. |
+| Passage | `provider.ts` → `generateTextCandidates` | prose, `TEMPERATURE.prose` (0.7) |
+| Reading comprehension | `provider.ts` → `generatePartOneCandidates` | structured, 0.2 |
+| Part B (5 tasks) | `provider.ts` → `generateTextExplorationCandidates` | structured, 0.2 |
+| Writing topics | `provider.ts` → `generateWritingCandidates` | structured, 0.2 |
+| Rewrites | `provider.ts` → `generateRewriteCandidates` | the one generator that asks for 3 |
+| Context assembly | `generate/index.ts` → `buildContext()` | resolves the guide, derives `seed` |
+| Chain / provider selection | `generate/chain.ts` | `withChain()` in `index.ts` |
+| Grounding checks | `generate/grounding.ts` | `checkTaskLinkage` hard, `checkTopicAnchoring` advisory |
+| **Curriculum + rules** | `src/data/guides.ts` | **source of truth for what a grade's exam contains** |
+| Rule resolution | `src/lib/guide.ts` | `resolveRules()`, paragraph-count constants |
+
+Request strings stay in `provider.ts` on purpose: each sits directly above the parsing, stamping and validation that mirror it, and splitting them out would create a second source of truth.
+
+### What is deterministic vs. what is the model's
+
+**Computed in code — the AI has no say:** marks, `skill`, `family`, item counts (stamped from the guide after parsing, because the model omits or misspells them); table shape (`officialTable`); answer cells (`blankAnswerCells`); word banks (`extractWordBank`); lettering (`letterLabel`); paragraph count; word band; the JSON schema; which sections carry a table.
+
+**The model's to decide:** passage wording, task wording, target words, sentences, answers (stored, never rendered), the phonology group, which vocabulary words it picks.
+
+**The gap that keeps biting:** whether a chosen target actually occurs in the passage is checked mechanically (`checkTaskLinkage`); whether the question is genuinely *answerable* is **prompt-enforced only**. Do not describe grounding as a guarantee of answerability.
+
+**A prompt instruction is a REQUEST, never the guarantee.** Measured repeatedly: the model ignores a prose rule about half the time. Every fix this session moved something out of the prompt and into code. When output is wrong, first ask which side of this line failed — if a validator rejected it, the answer is in the guide or the stamp, not in the prompt.
+
+### How to add a task variant (e.g. a new kind of question for Task 4)
+
+1. **`src/data/guides.ts`** — add the rule: `{ skill, family, marks, instruction, tableRequired, itemCount, constraints }`. This alone makes `validateCandidate`, `taskHasTable` and `assemble` aware of it. The curriculum, not the prompt, decides the exam's structure.
+2. **`provider.ts`** — inject a **literal** shape into the relevant request string, the way `WORD_BANK_RULE` and `tableRequirementNote()` do: state the exact field, the exact count and an example. *"EXACTLY the item counts below" does not bind; `TRUE_FALSE (exactly 4 item(s), 2 marks)` does.*
+3. **A new printed shape** touches `export/paper.ts` (`parseTaskBody` + the block model) **and** `pdf.ts`, `docx.ts` and `preview-stage.tsx` **together** — the three surfaces must not drift.
+4. **Tests.** `parseTaskBody` recognises four shapes (prefixed lines, bare lines, blank-line blocks, distinct key/value exercise) and is task-agnostic, so a variant built from bare lines is lettered for free. If yours needs a new branch, add the branch **and** a test — then register the file in `package.json` `scripts.test` or it never runs.
+5. **Docs.** Update the `EXAM.md` §8 pool table (all three columns) in the same commit, or the next agent will "fix" the code back.
+
+### Other generation facts
 
 - `src/lib/generate/index.ts` is the facade. **The API layer must never import `mock`/`openai`/`groq` directly** — every generation goes through `withChain()`, which resolves the provider chain (empty chain ⇒ `mock`, deterministic, seeded, no API key) and builds the LLM generators from `provider.ts` (chat helper, prompt builder, parser). `openai`/`groq` are legacy single-provider entry points kept for the `AI_PROVIDER` path and each honor `*_API_KEY`, `*_MODEL`, `*_BASE_URL`.
 - `buildContext()` resolves rules via `src/lib/guide.ts` and derives a deterministic `seed` from `examId:grade:unit:topic`.
