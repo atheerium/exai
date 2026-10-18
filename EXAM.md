@@ -448,8 +448,8 @@ rendered. "Gap" means the item ends in a dotted leader the student writes into.
 | Task | Wording | Constraint | Rendering |
 |---|---|---|---|
 | 1A Text type | "The text is a..." / "The text is an extract from an email, a web article, or a newspaper article." | exactly 3 options | lettered items, no gap |
-| 1B True/False | "Say whether the following statements are true or false." | 3-4 statements | lettered items; optional Statement/Answer chart with blank answer column |
-| 1C True/False + correction | "Say whether the following statements are true or false and correct the false ones." | 3-4 statements | as 1B |
+| 1B True/False | "Say whether the following statements are true or false." | 3-4 statements | lettered items; optional Statement/Answer chart with blank answer column; statements are direct, natural claims without source-attribution framing (e.g. "the passage states" / "according to the text") |
+| 1C True/False + correction | "Say whether the following statements are true or false and correct the false ones." | 3-4 statements | as 1B; statements are direct, natural claims without source-attribution framing (e.g. "the passage states" / "according to the text") |
 | 1D Multiple choice | "Write the letter that corresponds to the right answer." / "Choose the answer to complete each statement." | <=4 items, exactly 3 choices each | lettered items with choices inline |
 | 2A Paragraph identification | "Identify the paragraph in which the following ideas are mentioned." | 2 ideas from 2 different paragraphs | lettered ideas; optional Idea/Paragraph chart |
 | 2B Sentence ordering | "Put the following ideas in the order they appear in the text." | 3-4 ideas | lettered items |

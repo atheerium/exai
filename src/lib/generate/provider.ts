@@ -353,6 +353,13 @@ const PART_ONE_TABLE_RULE =
   "emitted a one-row table on every Part One task, which the validator rejects. Being told a rule is not the " +
   "same as being told the exact field to omit. ";
 
+const PART_ONE_DIRECT_STATEMENTS_RULE =
+  " For TRUE_FALSE items, write each statement as a direct, natural claim for students to judge against the reading. " +
+  "Do not frame it as a report about the source: avoid phrases such as \"the passage/text states\", \"according to the text\", " +
+  "or \"the research mentioned\". For example, write \"Colour and music can trigger subconscious cravings.\" " +
+  "rather than \"The passage states that colour and music can trigger subconscious cravings.\" " +
+  "This applies to the statement itself; preserve the official task instruction. ";
+
 /** Tables are allowlisted: morphology and phonology classification only. */
 const PART_TWO_TABLE_RULE =
   " Only morphology (roots, prefixes, suffixes) and phonology classification tasks carry a table; " +
@@ -815,6 +822,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         groundingRule(ctx) +
         'Use exactly these families, in this order. ' +
         PART_ONE_TABLE_RULE +
+        (families.some((f) => f.family === "TRUE_FALSE") ? PART_ONE_DIRECT_STATEMENTS_RULE : "") +
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
         `Each family must contribute exactly this many items: ${familyCountNote(families)}. ` +

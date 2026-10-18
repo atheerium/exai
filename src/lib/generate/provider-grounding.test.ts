@@ -174,6 +174,15 @@ test("the prompt names the passage field it must ground on", async () => {
   );
 });
 
+test("Part One prompt asks for direct True/False statements without source attribution", async () => {
+  sent = [];
+  await createCompatibleGenerators(config).generatePartOneCandidates(ctx(PASSAGE));
+  const request = String(sent[0].request);
+  assert.match(request, /For TRUE_FALSE items, write each statement as a direct, natural claim/i);
+  assert.match(request, /avoid phrases such as "the passage\/text states", "according to the text"/i);
+  assert.match(request, /write "Colour and music can trigger subconscious cravings\." rather than/i);
+});
+
 // A repair is only a repair if the model is TOLD what was wrong. `repairOf`
 // travels in the payload, and a payload field no request string mentions is
 // inert -- the "corrected" call was byte-identical to the failed one.
