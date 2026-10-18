@@ -187,7 +187,10 @@ function cleanBankWord(raw: string): string {
  * misreading it would delete a real line from the paper.
  */
 function wordBankFromLine(line: string): string[] | null {
-  if (HYPHEN_LIST.test(line)) return splitBankWords(line.split(/\s+-\s+/));
+  // Split on the SAME separator the matcher accepts. Matching `–` while
+  // splitting on `-` looks correct and silently returns one "word" that is the
+  // whole line.
+  if (HYPHEN_LIST.test(line)) return splitBankWords(line.split(/\s+[-–]\s+/));
 
   const prefixed = BANK_PREFIX.exec(line);
   if (!prefixed) return null;
