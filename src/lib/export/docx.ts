@@ -9,6 +9,7 @@ import {
   WidthType,
   BorderStyle,
   HeightRule,
+  ShadingType,
   AlignmentType,
   Footer,
   PageNumberElement,
@@ -77,6 +78,25 @@ const t = (text: string, opts: RunOpts = {}) =>
  */
 const TABLE_TEXT_SIZE = 24;
 
+/**
+ * Explicit white cell fill (user instruction, 2026-10-13).
+ *
+ * Word's default is white, but a theme's table style can tint cells without any
+ * explicit shading on the cell, so "no shading" and "white" are not the same
+ * document. Stating it is the only way the printed chart is guaranteed to have
+ * no banding.
+ */
+const NO_SHADING = { fill: "FFFFFF", type: ShadingType.CLEAR, color: "auto" } as const;
+
+/**
+ * 1pt solid black on every edge, at the cell AND the table level.
+ *
+ * Both are emitted on purpose. docx serialises `insideH`/`insideV` as its own
+ * defaults (0.5pt, `auto`) whatever the value passed here, so a table whose
+ * cells all carry their own borders renders 1pt everywhere — but an editor that
+ * prefers the table-level definition would show 0.5pt inner lines. `insideH` /
+ * `insideV` and their modern spellings are both set so neither wins.
+ */
 const GRID = {
   top: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
   bottom: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
@@ -84,6 +104,8 @@ const GRID = {
   right: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
   insideH: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
   insideV: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
+  insideHorizontal: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
+  insideVertical: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
 };
 
 const NO_BORDERS = {
@@ -244,6 +266,7 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
         (h) =>
           new TableCell({
             borders: GRID,
+            shading: NO_SHADING,
             width: { size: cellWidth, type: WidthType.PERCENTAGE },
             children: [p(h, { size: TABLE_TEXT_SIZE, bold: true, italics: true, align: "center" })],
           })
@@ -262,6 +285,7 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
             const dotted = /^\.+$/.test(cell.trim());
             return new TableCell({
               borders: GRID,
+              shading: NO_SHADING,
               width: { size: cellWidth, type: WidthType.PERCENTAGE },
               children: [
                 p(cell || " ", {
