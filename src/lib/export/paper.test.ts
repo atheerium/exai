@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildPaper, letterLabel, parseTaskBody, emphasisFrom } from "./paper";
+import { buildPaper, letterLabel, parseTaskBody, emphasisFrom, extractWordBank, WORD_BANK_SEPARATOR } from "./paper";
 import { assembleDocument } from "./assemble";
 import { getGuide } from "@/data/guides";
 import type { ExamDto, SectionDto } from "@/types";
@@ -319,6 +319,90 @@ test("buildPaper ignores a table with no headers", () => {
     )
   );
   assert.equal(paper.blocks.some((b) => b.kind === "table"), false);
+});
+
+// ---- The three official Part B structures (EXAM.md 10.6a) --------------------
+//
+// These are layout rules, and `paper.test.ts` is the executable version of
+// EXAM.md, so this is where a change to one of them must fail first.
+
+const tabularPaper = (skill: string, table: { headers: string[]; rows: string[][] }, prompt = "List: [watched, agreed]") =>
+  buildPaper(
+    assembleDocument(
+      exam({
+        sections: [
+          section({
+            id: "s",
+            type: "TEXT_EXPLORATION",
+            tasks: [{ ...taskWithTable(skill, table), prompt }],
+          }),
+        ],
+      })
+    )
+  );
+
+test("each table is tagged with the official structure its headers name", () => {
+  const cases: [string, string[], string | null][] = [
+    ["MORPHOLOGY", ["prefix", "root", "suffix"], "affix"],
+    ["MORPHOLOGY", ["Verb", "Noun", "Adjective"], "derivation"],
+    ["PHONOLOGY", ["/t/", "/d/", "/ɪd/"], "phonology"],
+    ["PHONOLOGY", ["/s/", "/z/", "/ɪz/"], "phonology"],
+    ["VOCABULARY", ["Word", "Meaning"], null],
+  ];
+  for (const [skill, headers, kind] of cases) {
+    const block = tabularPaper(skill, { headers, rows: [["", "", ""]] }).blocks.find((b) => b.kind === "table");
+    if (kind === null) continue;
+    assert.ok(block && block.kind === "table", `${skill} ${headers.join("|")} renders`);
+    assert.equal(block.table.kind, kind, `${headers.join("|")} is a ${kind} chart`);
+  }
+});
+
+test("a tabular task prints no lettered items; its words are in the cells or the bank", () => {
+  // The words of a chart task live in the table cells or the centred word bank.
+  // Printing `a) "watched" ..........` above a chart that already shows the words
+  // duplicates the row and turns a chart task back into a list.
+  const chart = tabularPaper("PHONOLOGY", { headers: ["/t/", "/d/", "/ɪd/"], rows: [["", "", ""]] });
+  const task = chart.blocks.find((b) => b.kind === "task");
+  assert.ok(task && task.kind === "task");
+  assert.equal(task.task.items.length, 0, "no lettered items beside the chart");
+  assert.deepEqual(task.task.wordList, ["watched", "agreed"], "the bank survives for printing");
+
+  const plain = buildPaper(
+    assembleDocument(
+      exam({
+        sections: [
+          section({
+            id: "s",
+            type: "TEXT_EXPLORATION",
+            tasks: [{ ...taskWithTable("VOCABULARY", { headers: [], rows: [] }), prompt: "1. One\n2. Two" }],
+          }),
+        ],
+      })
+    )
+  );
+  const plainTask = plain.blocks.find((b) => b.kind === "task");
+  assert.equal(plainTask && plainTask.kind === "task" ? plainTask.task.items.length : -1, 2);
+});
+
+test("a word bank prints with a spaced en dash on every surface", () => {
+  // ONEC typography (user instruction 2026-10-13). The parser accepts `-` and
+  // `–` on input because the separator arrives from a model; the printed form
+  // does not vary, or each surface would pick its own.
+  assert.equal(WORD_BANK_SEPARATOR, " – ");
+  assert.deepEqual(["watched", "agreed", "needed"].join(WORD_BANK_SEPARATOR), "watched – agreed – needed");
+  for (const input of ["watched - agreed - needed", "watched – agreed – needed", "List: [watched, agreed, needed]"]) {
+    // The pipeline order matters: the bank is extracted BEFORE the body is
+    // parsed, because once the line is an item it already has a letter.
+    const bank = extractWordBank(input);
+    assert.deepEqual(bank.words, ["watched", "agreed", "needed"], `parsed: ${input}`);
+    assert.equal(parseTaskBody(bank.rest).items.length, 0, "the bank is never lettered as an item");
+  }
+});
+
+test("an intra-word hyphen is still left alone in a bank line", () => {
+  // Whitespace around each separator is what makes the shape unambiguous; a bank
+  // containing `well-being` must not be split into four words.
+  assert.deepEqual(extractWordBank("well-being - open-minded - far-reaching").words, []);
 });
 
 test("buildPaper turns writing keywords into a notes list with a heading", () => {
