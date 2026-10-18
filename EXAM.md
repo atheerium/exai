@@ -468,7 +468,7 @@ rendered. "Gap" means the item ends in a dotted leader the student writes into.
 | 1B Matching table | "Match the following words with their corresponding synonyms / opposites / definitions." | 2-3 items | Word/Definition chart, answer column blank |
 | 1C Definition match | "Find words in the text whose definitions follow:" | 2-3 items | lettered items with gaps |
 | 2A Chart completion | "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words." | 1 solved example + 3-4 derived words | **`Verb` \| `Noun` \| `Adjective`** chart: solved example row, then one row per target word with the given word printed and the other two cells as handwriting lines. No lettered items. |
-| 2B Affix separation | "Divide the following words into roots and affixes." / "Give the opposites of the following words keeping the same root." | 3-4 words | **centred** `a - b - c` word list, then Prefix/Root/Suffix chart |
+| 2B Affix separation | "Divide the following words into roots and affixes." / "Give the opposites of the following words keeping the same root." | 3-4 words | **centred** `a – b – c` word list (spaced **en dash**), then `prefix`/`root`/`suffix` chart with **one empty row** |
 | 3A Sentence rephrasing | "Rewrite sentence B so that it means the same as sentence A." | 2-3 sentences | lettered sentences |
 | 3B Sentence combination | "Combine each pair of sentences with one of the connectors provided. Make changes where necessary." | 2-3 pairs | lettered pairs |
 | 3C Verb tense | "Give the correct form of the verbs in brackets." | 4 verbs in brackets | lettered sentences with bracketed verbs |
@@ -476,7 +476,7 @@ rendered. "Gap" means the item ends in a dotted leader the student writes into.
 | 4A/4B/4C/4D Phonology tables | "Classify the following words according to the pronunciation of the final /ed/ (or final /s/)." | 4 words | word bank **centred above** the table (`word – word – word – word`), then a 3-column sound chart — `/t/` `/d/` `/ɪd/` or `/s/` `/z/` `/ɪz/` — with **exactly one empty row** |
 | 4E Silent letter | "Circle or write the silent letter in each of the following words." | — | lettered words |
 | 4F Rhyming pairs | "Match the pairs that rhyme." | exactly 2 pairs | lettered pairs |
-| 5A Gap fill with list | "Fill in the gaps with words from the list given." | 4 gaps / 4 words, or 4 gaps / 6 words | **word bank centred `a - b - c` between the instruction and the first item**, then one lettered sentence per gap |
+| 5A Gap fill with list | "Fill in the gaps with words from the list given." | 4 gaps / 4 words, or 4 gaps / 6 words | **word bank centred `a – b – c`** (spaced en dash) **between the instruction and the first item**, then one lettered sentence per gap |
 | 5B Open gap fill | "Fill in the gaps so that the text makes sense." | 4 gaps, no list | passage with `___` gaps |
 | 5C Paragraph reordering | "Reorder the following sentences to get a coherent passage." | 4 statements | lettered sentences |
 | 5D Dialogue completion | "Imagine what A or B says, and complete the following dialogue." | 3 missing utterances | dialogue with gaps |
@@ -746,10 +746,86 @@ From the user's reference sheet:
 
 - table **centred**, narrower than the text block (`TABLE_MAX_WIDTH` in PDF,
   `TABLE_WIDTH_PCT` in DOCX) — not full content width;
-- header row **bold italic, centred** (`prefix | root | suffix`);
-- the word list **centred above** the table, separated by hyphens;
+- **three equal columns** (33.33% each) — every structure below is a 3-column
+  chart;
+- header row **bold italic, centred**;
+- the word list **centred above** the table, separated by a spaced **en dash**
+  (`WORD_BANK_SEPARATOR` in `export/paper.ts`, U+2013) — ONEC typography, user
+  instruction 2026-10-13. The PARSER accepts `-` and `–` on input, because the
+  separator arrives from a model; the PRINTED form does not vary;
 - task stem in the `N- {instruction}` form, bold italic;
-- answer cells empty, with a fixed visible height so empty rows still show.
+- grid **1pt solid black** (`TABLE_LINE_WIDTH` in PDF, `GRID` size 8 in DOCX),
+  cell background explicitly `#FFFFFF`, **no shading, no zebra**;
+- body text **12pt on every surface** (`TABLE_TEXT_SIZE` in DOCX), so a table
+  printed in Word matches the one printed to PDF.
+
+### 10.6a The three Part B table structures
+
+Set by direct user instruction on 2026-10-13. **Computed in code, never
+generated** — `officialTable()` in `src/lib/export/tables.ts` takes the model's
+content (which words, which sound groups) and builds the layout itself.
+Measured repeatedly this session: a table shape requested in prose comes back
+wrong, and a prefilled answer cell is an answer key printed on the paper.
+
+| # | Structure | Headers | Rows |
+|---|---|---|---|
+| 1 | MORPHOLOGY — roots and affixes | `prefix` \| `root` \| `suffix` | **exactly one** empty row |
+| 2 | MORPHOLOGY — word derivation | `Verb` \| `Noun` \| `Adjective` | solved example, then one target word per row |
+| 3 | PHONOLOGY — final /ed/ or /s/ | `/t/` \| `/d/` \| `/ɪd/` (or `/s/` \| `/z/` \| `/ɪz/`) | **exactly one** empty row |
+
+Rules, in the order they bind:
+
+1. **ONE empty row, not a grid.** Students do not write into a multi-row grid on
+   these papers; they sort the whole word list into one box under each column
+   header. The phonology chart previously shipped two empty rows, which is a table
+   the official paper never has.
+2. **Row height.** A row the student writes in is `BLANK_ROW_HEIGHT` (32pt)
+   tall even when empty. DOCX expresses it as `trHeight` 640twips `ATLEAST`;
+   PDF takes `max(BLANK_ROW_HEIGHT, measured)`. An empty row that collapses to
+   one line of text leaves nowhere to write.
+3. **The derivation example row.** Row 0, immediately under the headers, all
+   three cells filled with complete forms (`to corrupt` \| `corruption` \|
+   `corrupt`). It does **NOT** count toward `itemCount`: `itemCount = 3` means
+   1 header + 1 example + 3 test rows. It is the printed illustration the
+   instruction refers to ("Complete the chart as shown in the example"), and it
+   uses a different word family from every test row, so it answers none of them —
+   which is why it is the one row the answer-cell rule exempts.
+4. **One given word per test row, in a varying column.** The column is the
+   model's choice and is expected to differ between rows so all three parts of
+   speech are tested. A given word is a word that **occurs in the passage**
+   (`checkTaskLinkage`), so it is a base form, never a derived one.
+5. **Dotted filler.** The two cells the student must derive print the literal
+   `DOTTED` constant (`...................`) in `export/tables.ts`, identically on
+   PDF, DOCX and preview. Dotted cells are **centred**; given words stay flush
+   left. `isBlankCell()` treats a dotted cell as blank for validation: a rule to
+   write on is not a value. The PDF may shorten it (`fitDots`) when the measured
+   column would wrap; the other two surfaces cannot measure text.
+6. **Headers are matched by NAME, not position.** A live model has returned
+   `Noun | Verb | Adjective` and the older `Word | Noun | Verb | Adjective`.
+   Mapping by name is what lets those still print in the official column order;
+   a row whose three canonical cells are empty falls back to the `Word`/`Base`
+   column and is printed under Noun. A table whose headers map to **none** of the
+   three columns is not rebuilt — it would silently delete content — and is
+   blanked instead.
+7. **A tabular task prints NO lettered items.** `tabularTaskPrintsItems()` in
+   `export/tables.ts`: its words live in the cells or in the bank, so
+   `a) "fraudulent" ..........` above a chart that already prints `fraudulent`
+   duplicates the row and turns a chart task back into a list.
+8. **IPA headers must use `faceFor()` in `pdf.ts`.** pdfkit's built-in Times
+   faces are WinAnsi and print `ɪ` as `&¦Bð`, so `/ɪd/` and `/ɪz/` need the
+   file-backed face. Known residual: that face is regular-only, so a phonetic
+   header prints upright while `/t/` next to it is bold italic. A correct glyph
+   beats a matching style; verify with `scripts/table-check.ts`.
+9. **Which phonology group is decided by the headers first.** The guide
+   instruction names BOTH ("final '-s' (or final '-ed')") and cannot
+   disambiguate, so the text is only a fallback, defaulting to `/s/`.
+
+Verify all of it in a rasterised PDF, not from the code:
+
+```bash
+npx tsx scripts/table-check.ts          # one page holding all three structures
+pdftoppm -r 130 -png /tmp/opencode/examcheck/tables.pdf /tmp/opencode/examcheck/tables
+```
 
 ### 10.7 Prompt-level enforcement
 
@@ -1105,19 +1181,24 @@ Two measured failures (2026-10-13, live runs through a logging proxy):
 Both are now deterministic:
 
 - `tableRequirementNote(skills)` names each tabular skill individually, with its
-  marks and a literal skeleton:
-  `"MORPHOLOGY" (1.5 marks) MUST carry a "table" field, exactly like this:
-  "table": {"headers": ["...","..."], "rows": [["first item", ""]]}`.
-  Naming them one by one matters because the two charts differ in shape, and a
-  generic rule ("only morphology and phonology carry a table") did not bind.
-  The headers are a **skeleton**, not hard-coded: phonology headers are IPA
-  symbols the guide cannot prescribe.
-- `blankAnswerCells()` empties every cell past column 0, applied in the same
-  stamping step that already writes `skill`/`marks`/`family` from the guide.
-  Column 0 is the given material for every task type in the corpus — the rule
-  `checkTaskLinkage` already enforces — so this enforces it rather than
-  inventing a second one. No live guide sets `solvedExampleRow` (declared on the
-  rule type, set by none of them), so there is no solved-example row to spare.
+  marks and a **literal per-skill shape** — the derivation chart
+  (`["Verb","Noun","Adjective"]` with a solved example row and one given word per
+  row), the affix chart (`["prefix","root","suffix"]`, one empty row), the
+  phonology chart (the sound groups, one empty row). Naming them one by one
+  matters because the charts differ in shape and a generic rule ("only
+  morphology and phonology carry a table") did not bind. This is a **request**,
+  not the guarantee: §12.12 computes the layout regardless of what arrives.
+- **`officialTable()` then rebuilds the chart** in the same stamping step that
+  writes `skill`/`marks`/`family` from the guide. It supersedes the earlier
+  `blankAnswerCells()`, which only emptied cells past column 0 and left the
+  model's headers, row count and column order in place — a prefilled cell was
+  absorbed, but a four-column chart printed as four columns. `blankAnswerCells`
+  survives as the fallback for a table whose headers match none of the three
+  official structures.
+- **A missing table is still missing on purpose.** The chart is rebuilt only when
+  the model sent one; synthesising an empty chart would turn a recoverable
+  validation failure (`Task N requires a table but none was provided`) and its
+  one bounded repair attempt into a paper with a chart and no words to put in it.
 
 Measured: 6 live runs after the change, **0** failing on a missing or prefilled
 table (4 passed; the 2 failures were an ungrounded vocabulary target and
