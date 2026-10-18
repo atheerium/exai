@@ -13,6 +13,12 @@ export interface RevisionSnapshot {
     grade: string;
     stream?: string | null;
     length: number;
+    /**
+     * Passages are 3 or 4 paragraphs (teacher choice). Part of the config, so a
+     * snapshot that omits it restores every exam at the schema default of 3 and
+     * silently discards a 4-paragraph choice.
+     */
+    paragraphCount?: number;
     unit: string;
     topic: string;
     customTopic: boolean;
@@ -34,6 +40,17 @@ export interface RevisionSnapshot {
       marks: number;
       order: number;
       manualEdited: boolean;
+      /**
+       * Task family and table payload. Both are optional because revisions
+       * captured before 2026-10-18 predate them; a restore must tolerate that
+       * (the column default applies) rather than fail.
+       *
+       * `tableData` is not decoration: a MORPHOLOGY or PHONOLOGY task IS its
+       * chart. Omitting it restored a morphology instruction with no chart,
+       * which is a defect `validateCandidate` rejects at generation time.
+       */
+      family?: string | null;
+      tableData?: string | null;
       candidates?: string | null;
     }[];
     topics: {
@@ -80,6 +97,7 @@ export async function captureRevision(examId: string, label: string, client?: Db
           grade: exam.config.grade,
           stream: exam.config.stream,
           length: exam.config.length,
+          paragraphCount: exam.config.paragraphCount,
           unit: exam.config.unit,
           topic: exam.config.topic,
           customTopic: exam.config.customTopic,
@@ -102,6 +120,8 @@ export async function captureRevision(examId: string, label: string, client?: Db
         marks: t.marks,
         order: t.order,
         manualEdited: t.manualEdited,
+        family: t.family,
+        tableData: t.tableData,
         candidates: t.candidates,
       })),
       topics: s.topics.map((t) => ({
