@@ -183,6 +183,15 @@ test("Part One prompt asks for direct True/False statements without source attri
   assert.match(request, /write "Colour and music can trigger subconscious cravings\." rather than/i);
 });
 
+test("Part One prompt asks for bare PARAGRAPH_ID options, not repeated lead-ins", async () => {
+  sent = [];
+  await createCompatibleGenerators(config).generatePartOneCandidates(ctx(PASSAGE));
+  const request = String(sent[0].request);
+  assert.match(request, /For PARAGRAPH_ID items, write each option as the bare statement itself/i);
+  assert.match(request, /do NOT repeat the lead-in "In which paragraph is it mentioned that"/i);
+  assert.match(request, /end each option with a period, not a question mark/i);
+});
+
 // A repair is only a repair if the model is TOLD what was wrong. `repairOf`
 // travels in the payload, and a payload field no request string mentions is
 // inert -- the "corrected" call was byte-identical to the failed one.
