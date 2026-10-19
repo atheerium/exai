@@ -518,6 +518,34 @@ const CHOICE_LABEL_RULE =
   ' Multiple-choice options are labelled with a lowercase letter and a closing parenthesis -- "a)" "b)" "c)" "d)" -- one per line, never "a." or "A.". ';
 
 /**
+ * Sentence rephrasing ("Rewrite sentence B so that it means the same as sentence
+ * A.") must be an EQUIVALENCE PAIR in the official STEM form: A is a complete
+ * sentence, B is the START of the same idea written a different way, ending in a
+ * dotted blank the student completes. It is not two unrelated statements, and B
+ * is not the full answer.
+ *
+ * Teacher report (2026-10-19): a live run printed two unrelated facts about
+ * advertising. The instruction asks the student to rewrite B so that it means
+ * the same as A, which is impossible when B asserts something else -- and it is
+ * pointless when B already prints the finished answer.
+ *
+ * Stated literally, with the exact labels, the dotted ending and a worked
+ * example, because prose does not bind (the same lesson as the item counts and
+ * the word band).
+ */
+const REWRITE_RULE =
+  ' For the GRAMMAR task whose instruction is "Rewrite sentence B so that it means the same as sentence A.", the "prompt" must be ' +
+  'exactly two lines. The first line starts with "A) " and is a COMPLETE sentence. The second line starts with "B) " and is the ' +
+  'BEGINNING of the same idea written in a DIFFERENT grammatical form (active vs passive, direct vs reported speech, a clause vs a ' +
+  'phrase, a verb vs a noun), followed by a dotted blank of at least three dots (..........). ' +
+  'B MUST NOT be the finished sentence: the student completes B so that it means exactly what A means. ' +
+  'B MUST NOT state a different fact and MUST NOT change the subject. Both sentences stay on the passage topic. ' +
+  'The "answer" field holds the COMPLETE rewritten sentence that means the same as A. ' +
+  'For example: A) The government encourages the use of green energies. ' +
+  'B) The use of green energies .......... ' +
+  'answer: The use of green energies is encouraged by the government. ';
+
+/**
  * The exact output container, stated literally.
  *
  * Captured live 2026-10-11: asked for `{"sets":[{"tasks":[…]}]}`, gpt-oss replied
@@ -1010,6 +1038,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
         WORD_BANK_RULE +
+        REWRITE_RULE +
         `Produce exactly ${ctx.guide.textExploration.skills.length} task objects, one per skill, in the order given. ` +
         repairNote(ctx) +
         taskSetSchemaNote(n),

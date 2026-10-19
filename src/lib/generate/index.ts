@@ -335,6 +335,23 @@ export async function generateRewriteCandidates(
   return withChain((i) => Promise.resolve(i.generateRewriteCandidates(ctx, opts)), ctx);
 }
 
+/**
+ * A sentence-rephrasing task must present the official stem pair: a complete
+ * `A)` sentence and a `B)` stem ending in a dotted blank.
+ *
+ * Only the SHAPE is checked. Whether the stem really completes to the same
+ * meaning is a semantic judgement and stays prompt-enforced (`REWRITE_RULE` in
+ * `provider.ts`). But the observed failures were structural: a list with no A/B
+ * at all, then a complete B that already printed the answer. A dotted B is
+ * exactly computable and gives the bounded repair pass something actionable.
+ */
+function hasRewritePair(prompt: string): boolean {
+  return (
+    /^(?:Sentence\s+)?A\s*[).:]\s*\S/im.test(prompt) &&
+    /^(?:Sentence\s+)?B\s*[).:]\s*\S.*(?:\.{3,}|…)\s*$/im.test(prompt)
+  );
+}
+
 function countItems(task: GeneratedTask): number {
   if (task.table && task.table.rows.length > 0) return task.table.rows.length;
   const prompt = (task.prompt ?? "").trim();
@@ -464,6 +481,14 @@ export function validateCandidate(
                 `Task ${i + 1} refers to a list of words but no word list was provided; it must begin with one line like "List: [word1, word2, word3]".`
               );
             }
+          }
+          // Sentence rephrasing: a complete `A)` sentence and a `B)` stem ending
+          // in a dotted blank. Equivalence of meaning is prompt-enforced; the
+          // shape is not.
+          if (rule.family === "REWRITE" && task.prompt && !hasRewritePair(task.prompt)) {
+            issues.push(
+              `Task ${i + 1} is a sentence-rephrasing exercise: its prompt must present a complete sentence labelled "A)" and an incomplete sentence labelled "B)" that ends in a dotted blank (..........) for the student to complete.`
+            );
           }
           // itemCount where prescribed (Part One)
           if (rule.itemCount != null) {

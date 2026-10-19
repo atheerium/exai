@@ -503,7 +503,7 @@ rendered. "Gap" means the item ends in a dotted leader the student writes into.
 | 1C Definition match | "Find words in the text whose definitions follow:" | 2-3 items | lettered items with gaps |
 | 2A Chart completion | "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words." | 1 solved example + 3-4 derived words | **`Verb` \| `Noun` \| `Adjective`** chart: solved example row, then one row per target word with the given word printed and the other two cells as handwriting lines. No lettered items. |
 | 2B Affix separation | "Divide the following words into roots and affixes." / "Give the opposites of the following words keeping the same root." | 3-4 words | **centred** `a – b – c` word list (spaced **en dash**), then `prefix`/`root`/`suffix` chart with **one empty row** |
-| 3A Sentence rephrasing | "Rewrite sentence B so that it means the same as sentence A." | 2-3 sentences | lettered sentences |
+| 3A Sentence rephrasing | "Rewrite sentence B so that it means the same as sentence A." | 2-3 sentences | `A)` a complete sentence; `B)` the same idea in a different grammatical form, left incomplete and ending in a dotted blank; both labels **bold uppercase** (section 10.1b) |
 | 3B Sentence combination | "Combine each pair of sentences with one of the connectors provided. Make changes where necessary." | 2-3 pairs | lettered pairs |
 | 3C Verb tense | "Give the correct form of the verbs in brackets." | 4 verbs in brackets | lettered sentences with bracketed verbs |
 | 3D Question formation | "Ask questions which the underlined words answer." | max 2 questions | lettered items |
@@ -662,22 +662,25 @@ at all. Question 1 worked only because that model happened to prefix `a)`.
 
 The letters are ours to print (`letterLabel` overwrites any label the model
 supplied), so the model's choice of prefix must never decide whether an item is
-recognised. Four shapes are now handled, all verified against live output:
+recognised. These shapes are now handled, all verified against live output:
 
 | Shape | Example | Result |
 |---|---|---|
 | Prefixed | `1. first` / `A. first` | item (unchanged) |
 | Bare lines | `What does the passage say?` | item |
 | Blank-line blocks | `Word: x` / `Derived form:` separated by blank lines | one item per block |
-| Key/value exercise | `Sentence A: ...` / `Sentence B: ...` | ONE item, kept as lead text |
+| Key/value exercise | `Sentence A: ...` / `Sentence B: ...` (NOT the rephrasing task) | ONE item, kept as lead text |
+| Sentence rephrasing | `A) ...` / `B) ... ..........` | two items, bold uppercase labels; B ends in a dotted blank (section 10.1b) |
 
 Two exclusions, both deliberate:
 
-- **A key/value exercise is not three questions.** Labelling `Sentence A` and
-  `Sentence B` as `a)` and `b)` would print nonsense. Distinguishing signal: the
-  labels are DISTINCT. A repeated pair (`Word:` / `Derived form:` twice) is a
-  list of questions that arrived without blank lines, and each repeat opens a new
-  item.
+- **A key/value exercise is not three questions.** Labelling the field lines of a
+  non-rephrasing exercise as `a)` and `b)` would print nonsense. Distinguishing
+  signal: the labels are DISTINCT. A repeated pair (`Word:` / `Derived form:`
+  twice) is a list of questions that arrived without blank lines, and each repeat
+  opens a new item. **Sentence rephrasing is the exception** and is handled before
+  this branch, because its `A`/`B` lines ARE the two printed sentences
+  (section 10.1b).
 - **Markdown separator rows are dropped.** `--- | ---` is table scaffolding and
   must not appear on the paper.
 
@@ -686,6 +689,49 @@ CHOOSE_CORRECT_FORM grammar task the prompt is `1. sentence` / `A. option` /
 `B. option`, and the option lines are lettered as if they were separate items
 (3 items before this change, 2 after). The option lines should render as the
 options of item `a)`, not as items in their own right.
+
+### 10.1b Sentence rephrasing is an `A)` / `B)` stem pair
+
+Teacher instruction (2026-10-19), from a review of a live paper:
+
+> "Don't use the letter and the two points. Instead, use just the letter and a
+> closing parenthesis, and use bold for the letters ... the option B should mean
+> the same thing as option A. They should be related, just in different
+> composition, passive, active, etc."
+
+Then, confirming the official paper format: **B is a stem, not the finished
+sentence** (2026-10-19).
+
+| Rule | Where |
+|---|---|
+| Labels are an **uppercase** letter and a **closing parenthesis** — `A)`, `B)` — **bold**, one space before the text | the `isRewriteTask` / `REWRITE_SENTENCE` branch in `paper.ts`; every renderer already prints `item.label` bold |
+| `A` is a **complete** sentence | `REWRITE_RULE` in `provider.ts` |
+| `B` is the **same idea in a different grammatical form, left incomplete**, ending in a dotted blank (`..........`) for the student to complete | `REWRITE_RULE` (prompt); `hasRewritePair` in `generate/index.ts` checks that `B` ends in dots |
+| `B` must not state a different fact or change the subject | `REWRITE_RULE` (prompt-enforced; semantic equivalence is not mechanically checkable) |
+
+Printed form:
+
+```
+4. Rewrite sentence B so that it means the same as sentence A.
+   A) The government encourages the use of green energies.
+   B) The use of green energies ..........
+```
+
+The `answer` field holds the completed sentence ("The use of green energies is
+encouraged by the government."). It is stored but never printed. Dots the model
+sends are stripped by `parseTaskBody` (`gap: true`) and re-drawn by each renderer,
+so the leader is the same on all three surfaces.
+
+The task is the GRAMMAR skill whose instruction is "Rewrite sentence B so that it
+means the same as sentence A." (`REWRITE` family). The model may label the lines
+`A)` / `A.` / `A:` / `Sentence A:`; the parser matches all of them and reprints
+the fixed form, so the model's punctuation never decides the paper's typography.
+The instruction line is dropped if the model repeats it, and a prompt that is not
+an `A`/`B` pair falls through to the generic shapes rather than being forced into
+one.
+
+The live failure this fixes: `A` and `B` were two unrelated facts about
+advertising, so rewriting `B` "so that it means the same as `A`" was impossible.
 
 ### 10.2 Paragraphs are separated by whitespace, never indented
 

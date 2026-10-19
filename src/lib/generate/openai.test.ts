@@ -32,7 +32,7 @@ function makeTextExplorationTasks() {
         { prompt: "1." + (s + 1) + " Match the words with their definitions.", instruction: "Find in the text words or phrases closest in meaning.", answer: "learn - to gain knowledge", marks: 1.5, skill: "VOCABULARY" },
         { prompt: "2." + (s + 1) + " education -> (adjective)", instruction: "Give the noun/verb/adjective derived from the words.", answer: "educational", marks: 1.5, skill: "MORPHOLOGY" },
         { prompt: "3." + (s + 1) + " Classify: learned, practised, connected", instruction: "Classify the words by the pronunciation of the final -ed.", answer: "/t/: practised /d/: learned /id/: connected", marks: 1, skill: "PHONOLOGY" },
-        { prompt: "4." + (s + 1) + " Technology helps students learn faster.", instruction: "Rewrite sentence B so that it means the same as sentence A.", answer: "Students learn faster thanks to technology.", marks: 2, skill: "GRAMMAR" },
+        { prompt: "A) Technology helps students learn faster.\nB) Students learn faster ..........", instruction: "Rewrite sentence B so that it means the same as sentence A.", answer: "Students learn faster thanks to technology.", marks: 2, skill: "GRAMMAR" },
         { prompt: "5." + (s + 1) + " Schools will still matter, ___ they will work differently.", instruction: "Fill in the gaps with words from the list given.", answer: "but", marks: 1, skill: "DISCOURSE" },
       ],
     });

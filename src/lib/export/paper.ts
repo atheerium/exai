@@ -269,7 +269,30 @@ const UNDERLINED = /^"([^"]+)"\s*\(underlined\)$/;
 // "(§2)" — the paragraph an item refers back to, printed inline on the paper.
 const PARA_REF = /\s*\(§\s*(\d+)\s*\)/;
 
-export function parseTaskBody(prompt: string, instruction?: string): { lead: string[]; items: PaperItem[] } {
+/**
+ * One line of a sentence-rephrasing exercise: `A) ...`, `A. ...`, `A: ...` or
+ * `Sentence A: ...`. The label is captured loosely because the model chooses the
+ * punctuation; the paper reprints it in the fixed official form.
+ */
+const REWRITE_SENTENCE = /^(?:Sentence\s+)?([ABab])\s*[).:]\s*(.+)$/i;
+
+/**
+ * Is this task the sentence-rephrasing exercise ("Rewrite sentence B so that it
+ * means the same as sentence A.")?
+ *
+ * Family first, then wording, so rows saved before `family` was stamped still
+ * take the right branch.
+ */
+function isRewriteTask(family: string | null | undefined, instruction?: string): boolean {
+  if ((family ?? "").trim().toUpperCase() === "REWRITE") return true;
+  return /rewrite\s+sentence\s+b\b[\s\S]*means\s+the\s+same\s+as\s+sentence\s+a/i.test(instruction ?? "");
+}
+
+export function parseTaskBody(
+  prompt: string,
+  instruction?: string,
+  family?: string | null
+): { lead: string[]; items: PaperItem[] } {
   const lead: string[] = [];
   const items: PaperItem[] = [];
   const target = (instruction ?? "").trim().toLowerCase();
@@ -286,6 +309,47 @@ export function parseTaskBody(prompt: string, instruction?: string): { lead: str
       referent: false,
     });
   };
+
+  // Sentence rephrasing ("Rewrite sentence B so that it means the same as
+  // sentence A.") is TWO labelled items, printed as bold `A)` / `B)` -- not a
+  // colon, and not lowercase `a)`. A is the complete sentence; B is the stem the
+  // student completes, so its dotted blank is stripped here and re-drawn by each
+  // renderer from `gap`.
+  //
+  // Teacher report (2026-10-19): the pair rendered as plain lead-in lines
+  // "A: ..." / "B: ...". The old key/value branch deliberately kept the whole
+  // exercise as lead-in text, which was right about it being ONE question but
+  // wrong about the typography. The official form is an uppercase letter with a
+  // closing parenthesis, bold, and the model's own punctuation (`A:` `A.` `A)`)
+  // must not decide the printed shape.
+  //
+  // Handled before every generic shape so `A)` is not relabelled `a)` by the
+  // lettered branch and `A:` is not mistaken for a key/value field exercise.
+  if (isRewriteTask(family, instruction)) {
+    const extra: string[] = [];
+    const sentences: { letter: string; text: string }[] = [];
+    for (const raw of prompt.split("\n")) {
+      const line = raw.trim();
+      if (!line) continue;
+      // The generator often repeats the instruction as the prompt's first line;
+      // printing it under the stem would duplicate it.
+      if (line.toLowerCase() === target && target !== "") continue;
+      const m = REWRITE_SENTENCE.exec(line);
+      if (m) sentences.push({ letter: m[1].toUpperCase(), text: m[2].trim() });
+      else extra.push(line);
+    }
+    const letters = new Set(sentences.map((s) => s.letter));
+    // Only take this branch when the exercise really is an A/B pair. Anything
+    // else (a single sentence, a list) falls through to the generic shapes
+    // rather than being forced into a pair that is not there.
+    if (letters.has("A") && letters.has("B")) {
+      for (const sentence of sentences) {
+        pushItem(sentence.text);
+        items[items.length - 1] = { ...items[items.length - 1], label: `${sentence.letter})` };
+      }
+      return { lead: extra, items };
+    }
+  }
 
   // Shape 3 first: blank-line-separated blocks are unambiguously one item each.
   // The morphology and phonology tasks are generated in exactly this shape
@@ -562,7 +626,7 @@ function toPaperTask(task: ExportTask, number: number): PaperTask {
   // the line stayed in `lead`, so the PDF printed a recognised bank twice: once
   // indented under the stem and once centred.
   const bank = extractWordBank(task.prompt);
-  const { lead, items } = parseTaskBody(bank.rest, task.instruction);
+  const { lead, items } = parseTaskBody(bank.rest, task.instruction, task.family);
   const table =
     task.table && task.table.headers.length > 0
       ? { headers: task.table.headers, rows: task.table.rows, kind: tableKindFromHeaders(task.table.headers) }

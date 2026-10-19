@@ -604,22 +604,47 @@ test("blank-line separated blocks are one item each", () => {
   assert.match(items[0].text, /Derived form:/);
 });
 
-test("a key/value rewrite exercise stays ONE item, not three", () => {
-  // Sentence A / Sentence B / the instruction belong to a single question.
-  // Labelling them a) b) c) would print nonsense.
+test("a sentence-rephrasing exercise prints two bold labels A) and B)", () => {
+  // Teacher report 2026-10-19: the pair rendered as plain "A: ..." / "B: ..."
+  // lead-in lines. It is one exercise in the official STEM form: A is complete,
+  // B is the start of the paraphrase ending in a dotted blank, and both labels
+  // are an UPPERCASE letter with a closing parenthesis.
   const { lead, items } = parseTaskBody(
     "Sentence A: Scholars highlight workshops, which demonstrate a trade network.\n" +
-      "Sentence B: The discovery of workshops demonstrates a trade network.\n" +
-      "Rewrite sentence B so that it means the same as sentence A."
+      "Sentence B: Workshops ..........\n" +
+      "Rewrite sentence B so that it means the same as sentence A.",
+    "Rewrite sentence B so that it means the same as sentence A.",
+    "REWRITE"
   );
-  // The requirement is that it is NOT three questions. Whether it renders as one
-  // item or stays as lead-in text under the instruction is the existing,
-  // already-tested behaviour for this shape.
-  assert.ok(items.length <= 1, `expected at most one item, got ${items.length}`);
-  assert.equal(lead.length + items.length >= 1, true);
-  const all = [...lead, ...items.map((i) => i.text)].join(" ");
-  assert.match(all, /Sentence A:/);
-  assert.match(all, /Rewrite sentence B/);
+  assert.deepEqual(lead, []);
+  assert.deepEqual(items.map((i) => i.label), ["A)", "B)"]);
+  assert.equal(items.length, 2);
+  assert.match(items[0].text, /^Scholars highlight workshops/);
+  // B is a stem: the dots are stripped and the renderers re-draw the leader.
+  assert.equal(items[1].text, "Workshops");
+  assert.equal(items[1].gap, true);
+});
+
+test("a rephrasing pair is reprinted in the fixed A) form whatever the model emitted", () => {
+  const instruction = "Rewrite sentence B so that it means the same as sentence A.";
+  for (const prompt of [
+    "A) One idea here.\nB) The same idea ..........",
+    "A. One idea here.\nB. The same idea ..........",
+    "A: One idea here.\nB: The same idea ..........",
+  ]) {
+    const { items } = parseTaskBody(prompt, instruction);
+    assert.deepEqual(items.map((i) => i.label), ["A)", "B)"], prompt);
+    assert.deepEqual(items.map((i) => i.text), ["One idea here.", "The same idea"]);
+    assert.equal(items[1].gap, true, prompt);
+  }
+});
+
+test("a grammar prompt with no A/B pair still uses the generic letters", () => {
+  const { items } = parseTaskBody(
+    "1. Technology helps students learn faster.\n2. Schools change quickly.",
+    "Rewrite sentence B so that it means the same as sentence A."
+  );
+  assert.deepEqual(items.map((i) => i.label), ["a)", "b)"]);
 });
 
 test("a lead-in still wins when prefixed items follow it", () => {

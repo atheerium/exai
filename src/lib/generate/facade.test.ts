@@ -60,6 +60,29 @@ test("generateTextExplorationCandidates yields 3 valid sets", async () => {
   }
 });
 
+test("the rephrasing task is a labelled stem pair and passes the guide validator", async () => {
+  const ctx = buildContext(input);
+  const sets = await generateTextExplorationCandidates(ctx);
+  for (const set of sets) {
+    const rewrite = set.find((t) => t.family === "REWRITE");
+    assert.ok(rewrite, "the mock must produce a REWRITE task");
+    assert.match(rewrite!.prompt, /^A\) .+\nB\) .*\.{3,}$/m);
+    const v = validateCandidate("TEXT_EXPLORATION", set, ctx.guide.marks.textExploration, { guide: ctx.guide });
+    assert.ok(v.ok, v.issues.join("; "));
+  }
+});
+
+test("the guide validator rejects a rephrasing task whose B is already complete", async () => {
+  const ctx = buildContext(input);
+  const sets = await generateTextExplorationCandidates(ctx);
+  const set = structuredClone(sets[0]!);
+  const rewrite = set.find((t) => t.family === "REWRITE")!;
+  rewrite.prompt = "A) One idea here.\nB) The same idea, finished.";
+  const v = validateCandidate("TEXT_EXPLORATION", set, ctx.guide.marks.textExploration, { guide: ctx.guide });
+  assert.equal(v.ok, false);
+  assert.match(v.issues.join(" "), /dotted blank/);
+});
+
 test("generateWritingCandidates yields 3 valid writing pairs", async () => {
   const pairs = await generateWritingCandidates(buildContext(input));
   assert.equal(pairs.length, DEFAULT_CANDIDATES);

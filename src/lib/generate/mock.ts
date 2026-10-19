@@ -639,6 +639,32 @@ function deriveGroundedMorphology(
   return rng.shuffle(known).slice(0, Math.min(wanted, known.length));
 }
 
+/**
+ * The `B)` stem of a sentence-rephrasing task: the start of the rewritten
+ * sentence, ending where the student must continue.
+ *
+ * The official paper prints an incomplete B followed by a dotted blank, not the
+ * finished answer. The live prompt (`REWRITE_RULE`) asks for that shape; the
+ * mock must return it too, or tests that go through the mock stop covering the
+ * parser's gap handling and the validator's stem check.
+ *
+ * Five words is enough to establish the new grammatical frame; trailing
+ * function words are dropped so the stem does not end mid-phrase ("Pollution is
+ * absorbed by" -> "Pollution is absorbed").
+ */
+function rephraseStem(sentence: string): string {
+  const words = sentence.trim().replace(/[.!?]+$/, "").split(/\s+/);
+  const TRAILING = new Set([
+    "a", "an", "the", "and", "or", "but", "so", "because", "that", "which", "who",
+    "whom", "whose", "to", "of", "in", "on", "at", "by", "with", "for", "from",
+    "as", "if", "than", "then", "is", "are", "was", "were", "be", "been", "being",
+    "has", "have", "had", "will", "would", "can", "could", "should", "may", "might", "must",
+  ]);
+  let cut = Math.min(5, words.length);
+  while (cut > 2 && TRAILING.has(words[cut - 1].toLowerCase().replace(/[,;:]$/, ""))) cut -= 1;
+  return `${words.slice(0, cut).join(" ")} ..........`;
+}
+
 function generateTextExplorationPrimary(
   skillRule: SkillRule,
   theme: ReturnType<typeof getTheme>,
@@ -799,12 +825,19 @@ function generateTextExplorationPrimary(
     const index = new Map(theme.vocab.map((v) => [v.word, map[v.finalS ?? "s"] ?? "/s/"]));
     return build(list, PHONOLOGY_GROUPS.s, (word) => index.get(word));
   } else if (skillRule.skill === "GRAMMAR") {
-    const exs = rng.take(theme.grammar, 2);
+    // Sentence rephrasing in the official STEM form: A is the complete source
+    // sentence, B is the start of its paraphrase, ending in a dotted blank the
+    // student completes. The theme's `rewritten` is that paraphrase, so A is
+    // `sentence` and the answer is the complete `rewritten`.
+    // One A/B pair, matching the prompt's "exactly two lines" and the official
+    // "2 to 3 sentences" constraint. Two pairs would print A) B) A) B).
+    const exs = rng.take(theme.grammar, 1);
     return {
       skill: "GRAMMAR",
-      prompt: exs.map((e, i) => `${i + 1}. ${e.sentence}`).join("\n"),
+      family: "REWRITE",
+      prompt: exs.map((e) => `A) ${e.sentence}\nB) ${rephraseStem(e.rewritten)}`).join("\n\n"),
       instruction: skillRule.instruction,
-      answer: exs.map((e, i) => `${i + 1}. ${e.rewritten} (${e.note})`).join("\n"),
+      answer: exs.map((e) => `${e.rewritten} (${e.note})`).join("\n"),
       marks: skillRule.marks,
     };
   } else {
