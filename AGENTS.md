@@ -1,6 +1,6 @@
 # AGENTS.md — Exaai
 
-Next.js 15 App Router + React 19 + TypeScript (strict) + Prisma/PostgreSQL (Supabase, pooled) + Tailwind v3. AI-assisted exam creation for Algerian English teachers. Every generation is a *proposal*; the teacher edits/approves. Docs: `README.md` (features), `PRODUCT.md` (users/brand/tone), `design.markdown` (**active** design spec), `DESIGN.md` (partly superseded), `Exaai_PRD_V2_Enterprise_Developer_Specification.md` (source of truth for scope).
+Next.js 15 App Router + React 19 + TypeScript (strict) + Prisma/PostgreSQL (Supabase, pooled) + Tailwind v3. AI-assisted exam creation for Algerian English teachers. Every generation is a *proposal*; the teacher edits/approves. Docs: `README.md` (**user-facing product guide — keep it current**), `PRODUCT.md` (users/brand/tone), `design.markdown` (**active** design spec), `DESIGN.md` (partly superseded), `Exaai_PRD_V2_Enterprise_Developer_Specification.md` (source of truth for scope).
 
 ## `EXAM.md` is the single source of truth for the exam — UPDATE IT ALWAYS
 
@@ -14,6 +14,30 @@ Next.js 15 App Router + React 19 + TypeScript (strict) + Prisma/PostgreSQL (Supa
 - The file grows monotonically. Nothing is removed because an implementation detail changed — the rule stays, the code follows it.
 
 `AGENTS.md` describes the code; `EXAM.md` describes the exam. Both are required reading.
+
+## `README.md` is user-facing — UPDATE IT WITH EVERY FEATURE
+
+`README.md` is the product guide a teacher or a new contributor reads first. It is
+**not** an internal design doc and not a changelog.
+
+**Whenever you add or change a user-facing feature, update `README.md` in the same
+change.** That includes a new screen or route, a button or action, an export format
+or option, a workflow step, a setting or environment-facing behaviour, a visible
+limit or constraint, and any change to what the product promises. If a teacher can
+see it, press it, read it or rely on it, the README must describe it.
+
+- Put features in the relevant section ("What is included", "How it works",
+  "Print and export", …), in plain teacher-facing language — no file paths, function
+  names or API details.
+- A behaviour a teacher would notice (a limit, a confirmation step, a session rule,
+  an offline guarantee) belongs in the README even when it is not a new button.
+- Do not add internal architecture, prompts or implementation notes to the README —
+  those go here in `AGENTS.md` or in `EXAM.md`.
+- The README is required reading for contributors: keep its **Project layout** and
+  **Documentation** tables accurate when files move or docs are added.
+
+`AGENTS.md` describes the code; `EXAM.md` describes the exam; `README.md` describes
+the product for its users. All three are required reading.
 
 ## Commands (all verified this session)
 

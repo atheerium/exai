@@ -1,97 +1,258 @@
 # Exaai
 
-**Exam creation, lightened.** Exaai helps Algerian English teachers design structured exams. The AI generates and proposes; the teacher reviews, edits, replaces and approves.
+**Exam creation, lightened.**
 
-This repository is a working MVP built from `Exaai_PRD_V2_Enterprise_Developer_Specification.md` (Version B).
+Exaai is a web app for Algerian English teachers. It drafts a complete exam — reading
+text, comprehension tasks, text exploration and written expression — following the
+official middle- and secondary-school exam structures, then hands it back to you to
+edit, replace and approve. When the exam is right, you export it as a printable PDF
+or a Word document.
 
-## Core workflow
+Every generation is a **proposal**. Nothing is approved without the teacher, and
+regenerating never silently destroys work you already accepted.
+
+---
+
+## Who it is for
+
+English teachers in Algerian middle and secondary schools, preparing formal exams
+(1AM–4AM and 1AS–3AS). The app is built to be used between classes, on a school
+laptop or a phone, with no technical setup and no knowledge of AI tooling.
+
+## The goal
+
+Exams are structured and repetitive to build: the same sections, the same task
+families, the same mark scheme, week after week. Exaai takes over the first draft —
+the text, the tasks and the marks — so the teacher spends their time on judgement
+and pedagogy instead of typing. The teacher remains the author: the app proposes,
+the teacher decides.
+
+Three principles shape the product:
+
+1. **The teacher stays the author.** Every generated section can be edited,
+   regenerated or swapped for an alternative, per task.
+2. **Nothing technical leaks to teachers.** No prompts, no API keys, no jargon in
+   the interface.
+3. **Nothing is lost.** Regenerating keeps the previous version, and every change is
+   captured in version history.
+
+---
+
+## How it works
 
 ```
-Parameters → Reading text → Part One (comprehension) → B. Text exploration → Written expression → Preview → Export
+Parameters → Reading text → Part One (comprehension) → B. Text Exploration → Written Expression → Preview → Export
 ```
 
-Every generation is a *proposal*. The teacher can edit any component, browse alternatives, replace a single task without touching the others, save drafts, resume from the dashboard, and export to PDF or Word.
+1. **Create an account** and start a new exam from the dashboard.
+2. **Choose the parameters**: level (middle/secondary), grade, stream where it
+   applies, unit, topic and passage length. The dropdowns are dependent, so only
+   valid combinations can be picked.
+3. **Generate the reading text.** You get an editable document. If you do not like
+   it, generate alternatives — the current text is never overwritten. You can also
+   ask for a simpler or harder rewrite.
+4. **Generate Part One: Reading** (comprehension tasks) and **B. Text Exploration**
+   (vocabulary, morphology, phonology, grammar, discourse). Each task carries its
+   marks, and each task can be replaced on its own.
+5. **Generate the written expression** topic, or use the free topic.
+6. **Preview the paper.** The preview renders the same document the export produces.
+7. **Export to PDF or Word**, print, and teach.
 
-## Stack
+Everything autosaves to your draft. You can close the tab and continue later from
+the dashboard; past exams live in your library.
 
-| Layer | Choice | Why |
-| --- | --- | --- |
-| Framework | Next.js 15 (App Router), React 19, TypeScript | Responsive teacher-facing SaaS, server + API in one deployable |
-| UI | Tailwind CSS + lightweight shadcn-style components | Fast, polished, no heavy dependencies |
-| Data | Prisma + PostgreSQL (Supabase, pooled) | Managed Postgres with pooled connections for serverless |
-| Auth | Email/password, bcrypt hashing, httpOnly DB sessions | Secure baseline; Google login is an open decision (OD-07) |
-| Generation | Pluggable provider facade — `mock` (default) or real LLM | Deterministic generation works offline; see "AI provider" below |
-| Export | `pdfkit` (PDF) + `docx` (Word) | Pure-JS server-side rendering, no headless browser needed |
+## What is included
 
-## Run it
+- **Landing page and accounts** — register, sign in, sign out, password recovery by
+  email. Exam data is private to your account.
+- **Dashboard** — new exam, continue the last one, recent exams, draft and exported
+  status.
+- **Parameters stage** — dependent dropdowns (level → grade → stream → unit → topic),
+  custom topic, and word-length choices that come from the curriculum rules.
+- **Reading text stage** — editable passage, alternatives, source attribution, and
+  Simplify / Make harder rewrites. The passage is never destroyed by a regeneration.
+- **Part One: Reading** — comprehension tasks with marks and per-task replacement.
+- **B. Text Exploration** — five skill categories (vocabulary, morphology, phonology,
+  grammar and discourse), including the prefix/root/suffix, word-derivation and
+  pronunciation tables used on the official papers.
+- **Written expression** — a guided topic with keywords, plus a free topic. Topics
+  can be replaced independently.
+- **Preview** — the exam as it will print, page by page.
+- **Export** — PDF and Word, generated from one shared document model so the two
+  formats and the preview cannot drift apart.
+- **Version history** — every generation, replacement and parameter change is
+  captured; restore any earlier state (up to 50 revisions per exam).
+- **Favourites and custom tasks** — star a task you want to reuse; the replacement
+  panel offers AI alternatives, your favourites and your own custom tasks.
+- **Library** — every exam you have created, with search, status filters (draft,
+  exported, archived) and deletion.
+- **Interface language** — English and French, switchable from the navigation bar.
+- **Operations view** — an admin-only page (`/ops`) with the generation ledger,
+  funnel counts and guide governance metadata.
+- **Feedback** — rate an exam thumbs up or down, with a short note when something
+  went wrong. This tells us which task families produce output teachers reject; it
+  never changes the exam and never feeds back into a prompt.
+
+## Exam structures
+
+Exaai follows the exam formats teachers actually print.
+
+- **BAC layout** (secondary school, 1AS–3AS): *Part One: Reading* — comprehension
+  and text exploration around the passage — then *Part Two: Written Expression*.
+- **BEM layout** (middle school, 1AM–4AM): the legacy three-section structure.
+
+Marks are computed per grade and stream, not hardcoded: the curriculum rules decide
+how many marks each section carries and how many items each task prints. The full
+specification — section order, headings, official task wordings, item counts,
+typography and table rules — lives in [`EXAM.md`](EXAM.md), which is the single
+source of truth for the paper.
+
+### Grounding
+
+Tasks that refer to the passage (vocabulary, morphology and referent questions) are
+checked mechanically against the text that was generated: the target words must
+actually occur there, and answer cells must be empty. Coherence, topicality and
+whether a question is genuinely answerable remain the model's job and are covered by
+teacher review — the app does not claim they are guaranteed.
+
+## Print and export
+
+Exports are print-ready A4 papers with the official-style Arabic header, section
+headings, marks and typography:
+
+- **PDF** — exact control over the layout (fonts, tables, dotted writing rows).
+- **Word (.docx)** — editable afterwards; the same document model as the PDF.
+
+The answer key is stored but **never printed** on either format.
+
+## Good to know
+
+- **One active session per account.** Signing in on a new device signs out the
+  previous one — a deliberate choice, not a bug.
+- **Drafts save as you work.** Closing the tab does not lose the exam; reopening it
+  from the dashboard or library resumes where you left off.
+- **Regeneration is additive.** A section you replace is kept as an alternative
+  rather than deleted, and version history (up to 50 revisions per exam) can put an
+  earlier state back.
+- **AI drafts are drafts.** The app checks structure, marks and passage grounding,
+  but the teacher is the last line of defence on wording and answerability.
+
+---
+
+## Run it locally
+
+### Requirements
+
+- Node.js 20 or newer (Next.js 15 / React 19)
+- A PostgreSQL database. [Supabase](https://supabase.com) works well: use the pooled
+  connection string (Dashboard → Connect → Transaction pooler).
+- The app **requires a live database**; there is no offline mode for `npm run dev`.
+
+### Setup
 
 ```bash
-npm install
-npx prisma db push        # sync schema to Supabase
-npx prisma db seed        # guide governance metadata
-npm run dev               # http://localhost:3000
+npm install                # postinstall runs `prisma generate`
+
+cp .env.example .env.local # then set DATABASE_URL in it
+
+npm run db:push            # create the schema (Prisma db push, no migrations)
+npm run db:seed            # one GuideConfig row per grade (curriculum metadata)
+
+npm run dev                # http://localhost:3000
 ```
 
-Tests (unit + provider integration against a local stub, no API key needed):
+Notes that will save you time:
 
-```bash
-npm test                  # 39 tests: guide rules, corpus-wide generation, facade, openai provider, rate limiting, rewrite
+- Next.js reads `.env.local`; the **Prisma CLI only reads `.env`**. For the `db:`
+  commands either duplicate `DATABASE_URL` into `.env` or export it in your shell
+  first.
+- Use `prisma db push`, not `prisma migrate`: this schema has no migration history.
+- Generation works with **no API key** — the default provider is a deterministic
+  offline mock. Adding a provider key is enough to go live (see below).
+
+### Configuration
+
+Copy `.env.example` and fill in what you need. The important variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Pooled PostgreSQL connection string (required) |
+| `AI_PROVIDER` | `mock` (default, offline) or a single provider: `openai`, `groq`, `openrouter`, `nvidia` |
+| `AI_PROVIDER_CHAIN` | Preferred over `AI_PROVIDER`: `provider:model` entries tried left to right, with a documented advance/stop policy |
+| `OPENAI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `NVIDIA_API_KEY` | Provider credentials; any one turns on the default chain |
+| `SESSION_COOKIE_NAME`, `SESSION_TTL_DAYS` | Session cookie settings (default 30 days) |
+| `ADMIN_EMAILS` | Comma-separated emails allowed to see `/ops` |
+| `APP_URL` | Public base URL used in password-reset emails |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Mail delivery. Outside production the reset link is returned to the UI instead; in production the mailer fails closed without SMTP. |
+
+`AI_PROVIDER=mock` wins over everything else, including an exported key — the offline
+provider is never silently overridden.
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Development server on :3000 |
+| `npm run build` | Production build |
+| `npm run typecheck` | TypeScript, no emit (do not run while `npm run build` is running) |
+| `npm test` | Unit and provider tests; runs the mock provider, no database or network needed |
+| `npm run db:push` / `npm run db:seed` | Apply the schema / seed curriculum metadata |
+| `npm run vercel-build` | `prisma generate && next build` — the Vercel entrypoint |
+| `bash scripts/smoke.sh` | End-to-end smoke test; needs a running dev server and a real database |
+| `npx tsx scripts/render-check.ts` | Renders a full generated exam to a PDF with no database, for checking the paper format |
+
+`npm run lint` is **not** a usable gate: ESLint is not installed, so `next lint`
+drops into an interactive setup prompt and exits non-zero. Typecheck and the test
+suite are the real gates.
+
+## Deploying
+
+The app deploys to Vercel as a standard Next.js project (`npm run vercel-build`).
+Because the pnpm lockfiles were removed on purpose, **use npm only** — committing a
+`pnpm-lock.yaml` makes Vercel choose pnpm and fail the install. Set `DATABASE_URL`,
+the session variables, `APP_URL` and `SMTP_HOST` in the project environment before
+the first production build.
+
+## Project layout
+
+```
+src/app/                 Pages and JSON API routes (App Router)
+src/app/(app)/           Authenticated area: dashboard, builder, library, favourites, ops
+src/components/          UI primitives and the builder stages
+src/lib/generate/        Generation facade, providers, grounding checks, mock corpus
+src/lib/export/          Shared document model + PDF, DOCX, Arabic shaping, tables
+src/data/guides.ts       Curriculum and rules per grade (the source of truth for exam structure)
+src/data/themes.ts       Offline theme corpus used by the mock provider
+prisma/                  Schema, seed and row-level-security SQL
+scripts/                 Render checks and the end-to-end smoke test
 ```
 
-Smoke test (needs a running server):
+## Documentation
 
-```bash
-bash scripts/smoke.sh     # BASE_URL and EMAIL are overridable
-```
+| File | Contents |
+| --- | --- |
+| [`README.md`](README.md) | This file — what the product is and how to use it |
+| [`EXAM.md`](EXAM.md) | The exam specification: sections, task wordings, marks, typography, tables |
+| [`AGENTS.md`](AGENTS.md) | The engineering brief: code map, landmines, generation rules |
+| [`PRODUCT.md`](PRODUCT.md) | Users, brand, tone and product principles |
+| [`design.markdown`](design.markdown) | The active design system |
+| PRD (Version B) | Source of truth for scope and requirements |
 
-## What's implemented (PRD mapping)
+## Contributing
 
-- **Landing page** (§7.1) — green gradient, Algerian-inspired subtle geometry, EN/FR switch
-- **Auth** (§24, §25) — register/login/logout, private data isolation (verified by smoke test)
-- **Dashboard** (§7.2, §5.2) — New Exam, Continue Last Exam, recent library, draft vs exported status
-- **Parameters** (§7.3) — dependent dropdowns (level → grade → stream → unit → topic), stream-aware unit filtering, custom topic, validated combinations, 120/150/200 word lengths (per stream) from guide rules
-- **Text stage** (§8) — editable document surface, alternative candidate navigation, source attribution, failure-safe regeneration (previous text is never destroyed)
-- **Part One** (§9) — comprehension tasks with marks (7 pts), independent per-task replacement panel, dismissible
-- **Text exploration** (§10) — heading `B. Text exploration`, `08 pts`, five skill categories (vocabulary, morphology, phonology, grammar, discourse), marks validated to 8
-- **Written expression** (§11) — guided topic with slash-separated keywords + free topic, independent topic replacement
-- **Persistence** (§15, §6) — autosave on edits, drafts, library, archive
-- **Export** (§18, §35) — PDF + Word with the official-style section headings and marks; preview screen renders the same document
-- **Guide engine** (§19) — configurable rules per grade (lengths, marks, task families, skill categories, writing forms), governance metadata seeded into `GuideConfig` with version + source reference; secondary curriculum aligned to official Algerian Ministry syllabus with per-stream unit sets
-- **Favourites + custom tasks** (§9.2, US-020/021/022) — save any task with the star icon; the replacement panel offers AI alternatives, favourites and custom tasks as tabs; a dedicated favourites page lists and manages them
-- **Analytics** (§28) — every user action writes a `ProductEvent` row (signup, exam created, parameters, generations, replacements, exports, failures) tied to the user/exam for funnel and reliability analysis
-- **Guide-version traceability** (§19.3, §47) — `ExamConfig` records the guide version used, surfaced in exports
-- **Login throttling** (§29) — failed logins are rate-limited per IP+email (5 attempts / 15 min window) with a lockout, returning 429 + `Retry-After`
-- **Password recovery** (§6) — forgot/reset flow with single-use hashed tokens, session invalidation on reset, and a pluggable mailer (reset links are logged; the API returns `devUrl` outside production; wire SMTP before launch)
-- **AI rewrite tools** (US-023) — Simplify and Make harder buttons on the reading text; rewritten versions are added to the alternatives panel without touching the current text (mock + OpenAI providers)
-- **Version history** (US-024) — every generation/replacement/parameters change auto-captures a revision; the builder's Versions panel lists them with one-click restore (capped at 50 per exam)
-- **Operations view** (US-030) — admin-gated `/ops` page showing the AI generation ledger, funnel event counts and guide governance metadata (`ADMIN_EMAILS` env grants access)
-- **Generation ledger** (§27, §28) — every operation writes a `Generation` row (type, provider, status, error) for cost/quality monitoring
+Keep the docs in step with the code:
 
-## AI provider
+- A change to the **exam** — a task, wording, mark, layout or typography rule — goes
+  into `EXAM.md` in the same change.
+- A new **user-facing feature or behaviour** (a new screen, button, export option,
+  workflow step, setting or limit) is described in `README.md` in the same change.
+  If a teacher can see or do something new, the README should say so.
 
-The product deliberately does not expose AI plumbing to teachers. Server-side, generation runs through a pluggable facade (`src/lib/generate/index.ts`):
+There is no CI; run `npm run typecheck` and `npm test` before opening a pull request.
 
-- `AI_PROVIDER=mock` (default) — deterministic, seeded generation from a curated theme corpus (`src/data/themes.ts`). Produces structurally valid exams with correct marks and unit alignment, no API key, works offline.
-- `AI_PROVIDER=openai` — a fully implemented OpenAI-compatible provider (`src/lib/generate/openai.ts`). It requests JSON output, parses and validates every response against the guide rules (task counts, mark totals, skills, guided/free keywords), and surfaces clear errors on malformed output. Configure `OPENAI_API_KEY`, optionally `OPENAI_MODEL` and `OPENAI_BASE_URL` (any OpenAI-compatible endpoint).
-- `AI_PROVIDER=groq` — routes through Groq's hosted inference (`src/lib/generate/groq.ts`), which uses the same OpenAI-compatible API shape. Configure `GROQ_API_KEY`, optionally `GROQ_MODEL` (default `llama-3.3-70b-versatile`) and `GROQ_BASE_URL` (default `https://api.groq.com/openai/v1`).
+## Scope
 
-All candidates pass `validateCandidate` (structure, length, marks totals, section completeness) before the teacher sees them (PRD §17). Marks totals are enforced (Part One = 7, Text exploration = 8, Writing = 5).
-
-## Architecture answers (PRD §45)
-
-- **Responsive SaaS**: Next.js App Router with server-rendered pages and JSON API routes; client components only where interactivity is needed.
-- **Responsive UI during generation**: generation is fast and synchronous for the MVP provider; the UI shows progress states and never blocks editing of already-approved content. A job queue is the natural next step if generation latency grows.
-- **No silent overwrites**: every item keeps a candidate list; regenerating appends the previous version to the candidates, so the teacher's approved work is always recoverable (§15.2, §15.3).
-- **Auth**: bcrypt + httpOnly session cookies stored in DB with expiry; secrets stay server-side.
-- **Private data isolation**: all queries are scoped by `userId`; verified by the smoke test (cross-user access returns 404).
-- **AI abstraction**: provider facade with a shared context/validation layer; costs tracked per operation type.
-- **Guide/rule storage**: typed config in `src/data/guides.ts` (code for the MVP), with governance metadata (version, source reference, active flag) in `GuideConfig` so future admin UI can manage them without redeploys (§30, §47).
-- **PDF/DOCX**: generated server-side with `pdfkit`/`docx` from a shared document model (`src/lib/export/assemble.ts`), so preview and exports never diverge.
-- **Economical MVP**: Supabase Postgres + one Next.js process + mock provider = minimal infrastructure. Scaling = real provider and object storage for exports.
-
-## Known open decisions (from the PRD — not invented here)
-
-- ~~Exact official guide documents and exam variants (OD-01, OD-02)~~ — **Resolved (Phase 1):** Secondary curriculum (1AS/2AS/3AS) aligned to official Algerian Ministry of National Education syllabus. 1AS uses "At the Crossroads" (5 units, all streams); 2AS uses "Getting Through" (6 units FL/Lit, 4 units Sciences, 4 units GE); 3AS uses "New Prospects" (4 units literary, 4 units scientific). Per-stream unit sets with `streams` field on `UnitDef`. Source references set per grade to official yearly planning PDFs. Middle school (1AM–4AM) unit names are draft and remain unverified.
-- Source retrieval/copyright policy (OD-04) — the mock provider generates original text and marks it clearly as "no external source", never fabricating a citation.
-- Pricing/entitlements (OD-05/06) — the schema has `FavouriteTask`/`CustomTask` and `Generation` ledgers ready; no billing UI is shipped.
-- Google login (OD-07), DOCX-in-V1 (OD-08, implemented anyway), version-history depth (OD-11).
+This repository is a working product MVP. Accounts, generation, editing, version
+history, favourites, export and the operations view are implemented; billing and
+paid plans are not. Free-tier AI endpoints may retain or train on prompts, which is
+an accepted trade-off recorded in `.env.example`.
