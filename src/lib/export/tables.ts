@@ -76,6 +76,10 @@ export function rulePrescribesTable(rule: Pick<SkillRule, "skill">): boolean {
 //   3. PHONOLOGY, final /ed/ and /s/   /t/ | /d/ | /ɪd/  (or /s/ | /z/ | /ɪz/)
 //                                      + 1 empty row
 //
+// The blank row is 24pt tall (user instruction, 2026-10-19: "make the table
+// more compact ... the rows are too lengthy"), enough to write in without the
+// loose 32pt rhythm that pushed a two-row chart down the page.
+//
 // A SINGLE empty row is deliberate (user instruction, 2026-10-13): students do
 // not write into a multi-row grid on these papers, they sort the whole word list
 // into one box under each column header. The previous phonology table shipped two
@@ -92,8 +96,14 @@ export function rulePrescribesTable(rule: Pick<SkillRule, "skill">): boolean {
  */
 export const DOTTED = "...................";
 
-/** Height of a table row the student writes in, in points. */
-export const BLANK_ROW_HEIGHT = 32;
+/**
+ * Height of a table row the student writes in, in points.
+ *
+ * Reduced from 32 to 24 by user instruction on 2026-10-19 ("the rows are too
+ * lengthy ... make the space as small as possible"). Shared by PDF, DOCX and
+ * the preview, so the three surfaces keep the same rhythm.
+ */
+export const BLANK_ROW_HEIGHT = 24;
 
 /** Cell content that is blank for validation purposes: empty, or the dotted line. */
 export function isBlankCell(cell: string | null | undefined): boolean {

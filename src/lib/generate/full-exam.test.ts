@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateFullExam, FULL_EXAM_QUOTA_COST } from "./full-exam";
 import { occursInPassage, extractTaskTargets } from "./grounding";
+import { locateReferent } from "./referents";
 import { GRADES, GUIDES, getGuide } from "@/data/guides";
 import type { GeneratedTask } from "@/types";
 import { isBlankCell, tableKindFromHeaders } from "@/lib/export/tables";
@@ -71,7 +72,9 @@ test("referent targets occur in the generated passage", async () => {
   for (const task of r.partOne![0]) {
     if ((task.family ?? "").toUpperCase().includes("COHESIVE")) {
       for (const target of extractTaskTargets(task)) {
-        assert.ok(occursInPassage(passage, target), `referent "${target}" missing`);
+        // Phrase-aware: "the same" is a valid multi-word substitute and
+        // `occursInPassage` is deliberately single-token.
+        assert.ok(locateReferent(passage, target), `referent "${target}" missing`);
       }
     }
   }

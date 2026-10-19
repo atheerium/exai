@@ -41,10 +41,12 @@ const PARA_GAP = 0.55;
 const TABLE_MAX_WIDTH = 400;
 
 /**
- * Table grid weight. 1pt solid black (user instruction, 2026-10-13). DOCX
- * mirrors this with `GRID` in `docx.ts`, whose `size` is in eighths of a point.
+ * Table grid weight. 0.75pt is one device-independent pixel at 96dpi, which is
+ * what the user asked for on 2026-10-19 ("reduce the border size, maybe one
+ * pixel"); the previous 1pt grid read heavy at this size. DOCX mirrors this
+ * with `GRID` in `docx.ts`, whose `size` is in eighths of a point (size 6).
  */
-const TABLE_LINE_WIDTH = 1;
+const TABLE_LINE_WIDTH = 0.75;
 
 /**
  * Vertical rhythm (user instruction, 2026-10-11: "reduce the line spacing by
@@ -464,8 +466,12 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
 
   const drawTable = (table: PaperTable) => {
     const colCount = table.headers.length;
-    const padX = 5;
-    const padY = 5;
+    // Tight cell padding (user instruction, 2026-10-19): the old 5pt on every
+    // edge made each row read as a box with air around the text. 4pt
+    // horizontally still separates columns; 2pt vertically is the whole margin
+    // between a row's text and its grid line.
+    const padX = 4;
+    const padY = 2;
     const pageBottom = () => doc.page.height - doc.page.margins.bottom;
     let y = doc.y;
 
@@ -483,8 +489,12 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     /**
      * Row height: a row the student writes in is `BLANK_ROW_HEIGHT` tall even
      * when empty, and a row carrying text is at least as tall as that text.
+     *
+     * The header passes `minHeight: 0`: it is read, not written in, so forcing
+     * the writing-row height on it was the single largest source of dead space
+     * in a two-row chart (user instruction, 2026-10-19).
      */
-    const measure = (cells: string[]): number => {
+    const measure = (cells: string[], minHeight: number): number => {
       let tallest = 0;
       for (const cell of cells) {
         // Measure in the face the cell will actually be drawn in, or phonetic
@@ -492,10 +502,10 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
         doc.font(faceFor(cell || " ", false, false)).fontSize(BODY);
         tallest = Math.max(tallest, doc.heightOfString(cell || " ", { width: textWidth }));
       }
-      return Math.max(BLANK_ROW_HEIGHT, tallest + padY * 2);
+      return Math.max(minHeight, tallest + padY * 2);
     };
 
-    const headerH = measure(table.headers);
+    const headerH = measure(table.headers, 0);
     if (y + headerH + BLANK_ROW_HEIGHT > pageBottom()) {
       doc.addPage();
       if (header) drawRunningHeader(header);
@@ -508,15 +518,30 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     table.headers.forEach((h, ci) => {
       const x = x0 + ci * colWidth;
       doc.rect(x, y, colWidth, headerH).stroke();
-      doc.font(faceFor(h, true, true)).fontSize(BODY).fillColor("#000000").text(h, x + padX, y + padY, {
-        width: textWidth,
-        align: "center",
-      });
+      // Bold, not bold-italic (user instruction, 2026-10-19: "make the table
+      // headers bold"). Phonetic headers cannot use the bold face at all: the
+      // built-in Times-Bold is WinAnsi and prints `/ɪd/` as garbage, so the
+      // regular file-backed face is stroked to fake the weight instead.
+      const face = faceFor(h, true, false);
+      doc.font(face).fontSize(BODY).fillColor("#000000");
+      if (face === REGULAR) {
+        doc.save();
+        doc.lineWidth(0.35).strokeColor("#000000");
+        doc.text(h, x + padX, y + padY, {
+          width: textWidth,
+          align: "center",
+          stroke: true,
+          fill: true,
+        });
+        doc.restore();
+      } else {
+        doc.text(h, x + padX, y + padY, { width: textWidth, align: "center" });
+      }
     });
     y += headerH;
 
     table.rows.forEach((row) => {
-      const h = measure(row);
+      const h = measure(row, BLANK_ROW_HEIGHT);
       if (y + h > pageBottom()) {
         doc.addPage();
         if (header) drawRunningHeader(header);

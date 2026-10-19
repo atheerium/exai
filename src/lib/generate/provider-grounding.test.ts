@@ -10,7 +10,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { createCompatibleGenerators, type ProviderConfig } from "./provider";
+import { createCompatibleGenerators, promptTargets, stampReferentTargets, type ProviderConfig } from "./provider";
 import { buildContext } from "./index";
 import { GRADES, getGuide } from "@/data/guides";
 import { isBlankCell } from "@/lib/export/tables";
@@ -386,4 +386,75 @@ test("a non-tabular task never gains a table from the blanking stamp", async () 
   const plain = sets[0].filter((t) => !["MORPHOLOGY", "PHONOLOGY"].includes((t.skill ?? "").toUpperCase()));
   assert.ok(plain.length > 0);
   for (const task of plain) assert.equal(task.table, undefined);
+});
+
+// A passage with several real referents, for the target-stamping tests.
+const REF_PASSAGE =
+  "The pupils met early. They carried their books, and this helped them later. It was simple.";
+
+test("stampReferentTargets keeps a valid referent set and its answer key", () => {
+  const task = {
+    prompt: "they\nthis\nit",
+    instruction: "Who or what do the underlined words refer to in the text?",
+    answer: "1. the students\n2. the new plan\n3. the result",
+    marks: 3,
+    skill: "READING",
+    family: "COHESIVE_MARKERS",
+  };
+  const stamped = stampReferentTargets(task, REF_PASSAGE, 3);
+  assert.equal(stamped.prompt, "they\nthis\nit");
+  assert.equal(stamped.answer, task.answer);
+});
+
+test("stampReferentTargets replaces content words with passage referents", () => {
+  // Live failure 2026-10-19: "Consequently" and "as" occur in the passage, so
+  // the presence check passed them, but neither is a referent.
+  const task = {
+    prompt: "Consequently\nthis\nas",
+    instruction: "Who or what do the underlined words refer to in the text?",
+    answer: "1. the plan\n2. the new plan\n3. the team",
+    marks: 3,
+    skill: "READING",
+    family: "COHESIVE_MARKERS",
+  };
+  const stamped = stampReferentTargets(task, REF_PASSAGE, 3);
+  const targets = stamped.prompt!.split("\n");
+  assert.equal(targets.length, 3);
+  assert.ok(targets.every((t) => t.toLowerCase() !== "consequently" && t.toLowerCase() !== "as"));
+  // "this" is a real referent that occurs in the passage, so it survives and
+  // keeps its key line, renumbered to its new position.
+  assert.ok(targets.includes("this"));
+  assert.match(stamped.answer!, /^1\. the new plan$/m);
+});
+
+test("stampReferentTargets replaces a pronoun absent from the passage", () => {
+  // "they" does not occur here; the passage still has three other referents.
+  const ABSENT_PASSAGE = "This helped them later. It was simple.";
+  const task = {
+    prompt: "they\nthis\nit",
+    instruction: "Who or what do the underlined words refer to in the text?",
+    answer: "1. the students\n2. the new plan\n3. the result",
+    marks: 3,
+    skill: "READING",
+    family: "COHESIVE_MARKERS",
+  };
+  const stamped = stampReferentTargets(task, ABSENT_PASSAGE, 3);
+  assert.ok(!stamped.prompt!.split("\n").includes("they"));
+  assert.ok(stamped.prompt!.split("\n").includes("it"));
+  // The two surviving items keep their answers.
+  assert.match(stamped.answer!, /the new plan/);
+  assert.match(stamped.answer!, /the result/);
+});
+
+test("promptTargets reads every referent shape the parser can produce", () => {
+  // Bare (live), quoted (mock/family-keyed), and the full-sentence item that
+  // `referentItem` builds from a family-keyed reply.
+  assert.deepEqual(promptTargets("they\nthis\nit"), ["they", "this", "it"]);
+  assert.deepEqual(promptTargets('1. "The same" (underlined)\n2. "They" (underlined)'), ["The same", "They"]);
+  assert.deepEqual(
+    promptTargets('1. The underlined word "they" refers to ...........\n2. The underlined word "it" refers to ...........'),
+    ["they", "it"]
+  );
+  // The printed question is not a target.
+  assert.deepEqual(promptTargets("Who or what do the underlined words refer to in the text?\nthey"), ["they"]);
 });

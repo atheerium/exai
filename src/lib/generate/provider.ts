@@ -7,6 +7,7 @@
 import type { GeneratedSource, GeneratedTask, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 import { officialTable, rulePrescribesTable, type RawTable } from "@/lib/export/tables";
 import { candidateCount, DEFAULT_CANDIDATES } from "./candidates";
+import { isReferentWord, locateReferent, pickReferents } from "./referents";
 import type { GenContext } from "./index";
 
 // The system prompt lives in its own file because every generation sends it and
@@ -388,7 +389,11 @@ const PART_ONE_PARAGRAPH_ID_RULE =
  */
 const REFERENT_SHAPE_RULE =
   " For COHESIVE_MARKERS, the prompt is ONLY the underlined words, one bare target per line " +
-  "(for example \"they\\nthis\\nit\"). Every target must occur verbatim in the passage field. " +
+  "(for example \"they\\nthis\\nit\"). Every target MUST BE A REFERENT: a pronoun " +
+  "(it, they, them, their, this, these, that, those, which, who, him, her, its) or a " +
+  "repetition-avoiding substitute (the former, the latter, the same, one, such). A content " +
+  "word, an adverb or a conjunction (for example \"consequently\", \"as\", \"heritage\") is " +
+  "NOT a referent and will be rejected. Every target must also occur verbatim in the passage field. " +
   "Do NOT repeat the question wording inside the prompt, do NOT number the lines, and do NOT append " +
   "\"(underlined)\" -- the paper prints the instruction once and links each target to its paragraph itself. ";
 
@@ -794,6 +799,90 @@ function shapeError(what: string, json: any, expected: number): string {
 }
 
 /**
+ * Resolve the target words printed by a referent task, in any shape the model
+ * returned: numbered or bare, quoted or not, with or without "(underlined)".
+ */
+export function promptTargets(prompt: string): string[] {
+  const out: string[] = [];
+  for (const line of prompt.split("\n")) {
+    const stripped = line.trim().replace(/^\s*\d+[.)]\s*/, "");
+    // Quoted shapes first: `1. "The same" (underlined)` AND the family-keyed
+    // `The underlined word "they" refers to ...........`. Both name the target
+    // inside quotes, and the second one is a full sentence that the bare-shape
+    // path below would otherwise mistake for a target.
+    const quoted = /"([^"]{1,60})"/.exec(stripped);
+    const bare = (
+      quoted
+        ? quoted[1]
+        : stripped
+            .replace(/^["'“”]+|["'“”]+$/g, "")
+            .replace(/\s*\(underlined\)\s*$/i, "")
+            .trim()
+    ).trim();
+    if (!bare || /[.?!]$/.test(bare)) continue;
+    out.push(bare);
+  }
+  return out;
+}
+
+/**
+ * STAMP the referent targets from the passage.
+ *
+ * Live measurement 2026-10-19: asked for three underlined referents, the model
+ * returned `Consequently` and `as` (content words that happen to occur in the
+ * text) and, on a later run, `the former` (absent from it). Both are
+ * unanswerable or unlinkable, and the paper printed options with no `(§N)` and
+ * nothing underlined. A prompt rule is a request; this is the guarantee.
+ *
+ * Valid model targets are kept (so the teacher keeps the model's choices and
+ * their answer-key lines); invalid or missing ones are replaced from
+ * `pickReferents`, which by construction only returns referents that occur in
+ * the passage. The answer key is rebuilt by target, so a replaced item simply
+ * has no key line rather than a line pointing at a word that is no longer
+ * printed.
+ */
+export function stampReferentTargets(
+  task: GeneratedTask,
+  passage: string,
+  count: number
+): GeneratedTask {
+  const asked = promptTargets(task.prompt ?? "");
+  const kept = asked.filter((t) => isReferentWord(t) && locateReferent(passage, t));
+  if (asked.length === count && kept.length === count) return task;
+
+  const targets = [...kept];
+  for (const candidate of pickReferents(passage, count * 2)) {
+    if (targets.length >= count) break;
+    if (!targets.some((t) => t.toLowerCase() === candidate.toLowerCase())) targets.push(candidate);
+  }
+  // Not enough referents in the passage: leave the task alone and let
+  // `checkTaskLinkage` report it, rather than printing a short list.
+  if (targets.length < count) return task;
+
+  const answerLines = (task.answer ?? "").split("\n").map((line) =>
+    line.replace(/^\s*\d+[.)]\s*/, "").trim()
+  );
+  const answerByTarget = new Map<string, string>();
+  asked.forEach((t, i) => {
+    const line = answerLines[i];
+    if (line) answerByTarget.set(t.toLowerCase(), line);
+  });
+
+  const answers = targets
+    .map((t, i) => {
+      const line = answerByTarget.get(t.toLowerCase());
+      return line ? `${i + 1}. ${line}` : null;
+    })
+    .filter((line): line is string => line !== null);
+
+  return {
+    ...task,
+    prompt: targets.join("\n"),
+    answer: answers.length > 0 ? answers.join("\n") : undefined,
+  };
+}
+
+/**
  * Build the five generation functions shared by every OpenAI-compatible
  * provider. OpenAI and Groq speak the same chat-completions dialect and differ
  * only in credentials/base URL/model, so the prompts and response parsing live
@@ -872,15 +961,20 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
     return sets.map((set) =>
       set.map((task, i) => {
         const spec = guideFamilies[i];
-        return spec
-          ? {
-              ...task,
-              skill: "READING",
-              marks: spec.marks,
-              family: spec.family,
-              instruction: task.instruction || (spec.exactWording ?? spec.instruction),
-            }
-          : task;
+        if (!spec) return task;
+        const stamped = {
+          ...task,
+          skill: "READING",
+          marks: spec.marks,
+          family: spec.family,
+          instruction: task.instruction || (spec.exactWording ?? spec.instruction),
+        };
+        // A referent target is not wording the model may invent: it must be a
+        // pronoun that exists in the printed passage, so it is stamped from the
+        // passage like marks and family.
+        return spec.family === "COHESIVE_MARKERS" && ctx.groundingText
+          ? stampReferentTargets(stamped, ctx.groundingText, spec.itemCount ?? 3)
+          : stamped;
       })
     );
   }

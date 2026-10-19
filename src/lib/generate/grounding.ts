@@ -155,6 +155,7 @@ export function passageVocabulary(passage: string, limit = 40): PassageVocabItem
  * passage, re-exported from the referent rule module so callers have one
  * import for all passage-derived material.
  */
+import { isReferentWord, locateReferent } from "./referents";
 export { pickReferents } from "./referents";
 
 // ---------------------------------------------------------------------------
@@ -185,6 +186,7 @@ export interface LinkableTask {
 export function extractTaskTargets(task: LinkableTask): string[] {
   const text = [task.prompt, task.instruction].filter(Boolean).join("\n");
   const out: string[] = [];
+  const isReferentTask = (task.family ?? "").toUpperCase().includes("COHESIVE");
 
   // Numbered target lines: "1. Curiosity -> .........." / "1. \"Habit\" (…)"
   for (const line of text.split("\n")) {
@@ -198,8 +200,32 @@ export function extractTaskTargets(task: LinkableTask): string[] {
   // Quoted spans: "the former" (underlined), "they"
   for (const m of text.matchAll(/"([^"]{2,60})"/g)) {
     const span = normaliseToken(m[1]);
-    if (span.includes(" ")) continue; // multi-word: referents module handles these
-    if (span.length >= 2 && !STOPWORDS.has(span)) out.push(span);
+    // Multi-word spans are only checkable against a phrase-aware matcher, which
+    // `checkTaskLinkage` uses for referents; a lexical target is one token.
+    if (span.includes(" ") && !isReferentTask) continue;
+    // Pronouns are the referent targets, so the vocabulary stopword filter must
+    // not apply to them; it exists to drop "the"/"and" from lexical extraction.
+    if (span.length >= 2 && (isReferentTask || !STOPWORDS.has(span))) out.push(span);
+  }
+
+  // Bare referent lines: the live model returns `they` / `this` / `it` one per
+  // line, with no numbering and no quoting (REFERENT_SHAPE_RULE in provider.ts
+  // now asks for exactly that). Without this branch the linkage check found no
+  // targets at all and passed a referent the passage never contained, which the
+  // paper then printed with no `(§N)`.
+  if (isReferentTask) {
+    for (const line of text.split("\n")) {
+      // Numbered and quoted shapes are already handled above; re-reading them
+      // here would count the same target twice under a mangled form.
+      if (/^\s*\d+[.)]/.test(line) || /\(underlined\)|→|->|…|["“”]/.test(line)) continue;
+      const bare = line.trim();
+      // A prompt line is not a target: the question stem ends in '?', a lead-in
+      // ends in '.', and a target is at most a short noun phrase.
+      if (!bare || /[.?!]$/.test(bare)) continue;
+      if (bare.split(/\s+/).length > 4) continue;
+      const w = normaliseToken(bare);
+      if (w.length >= 2) out.push(w);
+    }
   }
 
   return [...new Set(out)];
@@ -456,7 +482,20 @@ export function checkTaskLinkage(tasks: LinkableTask[], passage: string): string
     if (lexical || isReferent) {
       const targets = extractTaskTargets(task);
       for (const t of targets) {
-        if (!occursInPassage(passage, t)) {
+        // The referent question underlines a pronoun or a substitution, never a
+        // content word: "Consequently" occurring in the passage does not make it
+        // an answerable referent, and the paper would print it with no `(§N)`.
+        if (isReferent && !isReferentWord(t)) {
+          issues.push(
+            `${label} targets "${t}", which is not a pronoun or repetition-avoiding substitute; question 4 can only underline referents.`
+          );
+          continue;
+        }
+        // Referents are matched phrase-aware: "the problem" substitutes for a
+        // noun phrase and `occursInPassage` is deliberately single-token. Every
+        // other family keeps the token semantics.
+        const present = isReferent ? locateReferent(passage, t) !== null : occursInPassage(passage, t);
+        if (!present) {
           issues.push(
             `${label} targets "${t}", which does not occur in the passage; the task cannot be answered from the text.`
           );

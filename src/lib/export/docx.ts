@@ -94,20 +94,35 @@ const NO_SHADING = { fill: "FFFFFF", type: ShadingType.CLEAR, color: "auto" } as
  *
  * Both are emitted on purpose. docx serialises `insideH`/`insideV` as its own
  * defaults (0.5pt, `auto`) whatever the value passed here, so a table whose
- * cells all carry their own borders renders 1pt everywhere — but an editor that
- * prefers the table-level definition would show 0.5pt inner lines. `insideH` /
- * `insideV` and their modern spellings are both set so neither wins.
+ * cells all carry their own borders renders the requested weight everywhere —
+ * but an editor that prefers the table-level definition would show 0.5pt inner
+ * lines. `insideH` / `insideV` and their modern spellings are both set so
+ * neither wins.
+ *
+ * `size` is in eighths of a point: 6 = 0.75pt, i.e. one pixel at 96dpi, which
+ * matches `TABLE_LINE_WIDTH` in pdf.ts (user instruction, 2026-10-19).
  */
 const GRID = {
-  top: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
-  bottom: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
-  left: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
-  right: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
-  insideH: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
-  insideV: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
-  insideHorizontal: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
-  insideVertical: { style: BorderStyle.SINGLE, size: 8, color: "000000" },
+  top: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+  bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+  left: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+  right: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+  insideH: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+  insideV: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+  insideHorizontal: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+  insideVertical: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
 };
+
+/**
+ * Tight cell margins, in twips (user instruction, 2026-10-19).
+ *
+ * Word's default cell margin is 108 twips (0.075in) left and right with none
+ * vertical, so the grid already looked boxy horizontally. 72 twips (0.05in)
+ * keeps columns from touching without the airy look, and the vertical margins
+ * stay 0 because padding there is now `padY` in the PDF's equivalent terms:
+ * the cell paragraph's own spacing is zeroed below.
+ */
+const CELL_MARGINS = { top: 0, bottom: 0, left: 72, right: 72 } as const;
 
 const NO_BORDERS = {
   top: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
@@ -286,7 +301,9 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
 
   const drawTable = (table: PaperTable) => {
     // Official style (user screenshot, 2026-10-11): table centred, headers bold
-    // italic and centred. PDF equivalent: TABLE_MAX_WIDTH in pdf.ts.
+    // and centred (italic dropped 2026-10-19). PDF equivalent: TABLE_MAX_WIDTH
+    // in pdf.ts. `after: 0` matters inside a cell: the paragraph default adds
+    // 5pt of trailing space, which alone made every row taller than its text.
     const colCount = table.headers.length;
     const cellWidth = Math.floor((100 / colCount) * 100) / 100;
 
@@ -297,8 +314,11 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
           new TableCell({
             borders: GRID,
             shading: NO_SHADING,
+            margins: CELL_MARGINS,
             width: { size: cellWidth, type: WidthType.PERCENTAGE },
-            children: [p(h, { size: TABLE_TEXT_SIZE, bold: true, italics: true, align: "center" })],
+            children: [
+              p(h, { size: TABLE_TEXT_SIZE, bold: true, align: "center", after: 0 }),
+            ],
           })
       ),
     });
@@ -316,11 +336,13 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
             return new TableCell({
               borders: GRID,
               shading: NO_SHADING,
+              margins: CELL_MARGINS,
               width: { size: cellWidth, type: WidthType.PERCENTAGE },
               children: [
                 p(cell || " ", {
                   size: TABLE_TEXT_SIZE,
                   align: dotted ? "center" : "left",
+                  after: 0,
                 }),
               ],
             });

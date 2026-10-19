@@ -157,13 +157,14 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
 
           case "table":
             return (
-              // Centred and narrower than the text block, equal thirds, 1pt
-              // borders, centred bold-italic headers and a row tall enough to
-              // write in -- the same rules as pdf.ts/docx.ts, so the teacher
-              // reviews the paper the students will get.
+              // Centred and narrower than the text block, equal thirds, a
+              // hairline grid, centred bold headers and a compact writing row
+              // -- the same rules as pdf.ts/docx.ts, so the teacher reviews the
+              // paper the students will get. The grid is 1px (user instruction,
+              // 2026-10-19), not the old 2px `border-2`.
               <div key={bi} className="mt-3 overflow-x-auto">
                 <table
-                  className="mx-auto border-collapse border-2 border-foreground bg-white text-[13px]"
+                  className="mx-auto border-collapse border border-foreground bg-white text-[13px]"
                   style={{ width: "70%" }}
                 >
                   <thead>
@@ -171,7 +172,7 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                       {block.table.headers.map((h, hi) => (
                         <th
                           key={hi}
-                          className="w-1/3 border-2 border-foreground px-3 py-2 text-center font-bold italic"
+                          className="w-1/3 border border-foreground px-2 py-1 text-center font-bold"
                         >
                           {h}
                         </th>
@@ -187,7 +188,7 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                           return (
                             <td
                               key={ci}
-                              className="w-1/3 border-2 border-foreground px-3 py-2 align-middle"
+                              className="w-1/3 border border-foreground px-2 py-1 align-middle"
                               style={{ textAlign: dotted ? "center" : "left" }}
                             >
                               {/* A dotted cell must never wrap: a wrapped leader

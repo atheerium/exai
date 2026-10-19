@@ -78,6 +78,62 @@ test("extractTaskTargets returns empty for prose-only prompts", () => {
   assert.deepEqual(extractTaskTargets({ prompt: "Read the text and answer." }), []);
 });
 
+test("extractTaskTargets reads the bare referent shape the live model returns", () => {
+  const task = {
+    family: "COHESIVE_MARKERS",
+    prompt: "Who or what do the underlined words refer to in the text?\nthey\nthis\nit",
+    instruction: "",
+  };
+  assert.deepEqual(extractTaskTargets(task), ["they", "this", "it"]);
+});
+
+test("extractTaskTargets does not read bare lines from a non-referent task", () => {
+  // A bare line in another family may be real question text; treating every
+  // line as a target would produce false rejections.
+  const task = { family: "TRUE_FALSE", prompt: "they" };
+  assert.deepEqual(extractTaskTargets(task), []);
+});
+
+test("checkTaskLinkage flags a bare referent absent from the passage", () => {
+  const passage = "The plan was simple. It worked.";
+  const tasks = [
+    {
+      family: "COHESIVE_MARKERS",
+      prompt: "Who or what do the underlined words refer to in the text?\nthey\nit",
+    },
+  ];
+  const issues = checkTaskLinkage(tasks, passage);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0], /"they"/);
+});
+
+test("checkTaskLinkage links a multi-word referent phrase", () => {
+  const passage = "The council met on Monday.\n\nThe same was true on Tuesday.";
+  const tasks = [
+    {
+      family: "COHESIVE_MARKERS",
+      prompt: "Who or what do the underlined words refer to in the text?\nthe same",
+    },
+  ];
+  assert.deepEqual(checkTaskLinkage(tasks, passage), []);
+});
+
+test("checkTaskLinkage rejects a content word that merely occurs in the passage", () => {
+  // Live failure 2026-10-19: the model answered with "Consequently" and "as".
+  // They occur in the text, so the presence check alone accepted them, and the
+  // paper printed three options where only one was a referent.
+  const passage = "Consequently, the plan changed as the team grew.";
+  const tasks = [
+    {
+      family: "COHESIVE_MARKERS",
+      prompt: "Who or what do the underlined words refer to in the text?\nConsequently\nas",
+    },
+  ];
+  const issues = checkTaskLinkage(tasks, passage);
+  assert.equal(issues.length, 2);
+  assert.match(issues[0], /not a pronoun/);
+});
+
 test("checkTaskLinkage passes when vocab targets occur in the passage", () => {
   const passage = "Curiosity shapes honest research in every classroom.";
   const tasks = [

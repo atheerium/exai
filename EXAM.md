@@ -199,7 +199,7 @@ register them in `WEIGHTS` (`src/lib/export/pdf.ts`) to use the genuine cuts.
 | Referent items | **All three on ONE line**: `a) them (§1)   b) their (§2)   c) the problem (§3)` — spaces between, never a table |
 | Paragraph ref | `(§2)` after the item word, regular weight |
 | Answer gaps | `……` dotted leaders inline after the item; referent items carry **none** |
-| Table headers | Times-Bold, **centred**, 0.8pt black grid, **no shading, no zebra** |
+| Table headers | Times-**Bold** (not italic), **centred**, 0.75pt black grid, **no shading, no zebra** |
 | Topic label | Times-BoldItalic and **underlined**: `Topic One:` |
 | Notes heading | Times-Bold, full sentence with a colon |
 | Notes items | `•` bullet, Times New Roman |
@@ -396,6 +396,18 @@ kept must not render unlinked.
 
 `pickReferents(passage, count)` draws targets from the passage itself, in order
 of first appearance and without repeats, so every target is guaranteed present.
+
+**The generator does not get to choose the targets freely.** `stampReferentTargets`
+(`src/lib/generate/provider.ts`) runs after parsing, in the same stamping step
+that writes `marks`/`skill`/`family`: a model target that is not a referent, or
+that does not occur in the passage, is replaced by one from `pickReferents`
+(valid targets and their answer-key lines are kept). `checkTaskLinkage`
+(`grounding.ts`) then enforces both rules mechanically, and a violation is a
+task failure, not a warning. Measured live 2026-10-19: told only "every target
+must occur verbatim in the passage", the model answered question 4 with
+`Consequently` and `as` (content words that *do* occur in the text) and, on
+another run, `the former` (which does not). Both printed as options with no
+`(§N)` and nothing underlined, which is exactly what this stamp prevents.
 
 ### Rule 4 — every item carries its paragraph, and all three share one line
 
@@ -770,16 +782,36 @@ From the user's reference sheet:
   `TABLE_WIDTH_PCT` in DOCX) — not full content width;
 - **three equal columns** (33.33% each) — every structure below is a 3-column
   chart;
-- header row **bold italic, centred**;
+- header row **bold, NOT italic**, **centred** (italic removed by user
+  instruction, 2026-10-19: "make the table headers bold"). A phonetic header
+  (`/ɪd/`) cannot use the bold face — built-in Times-Bold is WinAnsi and
+  corrupts IPA — so the PDF strokes the regular file-backed face to fake the
+  weight;
 - the word list **centred above** the table, separated by a spaced **en dash**
   (`WORD_BANK_SEPARATOR` in `export/paper.ts`, U+2013) — ONEC typography, user
   instruction 2026-10-13. The PARSER accepts `-` and `–` on input, because the
   separator arrives from a model; the PRINTED form does not vary;
 - task stem in the `N- {instruction}` form, bold italic;
-- grid **1pt solid black** (`TABLE_LINE_WIDTH` in PDF, `GRID` size 8 in DOCX),
-  cell background explicitly `#FFFFFF`, **no shading, no zebra**;
+- grid **0.75pt solid black** (`TABLE_LINE_WIDTH` in PDF, `GRID` size 6 in
+  DOCX, 1px in the preview) — reduced from 1pt/2px by user instruction
+  2026-10-19 ("reduce the border size, maybe one pixel");
+- cell background explicitly `#FFFFFF`, **no shading, no zebra**;
 - body text **12pt on every surface** (`TABLE_TEXT_SIZE` in DOCX), so a table
   printed in Word matches the one printed to PDF.
+
+**Compact spacing (user instruction, 2026-10-19: "make the table more
+compact ... the rows are too lengthy").** The table is a chart, not a form, and
+must not push the rest of the task down the page:
+
+- cell padding is **4pt horizontal, 2pt vertical** in the PDF (`padX` / `padY`)
+  and the preview (`px-2 py-1`); DOCX cell margins are 72 twips left/right, 0
+  top/bottom (`CELL_MARGINS`);
+- a **writing row** is exactly `BLANK_ROW_HEIGHT` = **24pt** when empty (was
+  32pt), shared by all three surfaces;
+- the **header row is text height + 2×`padY` only** — it does not inherit the
+  24pt writing-row floor, because nobody writes in a header;
+- DOCX table-cell paragraphs pass `after: 0`; the paragraph default (5pt)
+  otherwise inflates every row well past its text.
 
 ### 10.6a The three Part B table structures
 
