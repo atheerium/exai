@@ -202,5 +202,22 @@ test("the bank is part of the task, not a separate block", async () => {
   assert.deepEqual(task.task.wordList, BANK);
   // The bank must not also survive as a lead line or an item, or it prints twice.
   assert.deepEqual(task.task.lead, []);
-  assert.equal(task.task.items.length, 3);
+  // The reported prompt carries its gaps INSIDE running sentences, so it is a
+  // PASSAGE, not a list: it prints unlettered and indented, with the gaps
+  // numbered in reading order (user instruction, 2026-10-19). Previously it
+  // printed as three lettered questions.
+  assert.equal(task.task.items.length, 0, "a gap passage prints no lettered items");
+  assert.ok(task.task.gapPassage, "the prompt becomes a numbered gap passage");
+  const passage = task.task.gapPassage!.join("\n");
+  // The REPORTED fixture carries three gap markers; the paper numbers gaps, not
+  // bank words, so the count follows the text. The render layer does not enforce
+  // list length == gap count -- that is `validateCandidate`'s job in the
+  // generator, and a saved exam with a longer bank must still render.
+  let prev = -1;
+  for (let i = 1; i <= 3; i++) {
+    const at = passage.indexOf(`.........(${i}) .........`);
+    assert.ok(at > prev, `gap ${i} is numbered in reading order`);
+    prev = at;
+  }
+  assert.doesNotMatch(passage, /(^|\s)a\)/, "no letter prefixes inside the passage");
 });

@@ -122,6 +122,9 @@ headings, marks and typography:
 
 - **PDF** — exact control over the layout (fonts, tables, dotted writing rows).
 - **Word (.docx)** — editable afterwards; the same document model as the PDF.
+- **Gap-fill tasks** — the word list prints in bold and carries exactly one word
+  per blank; every blank in the passage is numbered, so students answer with the
+  number and the word.
 
 The answer key is stored but **never printed** on either format.
 

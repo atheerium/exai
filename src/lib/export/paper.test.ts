@@ -686,3 +686,82 @@ test("a markdown table skeleton is not mistaken for field/value pairs", () => {
   assert.equal(items.length, 2, "the header and the data row");
   assert.deepEqual(items.map((i) => i.label), ["a)", "b)"]);
 });
+
+// ---- Gap-fill: passage vs. list (teacher report, 2026-10-19) -----------------
+//
+// A GAP_FILL task has two printed shapes and only the gap positions tell them
+// apart. A gap INSIDE a running sentence makes the prompt a PASSAGE: printed
+// unlettered and indented, with gaps numbered `.........(1) .........`. A gap
+// that ends its line makes the prompt a list of separate sentences, which keeps
+// the a) b) c) letters.
+
+const gapFillTask = (prompt: string, family: string = "GAP_FILL") => {
+  const doc = assembleDocument(
+    exam({
+      sections: [
+        section({
+          id: "s",
+          type: "TEXT_EXPLORATION",
+          tasks: [
+            {
+              id: "t",
+              family,
+              instruction: "Fill in the gaps with words from the list given.",
+              prompt,
+              marks: 4,
+              order: 0,
+              manualEdited: false,
+              candidates: [],
+            },
+          ],
+        }),
+      ],
+    })
+  );
+  const block = buildPaper(doc).blocks.find((b) => b.kind === "task");
+  assert.ok(block && block.kind === "task");
+  return block.task;
+};
+
+test("a gap-fill passage prints numbered gaps, not lettered items", () => {
+  const task = gapFillTask(
+    "List: [alpha, beta, gamma, delta]\n" +
+      "Ethical behaviour ___ improves your ___ and social ___ success, which ___ matters."
+  );
+  assert.ok(task.gapPassage, "an inline-gap prompt becomes a passage");
+  assert.equal(task.gapPassage!.length, 1, "one running paragraph");
+  assert.equal(task.items.length, 0, "a passage prints no a) b) c) items");
+  const text = task.gapPassage!.join("\n");
+  let prev = -1;
+  for (let i = 1; i <= 4; i++) {
+    const at = text.indexOf(`.........(${i}) .........`);
+    assert.ok(at > prev, `gap ${i} is numbered in reading order`);
+    prev = at;
+  }
+  assert.doesNotMatch(text, /(^|\s)a\)/, "no letter prefixes inside the passage");
+});
+
+test("a gap list that ends each line with its gap still prints lettered items", () => {
+  const task = gapFillTask(
+    "List: [alpha, beta, gamma]\n" +
+      "Friends are honest ___\n" +
+      "Families share duties ___\n" +
+      "Students respect rules ___"
+  );
+  assert.equal(task.gapPassage, null, "a one-gap-per-line list is not a passage");
+  assert.deepEqual(task.items.map((i) => i.label), ["a)", "b)", "c)"]);
+  // The trailing underscore run is an answer gap: stripped from the text and
+  // re-drawn by each renderer as its dotted leader.
+  assert.equal(task.items[0].gap, true);
+  assert.equal(task.items[0].text, "Friends are honest");
+});
+
+test("numbered gaps preserve reading order across the passage", () => {
+  const task = gapFillTask("List: [first, second]\nAlpha ___ between. Beta ___ end.");
+  const text = task.gapPassage!.join(" ");
+  const first = text.indexOf(".........(1) .........");
+  const second = text.indexOf(".........(2) .........");
+  assert.ok(first >= 0 && second > first, "both blanks are numbered in order");
+  // The first numbered blank must appear BEFORE the second gap's sentence text.
+  assert.ok(first < text.indexOf("Beta"), "gap 1 precedes the second sentence");
+});

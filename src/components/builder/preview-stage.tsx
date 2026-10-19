@@ -118,10 +118,19 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                   // downloads printed one, so the teacher reviewed a different
                   // task from the one the students would get. The separator is
                   // the shared constant so all three surfaces print ` – `.
-                  <p className="mt-1 text-center text-[15px] leading-snug">
+                  // Bold on every surface (user instruction, 2026-10-19).
+                  <p className="mt-1 text-center text-[15px] font-bold leading-snug">
                     {block.task.wordList.join(WORD_BANK_SEPARATOR)}
                   </p>
                 )}
+                {block.task.gapPassage?.map((paragraph, pi) => (
+                  // A gap-fill PASSAGE: indented and justified, no letter prefix,
+                  // gaps already numbered in reading order. Same indent as the
+                  // lettered items (`pl-8`), matching the PDF and DOCX.
+                  <p key={`gap-${pi}`} className="pl-8 text-justify text-[15px] leading-snug">
+                    {paragraph}
+                  </p>
+                ))}
                 {block.task.items.some((item) => item.referent) ? (
                   // Referent options share one line: a) them (§1)  b) their (§2)
                   // c) the problem (§3) (user instruction, 2026-10-19). Spaces

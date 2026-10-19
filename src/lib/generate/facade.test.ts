@@ -1,6 +1,8 @@
 import { DEFAULT_CANDIDATES } from "./provider";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { extractWordBank } from "@/lib/export/paper";
+import { gapCount } from "@/lib/export/gaps";
 import {
   buildContext,
   generateTextCandidates,
@@ -81,6 +83,42 @@ test("the guide validator rejects a rephrasing task whose B is already complete"
   const v = validateCandidate("TEXT_EXPLORATION", set, ctx.guide.marks.textExploration, { guide: ctx.guide });
   assert.equal(v.ok, false);
   assert.match(v.issues.join(" "), /dotted blank/);
+});
+
+// --- Gap fill: one word per gap (user instruction, 2026-10-19) --------------
+
+test("the guide validator enforces one word per gap in a GAP_FILL list", async () => {
+  const ctx = buildContext(input);
+  const sets = await generateTextExplorationCandidates(ctx);
+  const set = structuredClone(sets[0]!);
+  const gap = set.find((t) => t.skill === "DISCOURSE")!;
+  const rest = extractWordBank(gap.prompt).rest;
+  assert.equal(gapCount(rest), 4, "the mock's gap-fill task carries 4 gaps");
+
+  // A 4-word list over 4 gaps is accepted.
+  const good = structuredClone(set);
+  good.find((t) => t.skill === "DISCOURSE")!.prompt = `List: [alpha, bravo, charlie, delta]\n${rest}`;
+  const ok = validateCandidate("TEXT_EXPLORATION", good, ctx.guide.marks.textExploration, { guide: ctx.guide });
+  assert.ok(ok.ok, ok.issues.join("; "));
+
+  // A 3-word list over 4 gaps fails: the list must carry one word per gap.
+  const short = structuredClone(set);
+  short.find((t) => t.skill === "DISCOURSE")!.prompt = `List: [alpha, bravo, charlie]\n${rest}`;
+  const bad = validateCandidate("TEXT_EXPLORATION", short, ctx.guide.marks.textExploration, { guide: ctx.guide });
+  assert.equal(bad.ok, false);
+  assert.match(bad.issues.join(" "), /one word per gap/);
+});
+
+test("the guide validator rejects a repeated word in a GAP_FILL list", async () => {
+  const ctx = buildContext(input);
+  const sets = await generateTextExplorationCandidates(ctx);
+  const set = structuredClone(sets[0]!);
+  const gap = set.find((t) => t.skill === "DISCOURSE")!;
+  const rest = extractWordBank(gap.prompt).rest;
+  gap.prompt = `List: [alpha, alpha, charlie, delta]\n${rest}`;
+  const v = validateCandidate("TEXT_EXPLORATION", set, ctx.guide.marks.textExploration, { guide: ctx.guide });
+  assert.equal(v.ok, false);
+  assert.match(v.issues.join(" "), /only once/);
 });
 
 test("generateWritingCandidates yields 3 valid writing pairs", async () => {

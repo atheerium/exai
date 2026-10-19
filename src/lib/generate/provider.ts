@@ -500,6 +500,32 @@ function tableRequirementNote(
 }
 
 /**
+ * Gap fill: the count contract (user instruction, 2026-10-19).
+ *
+ * A live run printed a 3-word bank (`awareness - impulsive - critical`) above a
+ * paragraph with FOUR gaps, and the words did not fit their gaps. The COUNT is
+ * mechanically checkable (`gapCount` in `export/gaps.ts` measures the gaps,
+ * `extractWordBank` measures the bank), so the validator enforces it -- see
+ * `validateCandidate` in `generate/index.ts`. Whether each word fits its gap in
+ * grammar and meaning is NOT mechanically checkable and is prompt-enforced only,
+ * exactly like answerability: this rule states the numbers literally because
+ * prose does not bind (the same lesson as the item counts, the word band and the
+ * table requirement).
+ */
+function gapFillRule(skills: { family?: string | null; constraints?: { gapCount?: number } }[]): string {
+  const rule = skills.find((s) => s.family === "GAP_FILL");
+  if (!rule) return "";
+  const n = rule.constraints?.gapCount ?? 4;
+  return (
+    ` For the DISCOURSE task whose instruction is "Fill in the gaps with words from the list given.", the "prompt" must be ONE coherent paragraph on the ` +
+    `passage topic with EXACTLY ${n} gaps marked with three underscores ("___"). Its FIRST line is the word list, exactly ` +
+    `List: [word1, word2, word3, word4] -- EXACTLY ${n} words, one word for each gap, each word used only once, no extra words and no distractors. ` +
+    `Every gap must be a position where its word fits BOTH the grammar and the meaning of the sentence; after the words are inserted the paragraph must read as ` +
+    `correct, natural English. The "answer" field lists the ${n} words in gap order. `
+  );
+}
+
+/**
  * A task whose instruction says "from the list given" needs a bank of candidate
  * words printed above it. The shape is stated literally because prose does not
  * bind -- the same lesson as item counts and the word band.
@@ -509,9 +535,13 @@ function tableRequirementNote(
  * model has already been observed improvising (`List: ["brain's", ...]` on
  * 2026-10-13) when nothing was specified. A bare word list must NOT be quoted
  * or numbered -- it is printed centred and hyphen-separated by the layout.
+ *
+ * The example carries FOUR words, not three: a GAP_FILL task carries exactly
+ * four gaps (see `gapFillRule`), and a three-word example here would contradict
+ * that count contract.
  */
 const WORD_BANK_RULE =
-  ' If the instruction refers to a list, bank or set of words to choose from, the FIRST line of that task\'s "prompt" must be that list in exactly this form: List: [word1, word2, word3] -- plain words inside the brackets, no quotes, no numbering, and no JSON objects. The sentences follow on the next lines. ';
+  ' If the instruction refers to a list, bank or set of words to choose from, the FIRST line of that task\'s "prompt" must be that list in exactly this form: List: [word1, word2, word3, word4] -- plain words inside the brackets, no quotes, no numbering, and no JSON objects. The sentences follow on the next lines. ';
 
 /** Official choice labels are lowercase letters with a closing parenthesis. */
 const CHOICE_LABEL_RULE =
@@ -1038,6 +1068,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
         WORD_BANK_RULE +
+        (guideSkills.some((s) => s.family === "GAP_FILL") ? gapFillRule(guideSkills) : "") +
         REWRITE_RULE +
         `Produce exactly ${ctx.guide.textExploration.skills.length} task objects, one per skill, in the order given. ` +
         repairNote(ctx) +

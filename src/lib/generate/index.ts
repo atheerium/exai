@@ -23,6 +23,9 @@ import { taskHasTable } from "@/lib/export/tables";
 // imports only `assemble`, `referents` and `tables`, none of which import back
 // into `generate/`, so this is not a cycle.
 import { extractWordBank } from "@/lib/export/paper";
+// `gapCount` measures the gap markers in the task text; `extractWordBank` strips
+// the `List: [...]` line first, so the bracketed list is never mistaken for a gap.
+import { gapCount } from "@/lib/export/gaps";
 import type { GenerationRequest } from "@/types";
 import * as mock from "./mock";
 import { createCompatibleGenerators } from "./provider";
@@ -476,10 +479,28 @@ export function validateCandidate(
           // question a). `extractWordBank` accepts every bank shape the model has
           // been seen to produce, so this is not a demand for one shape.
           if (rule.family === "GAP_FILL" && task.prompt) {
-            if (extractWordBank(task.prompt).words.length === 0) {
+            const { words, rest } = extractWordBank(task.prompt);
+            if (words.length === 0) {
               issues.push(
-                `Task ${i + 1} refers to a list of words but no word list was provided; it must begin with one line like "List: [word1, word2, word3]".`
+                `Task ${i + 1} refers to a list of words but no word list was provided; it must begin with one line like "List: [word1, word2, word3, word4]".`
               );
+            } else {
+              // The count is the contract (user instruction, 2026-10-19): the
+              // list carries exactly one word per gap. Whether each word FITS its
+              // gap in grammar and meaning is prompt-enforced only -- like
+              // answerability, it is not mechanically checkable.
+              const gaps = gapCount(rest);
+              if (words.length !== gaps) {
+                issues.push(
+                  `Task ${i + 1} has ${gaps} gap(s) but ${words.length} word(s) in the list; the list must carry exactly one word per gap.`
+                );
+              }
+              const seen = new Map<string, number>();
+              for (const w of words) seen.set(w.toLowerCase(), (seen.get(w.toLowerCase()) ?? 0) + 1);
+              const dupes = [...seen.entries()].filter(([, c]) => c > 1).map(([w]) => w);
+              if (dupes.length > 0) {
+                issues.push(`Task ${i + 1} repeats the word(s) ${dupes.join(", ")} in its word list; each word may be used only once.`);
+              }
             }
           }
           // Sentence rephrasing: a complete `A)` sentence and a `B)` stem ending
@@ -500,9 +521,11 @@ export function validateCandidate(
           // BAC Master Guide option-level constraints
           if (rule.constraints) {
             const c = rule.constraints;
-            // Gap fill: exactly c.gapCount gaps
+            // Gap fill: exactly c.gapCount gaps. Measure only the task text --
+            // the old regex also counted the `List: [...]` brackets as a gap, so
+            // a 4-gap task with a 4-word bank read as 5.
             if (c.gapCount != null && task.prompt) {
-              const gaps = (task.prompt.match(/___|\.\.\.|\[.*?\]/g) || []).length;
+              const gaps = gapCount(extractWordBank(task.prompt).rest);
               if (gaps !== c.gapCount) issues.push(`Task ${i + 1} gap count ${gaps} != ${c.gapCount}`);
             }
             // Dialogue: exactly c.utteranceCount missing utterances

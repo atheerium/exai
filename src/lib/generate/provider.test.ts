@@ -12,6 +12,7 @@ import {
   createCompatibleGenerators,
   type ProviderConfig,
 } from "./provider";
+import { buildContext } from "./index";
 
 // `chat` is the shared OpenAI/Groq transport. It owns a 30s AbortController
 // timer, so every exit path must clear it — including a transport-level
@@ -518,4 +519,34 @@ test("a correctly grouped reply is never regrouped", () => {
   const tasks = parseTaskSets(good, 4, 7, FAMILIES)[0];
   assert.equal(tasks.length, 4);
   assert.equal(tasks[0].prompt, "1. x\n2. y", "prompts must be left exactly as written");
+});
+
+// --- Gap fill: the request must state the count (user instruction, 2026-10-19) --
+
+test("TEXT_EXPLORATION request states the gap-fill count when the guide has GAP_FILL", async () => {
+  // A prose rule does not bind (the same lesson as the item counts and the word
+  // band): a live run printed a 3-word bank over a 4-gap paragraph. The numbers
+  // must be stated literally in the request, and the example bank must carry four
+  // words so it does not contradict the rule.
+  mode = "ok";
+  const ctx = buildContext({
+    level: "secondary",
+    grade: "3as",
+    stream: "Lettres et Langues Étrangères",
+    length: 200,
+    unit: "u-ancient",
+    topic: "Ancient civilisations",
+    examId: "exam-gapfill",
+  });
+  // The stub replies with an empty task list, which the parser rejects; the
+  // request body has already been captured by then, which is all this asserts.
+  await createCompatibleGenerators(() => config()).generateTextExplorationCandidates(ctx).catch(() => undefined);
+  const userMessage = lastBody.messages.find((m: any) => m.role === "user").content as string;
+  assert.match(userMessage, /EXACTLY 4 gaps/, "the gap count must be stated numerically");
+  assert.match(userMessage, /one word for each gap/, "the one-word-per-gap contract must be stated");
+  assert.match(
+    userMessage,
+    /List: \[word1, word2, word3, word4\]/,
+    "the example bank must carry four words, matching the four-gap contract"
+  );
 });

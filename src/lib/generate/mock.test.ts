@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { getGuide, GUIDES } from "../../data/guides";
 import { candidateCount } from "./candidates";
 import { isBlankCell, tableKindFromHeaders } from "@/lib/export/tables";
+import { extractWordBank } from "@/lib/export/paper";
+import { gapCount } from "@/lib/export/gaps";
+import { validateCandidate } from "./index";
 import {
   generateText,
   generateTextCandidates,
@@ -447,5 +450,32 @@ test("mock topic anchoring keeps the passage inside the length band", () => {
     const words = text.split(/\s+/).filter(Boolean).length;
     const max = Math.ceil(150 * 1.2);
     assert.ok(words <= max, `anchored ${count}-paragraph passage has ${words} words, ceiling ${max}`);
+  }
+});
+
+// --- Gap fill: one word per gap, exactly four (user instruction, 2026-10-19) --
+
+test("every grade's primary GAP_FILL mock carries 4 gaps and 4 unique bank words", () => {
+  // The count is the contract the validator enforces: the printed word list
+  // carries exactly one word per gap. The mock is the offline test double, so it
+  // must honour the same shape the real providers are asked for (a live run
+  // printed 3 words above a 4-gap paragraph).
+  for (const grade of Object.keys(GUIDES)) {
+    const guide = getGuide(grade);
+    const c = ctx({ grade, guide, seed: `exam:${grade}:u:t` });
+    const tasks = generateTextExploration(c, 0);
+    const task = tasks.find((t) => t.skill === "DISCOURSE");
+    assert.ok(task, `${grade}: primary DISCOURSE task must exist`);
+    const { words, rest } = extractWordBank(task!.prompt);
+    assert.equal(words.length, 4, `${grade}: bank must carry 4 words, got ${words.length}`);
+    assert.equal(
+      new Set(words.map((w) => w.toLowerCase())).size,
+      4,
+      `${grade}: bank words must be unique, got ${words.join(", ")}`
+    );
+    assert.equal(gapCount(rest), 4, `${grade}: task must carry 4 gaps, got ${gapCount(rest)}`);
+    // And the guide validator accepts exactly the shape the mock produced.
+    const v = validateCandidate("TEXT_EXPLORATION", tasks, guide.marks.textExploration, { guide });
+    assert.ok(v.ok, `${grade}: ${v.issues.join("; ")}`);
   }
 });

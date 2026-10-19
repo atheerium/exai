@@ -569,7 +569,11 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     doc.moveDown(0.45);
     const stemW = contentWidth - 20;
     const stemH = doc.font(BOLD_ITALIC).fontSize(BODY).heightOfString(task.instruction, { width: stemW });
-    const blockH = stemH + task.lead.length * (BODY * 1.3) + task.items.length * (BODY * 1.45);
+    const blockH =
+      stemH +
+      task.lead.length * (BODY * 1.3) +
+      task.items.length * (BODY * 1.45) +
+      (task.gapPassage?.length ?? 0) * BODY * 3;
     if (doc.y + blockH > doc.page.height - doc.page.margins.bottom) {
       doc.addPage();
       if (header) drawRunningHeader(header);
@@ -598,16 +602,40 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     // and hyphen-separated, like the official paper.
     if (task.wordList) {
       const bank = task.wordList.join(WORD_BANK_SEPARATOR);
-      font(BODY);
+      // Bold on every surface (user instruction, 2026-10-19): the candidate
+      // words are instructions the student reads first, so they carry the same
+      // weight as the stem instead of reading as body text.
+      font(BODY, true);
       const height = doc.heightOfString(bank, { width: contentWidth });
       if (y + height > doc.page.height - doc.page.margins.bottom) {
         doc.addPage();
         if (header) drawRunningHeader(header);
         y = doc.y;
       }
-      font(BODY).fillColor("#000000").text(bank, left, y, { width: contentWidth, align: "center" });
+      font(BODY, true).fillColor("#000000").text(bank, left, y, { width: contentWidth, align: "center" });
       doc.x = left;
       y += height + ITEM_GAP;
+    }
+
+    // A gap-fill PASSAGE prints as one indented, justified block with numbered
+    // gaps and no letter prefixes (user instruction, 2026-10-19). The paragraph
+    // is pre-broken as a whole so a passage never starts one line above the
+    // page bottom; `richText` still breaks inside it if it must.
+    if (task.gapPassage) {
+      for (const paragraph of task.gapPassage) {
+        doc.font(REGULAR).fontSize(BODY);
+        const height = doc.heightOfString(paragraph, { width: contentWidth - ITEM_INDENT });
+        if (y + height > doc.page.height - doc.page.margins.bottom) {
+          doc.addPage();
+          if (header) drawRunningHeader(header);
+          y = doc.y;
+        }
+        doc.y = y;
+        richText(paragraph, [], { width: contentWidth, indent: ITEM_INDENT, align: "justify" });
+        doc.x = left;
+        y = doc.y + ITEM_GAP;
+      }
+      doc.y = y;
     }
 
     if (task.items.some((i) => i.referent)) {

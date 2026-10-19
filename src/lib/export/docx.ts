@@ -376,8 +376,13 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
     for (const line of task.lead) children.push(p(line, { indent: INDENT }));
     // Centred word bank, between the instruction and the first item, matching
     // the PDF. Absent from the DOCX entirely before this, so a GAP_FILL task was
-    // unanswerable in Word.
-    if (task.wordList) children.push(p(task.wordList.join(WORD_BANK_SEPARATOR), { align: "center" }));
+    // unanswerable in Word. Bold on every surface (user instruction, 2026-10-19).
+    if (task.wordList)
+      children.push(p(task.wordList.join(WORD_BANK_SEPARATOR), { align: "center", bold: true }));
+    // A gap-fill PASSAGE prints as one indented, justified block with numbered
+    // gaps and no letter prefixes, matching the PDF and preview.
+    for (const paragraph of task.gapPassage ?? [])
+      children.push(p(paragraph, { indent: INDENT, justify: true }));
     if (task.items.some((item) => item.referent)) children.push(referentParagraph(task.items));
     else for (const item of task.items) children.push(itemParagraph(item));
   };

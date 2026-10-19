@@ -247,6 +247,7 @@ substituted for one another or dropped. The full mapping:
 | Task stem (the instruction wording) | yes | yes | — |
 | Item letter (`a.`) | yes | — | — |
 | Item text | — | — | — |
+| Word-bank / gap-fill word list | **yes** | — | — |
 | Paragraph reference `(§2)` | — | — | — |
 | Source note ("Adapted from…") | yes | yes | — |
 | Table header cell | yes | — | — |
@@ -510,8 +511,8 @@ rendered. "Gap" means the item ends in a dotted leader the student writes into.
 | 4A/4B/4C/4D Phonology tables | "Classify the following words according to the pronunciation of the final /ed/ (or final /s/)." | 4 words | word bank **centred above** the table (`word – word – word – word`), then a 3-column sound chart — `/t/` `/d/` `/ɪd/` or `/s/` `/z/` `/ɪz/` — with **exactly one empty row** |
 | 4E Silent letter | "Circle or write the silent letter in each of the following words." | — | lettered words |
 | 4F Rhyming pairs | "Match the pairs that rhyme." | exactly 2 pairs | lettered pairs |
-| 5A Gap fill with list | "Fill in the gaps with words from the list given." | 4 gaps / 4 words, or 4 gaps / 6 words | **word bank centred `a – b – c`** (spaced en dash) **between the instruction and the first item**, then one lettered sentence per gap |
-| 5B Open gap fill | "Fill in the gaps so that the text makes sense." | 4 gaps, no list | passage with `___` gaps |
+| 5A Gap fill with list | "Fill in the gaps with words from the list given." | **exactly 4 gaps and exactly 4 words — one word per gap, each word used once, no distractors** | **word bank centred in BOLD**, `a – b – c` (spaced en dash) **between the instruction and the first item**. A **passage** body (gaps sitting inside sentences) prints unlettered and indented, with numbered blanks `.........(1) .........`; a list of separate sentences prints one lettered sentence per gap |
+| 5B Open gap fill | "Fill in the gaps so that the text makes sense." | 4 gaps, no list | **passage, unlettered and indented**, with numbered blanks `.........(1) .........` |
 | 5C Paragraph reordering | "Reorder the following sentences to get a coherent passage." | 4 statements | lettered sentences |
 | 5D Dialogue completion | "Imagine what A or B says, and complete the following dialogue." | 3 missing utterances | dialogue with gaps |
 
@@ -787,6 +788,33 @@ its own parenthesis to a label that already ended in a period).
 - Exactly **one space** separates the label from its text (see 10.2a).
 - `validateCandidate`'s `choiceCount` check matches `/^[a-d]\)/`, so generated
   options are held to this form automatically.
+
+### 10.4a Gap fills: one word per gap, numbered blanks, no letter on a passage
+
+Teacher instruction (2026-10-19), from a live paper that printed a 3-word list
+above a 4-gap paragraph:
+
+- A word-bank gap fill carries **exactly one word per gap** — the same count,
+  each word used once, no distractors. The list prints **bold**, centred,
+  between the instruction and the body (`WORD_BANK_SEPARATOR`).
+- When the body is a **passage** (a gap sits inside a sentence, with words after
+  it), it prints as running text: **no letter prefix**, indented like an item,
+  justified, and every gap is numbered in reading order as
+  `.........(1) .........`. Students answer with the number and the word.
+- When the body is a **list of separate sentences**, each ending in its gap, the
+  sentences keep their `a)` `b)` `c)` letters and no numbers are added.
+
+`export/gaps.ts` is the single vocabulary for all of this: `gapCount` (the
+validator's count), `hasInlineGap` (passage vs list), `numberGaps` (the printed
+form). `paper.ts` builds the pre-numbered text and the three renderers print it
+verbatim, so the surfaces cannot drift.
+
+Counting and uniqueness are **mechanical** — `validateCandidate` requires the
+list length to equal the gap count, rejects a repeated list word, and the guide
+constraint `gapCount: 4` fixes the size (checked through the same `gapCount`).
+Whether a word fits its gap in grammar and meaning is **prompt-enforced**
+(`GAP_FILL_RULE` in `provider.ts`), like answerability — the validator cannot
+judge it.
 
 ### 10.5 Tables are allowlisted, never default
 
@@ -1225,8 +1253,11 @@ about the run. Verified live with `AI_RUN_BUDGET_MS=3000`: stopped at 3.3s with
 ### 12.10 Word banks are extracted in code, never left to the model
 
 A task whose instruction says "from the list given" carries a **word bank**,
-printed centred `a - b - c` **between the instruction and the first item** — the
-student must be able to read the words before meeting the sentences.
+printed centred and **bold** in `a – b – c` form **between the instruction and
+the first item** — the student must be able to read the words before meeting the
+sentences. It carries **exactly one word per gap** (user instruction,
+2026-10-19): the count must equal the gap count, each word is used once, and
+there are no distractors.
 
 `extractWordBank()` (`export/paper.ts`) pulls the bank out of `task.prompt`
 **before** `parseTaskBody` runs, so it can never become an item. Placement
@@ -1251,13 +1282,21 @@ swallowed:
   field label, and deleting it would remove a real line from the paper.
 - Only the first three leading non-empty lines are scanned, so a `List:` line
   deep inside an item is left where it is.
-- `WORD_BANK_RULE` in `provider.ts` *requests* `List: [word1, word2, word3]`
-  literally, because prose does not bind. It is a request, **not** the
-  guarantee: the model has been observed improvising (`List: ["brain's", ...]`,
-  teacher report 2026-10-13) when nothing was specified, and the parser accepts
-  every shape above regardless.
+- `WORD_BANK_RULE` and `GAP_FILL_RULE` in `provider.ts` *request*
+  `List: [word1, word2, word3, word4]` literally, because prose does not bind.
+  It is a request, **not** the guarantee: the model has been observed improvising
+  (`List: ["brain's", ...]`, teacher report 2026-10-13) when nothing was
+  specified, and the parser accepts every shape above regardless.
 - `validateCandidate` fails a `GAP_FILL` task with no detectable bank, so the
-  repair path can recover it. The mock honours the same rule.
+  repair path can recover it; it also fails a list whose length differs from the
+  gap count (`gapCount` in `export/gaps.ts`) and a list that repeats a word. The
+  mock honours the same rules — its theme corpus carries 4 gaps and 4 answers.
+- A gap-fill **passage** (gaps inside sentences) is not lettered. `paper.ts`
+  detects it with `hasInlineGap` and prints indented, justified running text with
+  numbered blanks `.........(1) .........` (section 10.4a). Only a list of
+  separate sentences, each ending in its gap, keeps the `a)` letters.
+- Whether each word fits its gap in grammar and meaning is **prompt-enforced**
+  (`GAP_FILL_RULE`), not mechanically checkable.
 
 The bank is a field on `PaperTask`, not a top-level block. As a block it could
 only print after every item, and each renderer had to handle it separately —

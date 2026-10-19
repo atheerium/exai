@@ -99,9 +99,9 @@ export const THEMES: Record<string, Theme> = {
       { sentence: "A good friend is honest and kind.", rewritten: "It is important that a good friend should be honest and kind.", note: "it-clause rewrite" },
     ],
     discourse: {
-      text: "A good friend is honest ___ kind. ___ they respect differences, classmates work together. ___ mistakes happen, forgiveness keeps the relationship strong.",
+      text: "A good friend is honest ___ kind. ___ they respect differences, classmates work together. ___ mistakes happen, forgiveness keeps the relationship strong. Friends do not always agree ___ they always respect each other.",
       options: ["because", "and", "when", "but"],
-      answers: ["and", "because", "when"],
+      answers: ["and", "because", "when", "but"],
     },
   },
 
@@ -171,9 +171,9 @@ export const THEMES: Record<string, Theme> = {
       { sentence: "Grandparents often pass down traditions to the younger generation.", rewritten: "Traditions are often passed down to the younger generation by grandparents.", note: "passive voice" },
     ],
     discourse: {
-      text: "Parents share responsibilities ___ every member feels supported. Children who help at home learn discipline ___. ___ families eat together, they talk about their day.",
+      text: "Parents share responsibilities ___ every member feels supported. Children who help at home learn discipline ___. ___ families eat together, they talk about their day. Grandparents tell stories ___ children listen carefully.",
       options: ["when", "so that", "and", "quickly"],
-      answers: ["so that", "quickly", "when"],
+      answers: ["so that", "quickly", "when", "and"],
     },
   },
 
@@ -243,9 +243,9 @@ export const THEMES: Record<string, Theme> = {
       { sentence: "Regular revision is more effective than studying the night before.", rewritten: "Studying the night before is not as effective as regular revision.", note: "comparison rewrite" },
     ],
     discourse: {
-      text: "Pupils ___ organise their time remember lessons better. ___ they revise regularly, they feel confident. Balancing lessons, sport ___ rest keeps students healthy.",
+      text: "Pupils ___ organise their time remember lessons better. ___ they revise regularly, they feel confident. Balancing lessons, sport ___ rest keeps students healthy. Exams can be difficult ___ regular revision makes them easier.",
       options: ["who", "when", "and", "but"],
-      answers: ["who", "when", "and"],
+      answers: ["who", "when", "and", "but"],
     },
   },
 
@@ -315,9 +315,9 @@ export const THEMES: Record<string, Theme> = {
       { sentence: "Trees absorb pollution and give us fresh air.", rewritten: "Pollution is absorbed by trees, which give us fresh air.", note: "passive voice" },
     ],
     discourse: {
-      text: "Families that recycle ___ waste reduce the rubbish. Trees absorb pollution ___ give us fresh air. ___ each person changes one habit, tomorrow's world will be cleaner.",
+      text: "Families that recycle ___ waste reduce the rubbish. Trees absorb pollution ___ give us fresh air. ___ each person changes one habit, tomorrow's world will be cleaner. Recycling is simple ___ it makes a real difference.",
       options: ["their", "and", "if", "but"],
-      answers: ["their", "and", "if"],
+      answers: ["their", "and", "if", "but"],
     },
   },
 
@@ -387,9 +387,9 @@ export const THEMES: Record<string, Theme> = {
       { sentence: "People who respect public property create a pleasant area.", rewritten: "If people respect public property, they create a pleasant area.", note: "relative clause → conditional" },
     ],
     discourse: {
-      text: "Volunteers give their time ___ expecting payment. People ___ respect public property create a pleasant area. ___ residents meet, they propose ideas and solve problems.",
+      text: "Volunteers give their time ___ expecting payment. People ___ respect public property create a pleasant area. ___ residents meet, they propose ideas and solve problems. Neighbours help each other ___ they share the same streets.",
       options: ["who", "without", "when", "because"],
-      answers: ["without", "who", "when"],
+      answers: ["without", "who", "when", "because"],
     },
   },
 
@@ -459,9 +459,9 @@ export const THEMES: Record<string, Theme> = {
       { sentence: "Sleeping well improves memory and mood.", rewritten: "Memory and mood are improved by sleeping well.", note: "passive voice" },
     ],
     discourse: {
-      text: "A balanced diet gives the body energy ___ it needs. ___ people sleep well, their memory improves. Drinking water ___ headaches keeps the skin healthy.",
+      text: "A balanced diet gives the body energy ___ it needs. ___ people sleep well, their memory improves. Drinking water ___ headaches keeps the skin healthy. Fresh fruit ___ vegetables give the body vitamins.",
       options: ["that", "when", "prevents", "and"],
-      answers: ["that", "when", "prevents"],
+      answers: ["that", "when", "prevents", "and"],
     },
   },
 
@@ -533,7 +533,7 @@ export const THEMES: Record<string, Theme> = {
     discourse: {
       text: "Smartphones give access ___ information ___ once required a library. ___ technology is used wisely, it improves lives. Engineers design machines ___ perform dangerous tasks.",
       options: ["to", "that", "when", "which"],
-      answers: ["to", "that", "when"],
+      answers: ["to", "that", "when", "which"],
     },
   },
 
@@ -603,9 +603,9 @@ export const THEMES: Record<string, Theme> = {
       { sentence: "Students visit heritage sites, so they connect places with lessons.", rewritten: "If students visit heritage sites, they connect places with lessons.", note: "so → conditional" },
     ],
     discourse: {
-      text: "Museums display objects ___ tell daily stories. ___ students visit heritage sites, they learn from real places. Craftsmen keep old techniques alive ___ protect our heritage.",
+      text: "Museums display objects ___ tell daily stories. ___ students visit heritage sites, they learn from real places. Craftsmen keep old techniques alive ___ protect our heritage. Visitors ___ respect local customs are always welcome.",
       options: ["who", "that", "when", "and"],
-      answers: ["that", "when", "and"],
+      answers: ["that", "when", "and", "who"],
     },
   },
 
@@ -675,9 +675,9 @@ export const THEMES: Record<string, Theme> = {
       { sentence: "Grandmothers pass recipes to their grandchildren.", rewritten: "Recipes are passed to grandchildren by grandmothers.", note: "passive voice" },
     ],
     discourse: {
-      text: "Traditional recipes are passed ___ grandmothers. Cooking together teaches patience ___ sharing. ___ guests arrive, they are invited to the table.",
+      text: "Traditional recipes are passed ___ grandmothers. Cooking together teaches patience ___ sharing. ___ guests arrive, they are invited to the table. Fast food is tasty ___ home-cooked meals are healthier.",
       options: ["from", "and", "when", "but"],
-      answers: ["from", "and", "when"],
+      answers: ["from", "and", "when", "but"],
     },
   },
 
@@ -747,9 +747,9 @@ export const THEMES: Record<string, Theme> = {
       { sentence: "Students practise a hobby, so they concentrate better.", rewritten: "If students practise a hobby, they concentrate better.", note: "so → conditional" },
     ],
     discourse: {
-      text: "Reading transports readers ___ worlds they will never visit. Sport teaches discipline ___ teamwork. ___ people share a hobby, they enjoy it twice as much.",
+      text: "Reading transports readers ___ worlds they will never visit. Sport teaches discipline ___ teamwork. ___ people share a hobby, they enjoy it twice as much. A hobby relaxes the mind ___ it brings pleasure.",
       options: ["to", "and", "when", "because"],
-      answers: ["to", "and", "when"],
+      answers: ["to", "and", "when", "because"],
     },
   },
 };

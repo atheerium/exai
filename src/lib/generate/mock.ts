@@ -848,8 +848,14 @@ function generateTextExplorationPrimary(
     // the same rules as the real providers, or every test that exercises a
     // validator rule through the mock silently stops covering that rule).
     //
-    // Shape matches `WORD_BANK_RULE`: `List: [a, b, c]`, one line, first.
-    const bank = d.options.join(", ");
+    // Shape matches `WORD_BANK_RULE`: `List: [a, b, c, d]`, one line, first.
+    //
+    // The bank is derived from `d.answers`, NOT `d.options`: the contract is
+    // "one word per gap", so the printed list must be exactly the answer words
+    // (user instruction, 2026-10-19). With the new data the two sets are equal,
+    // but deriving from `answers` keeps them equal by construction. The order is
+    // shuffled with the seeded rng so the bank does not spell out the answer key.
+    const bank = rng.shuffle([...d.answers]).join(", ");
     // One SENTENCE per line for a word-bank task, because that is what the paper
     // prints: the parser treats bare lines as items, so a single line holding
     // three sentences became one giant question a) rather than a), b), c).
@@ -859,7 +865,8 @@ function generateTextExplorationPrimary(
       skill: "DISCOURSE",
       prompt: isWordBank ? `List: [${bank}]\n${sentences.join("\n")}` : d.text,
       instruction: skillRule.instruction,
-      answer: d.options.filter((o) => d.answers.includes(o)).join(", "),
+      // The answer key is in GAP ORDER (one word per gap), not bank order.
+      answer: d.answers.join(", "),
       marks: skillRule.marks,
     };
     if (rulePrescribesTable(skillRule)) {

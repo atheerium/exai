@@ -16,6 +16,9 @@ export interface SkillRule {
   marks: number;
   instruction: string;
   tableRequired?: boolean;
+  // Per-skill constraints. GAP_FILL carries `gapCount` (user instruction,
+  // 2026-10-19): the word list must carry exactly one word per gap.
+  constraints?: { gapCount?: number };
   // BAC Master Guide: option code and alternative formulas
   optionCode?: string; // "1A", "2A", etc.
   formulas?: string[]; // alternative wordings
@@ -1008,7 +1011,7 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
         { skill: "MORPHOLOGY", family: "WORD_FAMILY", optionCode: "2A", formulas: ["Chart Completion", "Affix Separation"], marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
         { skill: "PHONOLOGY", family: "SOUND_CLASS", optionCode: "4A", formulas: ["Final /s/", "Final /ed/", "Stressed Syllable", "Syllable Count", "Silent Letter", "Rhyming Pairs"], marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: true },
         { skill: "GRAMMAR", family: "REWRITE", optionCode: "3A", formulas: ["Rephrase", "Combination", "Conjugation", "Question Formation"], marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
-        { skill: "DISCOURSE", family: "GAP_FILL", optionCode: "5A", formulas: ["Gap Fill (Formula 1 / 2)", "Open Gap Fill", "Paragraph Reordering", "Dialogue Completion"], marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: false },
+        { skill: "DISCOURSE", family: "GAP_FILL", optionCode: "5A", formulas: ["Gap Fill (Formula 1 / 2)", "Open Gap Fill", "Paragraph Reordering", "Dialogue Completion"], marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: false, constraints: { gapCount: 4 } },
     ],
   };
 
@@ -1167,7 +1170,7 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
         { skill: "MORPHOLOGY", family: "WORD_FAMILY", marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
         { skill: "PHONOLOGY", family: "SOUND_CLASS", marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: true },
         { skill: "GRAMMAR", family: "REWRITE", marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
-        { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: false },
+        { skill: "DISCOURSE", family: "GAP_FILL", marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: false, constraints: { gapCount: 4 } },
       ],
     },
     literature_philosophy: {
@@ -1177,7 +1180,7 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
         { skill: "MORPHOLOGY", family: "WORD_FAMILY", optionCode: "2A", formulas: ["Chart Completion", "Affix Separation"], marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
         { skill: "PHONOLOGY", family: "SOUND_CLASS", optionCode: "4A", formulas: ["Final /s/", "Final /ed/", "Stressed Syllable", "Syllable Count", "Silent Letter", "Rhyming Pairs"], marks: 1.5, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: true },
         { skill: "GRAMMAR", family: "REWRITE", optionCode: "3A", formulas: ["Rephrase", "Combination", "Conjugation", "Question Formation"], marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
-        { skill: "DISCOURSE", family: "GAP_FILL", optionCode: "5A", formulas: ["Gap Fill (Formula 1 / 2)", "Open Gap Fill", "Paragraph Reordering", "Dialogue Completion"], marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: false },
+        { skill: "DISCOURSE", family: "GAP_FILL", optionCode: "5A", formulas: ["Gap Fill (Formula 1 / 2)", "Open Gap Fill", "Paragraph Reordering", "Dialogue Completion"], marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: false, constraints: { gapCount: 4 } },
       ],
     },
     sciences: {
@@ -1187,7 +1190,7 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
         { skill: "MORPHOLOGY", family: "WORD_FAMILY", optionCode: "2A", formulas: ["Chart Completion", "Affix Separation"], marks: 1.5, instruction: "Complete the chart as shown in the example. Give the noun (or verb / adjective / adverb) derived from the following words.", tableRequired: true },
         { skill: "PHONOLOGY", family: "SOUND_CLASS", optionCode: "4A", formulas: ["Final /s/", "Final /ed/", "Stressed Syllable", "Syllable Count", "Silent Letter", "Rhyming Pairs"], marks: 1, instruction: "Classify the following words according to the pronunciation of the final '-s' (or final '-ed').", tableRequired: true },
         { skill: "GRAMMAR", family: "REWRITE", optionCode: "3A", formulas: ["Rephrase", "Combination", "Conjugation", "Question Formation"], marks: 2, instruction: "Rewrite sentence B so that it means the same as sentence A.", tableRequired: false },
-        { skill: "DISCOURSE", family: "GAP_FILL", optionCode: "5A", formulas: ["Gap Fill (Formula 1 / 2)", "Open Gap Fill", "Paragraph Reordering", "Dialogue Completion"], marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: false },
+        { skill: "DISCOURSE", family: "GAP_FILL", optionCode: "5A", formulas: ["Gap Fill (Formula 1 / 2)", "Open Gap Fill", "Paragraph Reordering", "Dialogue Completion"], marks: 1, instruction: "Fill in the gaps with words from the list given.", tableRequired: false, constraints: { gapCount: 4 } },
       ],
     },
   };

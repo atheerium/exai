@@ -13,6 +13,7 @@
 import type { ExportDocument, ExportHeader, ExportTask, ExportTopic } from "./assemble";
 import { isReferentWord, locateReferent, phraseRanges } from "@/lib/generate/referents";
 import { taskHasTable, tabularTaskPrintsItems, tableKindFromHeaders, type TableKind } from "./tables";
+import { hasInlineGap, numberGaps } from "./gaps";
 
 export interface PaperTable {
   headers: string[];
@@ -54,6 +55,14 @@ export interface PaperTask {
   instruction: string;
   lead: string[];
   items: PaperItem[];
+  /**
+   * A gap-fill PASSAGE: one or more paragraphs of running text with numbered
+   * gaps already substituted (`.........(1) .........`), printed unlettered and
+   * indented. Null for every other task. When set, `items` is empty — the
+   * passage is the task, not a list of questions (user instruction,
+   * 2026-10-19).
+   */
+  gapPassage: string[] | null;
   /**
    * The candidate words a GAP_FILL (or word-bank) task draws from, or null.
    *
@@ -150,7 +159,7 @@ const LETTERED = /^([A-Za-z])[.)]\s+(.*)$/;
 const FIELD_LABEL = /^[A-Z][A-Za-z ]{0,24}:(?:\s|$)/;
 /** A markdown table separator row ("--- | ---"), which is scaffolding, not content. */
 const TABLE_SEPARATOR = /^[\s|:-]+$/;
-const GAP = /(?:→|:)?\s*\.{3,}\s*$/;
+const GAP = /(?:→|:)?\s*(?:\.{3,}|_{2,})\s*$/;
 
 // ---- Word banks ------------------------------------------------------------
 //
@@ -286,6 +295,18 @@ const REWRITE_SENTENCE = /^(?:Sentence\s+)?([ABab])\s*[).:]\s*(.+)$/i;
 function isRewriteTask(family: string | null | undefined, instruction?: string): boolean {
   if ((family ?? "").trim().toUpperCase() === "REWRITE") return true;
   return /rewrite\s+sentence\s+b\b[\s\S]*means\s+the\s+same\s+as\s+sentence\s+a/i.test(instruction ?? "");
+}
+
+/**
+ * Is this task a fill-in-the-gaps exercise?
+ *
+ * Family first, then wording, so rows saved before `family` was stamped still
+ * take the right branch. The wording is the official instruction ("Fill in the
+ * gaps with words from the list given.").
+ */
+export function isGapFillTask(family: string | null | undefined, instruction?: string): boolean {
+  if ((family ?? "").trim().toUpperCase() === "GAP_FILL") return true;
+  return /fill\s+in\s+(?:each\s+|the\s+)?gaps?\b/i.test(instruction ?? "");
 }
 
 export function parseTaskBody(
@@ -626,7 +647,25 @@ function toPaperTask(task: ExportTask, number: number): PaperTask {
   // the line stayed in `lead`, so the PDF printed a recognised bank twice: once
   // indented under the stem and once centred.
   const bank = extractWordBank(task.prompt);
-  const { lead, items } = parseTaskBody(bank.rest, task.instruction, task.family);
+  // A gap-fill PROMPT has two printed shapes and only the gap positions tell
+  // them apart (teacher report, 2026-10-19). When a gap sits INSIDE a running
+  // sentence, the sentences are a passage: it prints unlettered, indented and
+  // justified, with the gaps numbered in reading order. When every gap ends its
+  // line, the prompt is a list of separate sentences and keeps a) b) c). See
+  // `hasInlineGap` in `./gaps` for the exact test.
+  const gapFill = isGapFillTask(task.family, task.instruction);
+  let lead: string[] = [];
+  let items: PaperItem[] = [];
+  let gapPassage: string[] | null = null;
+  if (gapFill && bank.rest.trim() && hasInlineGap(bank.rest)) {
+    const paragraphs = bank.rest
+      .split(/\n\s*\n/)
+      .map((p) => p.split("\n").map((l) => l.trim()).filter(Boolean).join(" ").trim())
+      .filter(Boolean);
+    gapPassage = numberGaps(paragraphs.join("\n\n")).split(/\n\s*\n/);
+  } else {
+    ({ lead, items } = parseTaskBody(bank.rest, task.instruction, task.family));
+  }
   const table =
     task.table && task.table.headers.length > 0
       ? { headers: task.table.headers, rows: task.table.rows, kind: tableKindFromHeaders(task.table.headers) }
@@ -642,6 +681,7 @@ function toPaperTask(task: ExportTask, number: number): PaperTask {
     items: tabularTaskPrintsItems({ skill: task.skill, instruction: task.instruction, table: task.table })
       ? items
       : [],
+    gapPassage,
     wordList: bank.words.length > 0 ? bank.words : null,
     table,
     skill: task.skill ?? null,
