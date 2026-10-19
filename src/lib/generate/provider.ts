@@ -377,6 +377,21 @@ const PART_ONE_PARAGRAPH_ID_RULE =
   "\"In which paragraph is it mentioned that marketers combine visual appeal with storytelling?\". " +
   "Each option is a plain statement: end each option with a period, not a question mark, and keep it to one idea. ";
 
+/**
+ * The referent task's prompt is a LIST OF TARGETS, not a sentence.
+ *
+ * Live output (2026-10-19) was `they / this / it` while the mock and the
+ * family-keyed parser used `"they" (underlined)`. Both are accepted at export
+ * time by `resolveReferents`, but stating the bare shape here stops the model
+ * from inventing a third one (e.g. repeating the whole question per item) and
+ * makes the item count observable.
+ */
+const REFERENT_SHAPE_RULE =
+  " For COHESIVE_MARKERS, the prompt is ONLY the underlined words, one bare target per line " +
+  "(for example \"they\\nthis\\nit\"). Every target must occur verbatim in the passage field. " +
+  "Do NOT repeat the question wording inside the prompt, do NOT number the lines, and do NOT append " +
+  "\"(underlined)\" -- the paper prints the instruction once and links each target to its paragraph itself. ";
+
 /** Tables are allowlisted: morphology and phonology classification only. */
 const PART_TWO_TABLE_RULE =
   " Only morphology (roots, prefixes, suffixes) and phonology classification tasks carry a table; " +
@@ -841,6 +856,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         PART_ONE_TABLE_RULE +
         (families.some((f) => f.family === "TRUE_FALSE") ? PART_ONE_DIRECT_STATEMENTS_RULE : "") +
         (families.some((f) => f.family === "PARAGRAPH_ID") ? PART_ONE_PARAGRAPH_ID_RULE : "") +
+        (families.some((f) => f.family === "COHESIVE_MARKERS") ? REFERENT_SHAPE_RULE : "") +
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
         `Each family must contribute exactly this many items: ${familyCountNote(families)}. ` +

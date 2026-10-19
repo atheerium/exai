@@ -11,7 +11,7 @@
 // a hairline rule above the centred page number.
 
 import type { ExportDocument, ExportHeader, ExportTask, ExportTopic } from "./assemble";
-import { isReferentWord, paragraphIndexOf } from "@/lib/generate/referents";
+import { isReferentWord, locateReferent, phraseRanges } from "@/lib/generate/referents";
 import { taskHasTable, tabularTaskPrintsItems, tableKindFromHeaders, type TableKind } from "./tables";
 
 export interface PaperTable {
@@ -33,6 +33,20 @@ export interface PaperItem {
   ref: string | null;
   /** True when the item is a referent whose word is bold+underlined in the passage. */
   referent: boolean;
+}
+
+/**
+ * One passage word to set bold+underlined, and exactly where it is.
+ *
+ * `paragraph` is one-based (the number printed as `(§N)`); `occurrence` is the
+ * zero-based occurrence WITHIN that paragraph. Scoping to one occurrence is
+ * what keeps a passage clean: "it" routinely appears three times, but only the
+ * one the question points at may be marked.
+ */
+export interface EmphasisMark {
+  word: string;
+  paragraph: number;
+  occurrence: number;
 }
 
 export interface PaperTask {
@@ -70,7 +84,16 @@ export type PaperBlock =
   | { kind: "masthead"; title: string; subtitle: string; meta: string[] }
   | { kind: "sectionHead"; heading: string; marks: string }
   | { kind: "instruction"; text: string }
-  | { kind: "passage"; title: string | null; paragraphs: string[]; emphasis: string[] }  | { kind: "sourceNote"; text: string }
+  | {
+      kind: "passage";
+      title: string | null;
+      paragraphs: string[];
+      /** Every emphasised word, de-duplicated. Kept for callers that only need the vocabulary. */
+      emphasis: string[];
+      /** The exact occurrence of each emphasised word, used by all three renderers. */
+      emphasisMarks: EmphasisMark[];
+    }
+  | { kind: "sourceNote"; text: string }
   | { kind: "task"; task: PaperTask }
   | { kind: "table"; table: PaperTable }
   | { kind: "topic"; topic: PaperTopic }
@@ -400,65 +423,136 @@ export function emphasisFrom(items: PaperItem[]): string[] {
 }
 
 /**
- * One-based paragraph to cite for a referent. Prefers the first paragraph where
- * the word is not sentence-initial, so items do not all collapse to "(§1)".
+ * Split `text` into alternating plain/marked runs for `highlightRuns` callers.
+ *
+ * All three surfaces call this instead of each running its own regex. Before
+ * this, the PDF marked every token in a word list, DOCX/preview used their own
+ * `\b` regex, and a multi-word target ("the former") never matched in the PDF
+ * at all. One helper means one matching rule.
  */
-function chooseParagraph(passage: string, word: string): number {
-  const needle = word.trim().toLowerCase();
-  const paragraphs = passage.split(/\n{2,}/);
-  let first = -1;
+export function highlightRuns(
+  text: string,
+  marks: EmphasisMark[]
+): { text: string; mark: boolean }[] {
+  const ranges: { start: number; end: number }[] = [];
+  for (const mark of marks) {
+    const hit = phraseRanges(text, mark.word)[mark.occurrence] ?? null;
+    if (hit) ranges.push(hit);
+  }
+  if (ranges.length === 0) return [{ text, mark: false }];
 
-  paragraphs.forEach((paragraph, i) => {
-    const tokens = paragraph.toLowerCase().split(/\s+/);
-    const positions = tokens
-      .map((t, ti) => ({ core: t.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, ""), ti }))
-      .filter((t) => t.core === needle)
-      .map((t) => t.ti);
-    if (positions.length === 0) return;
-    if (first === -1) first = i;
-    if (positions.some((ti) => ti > 0)) {
-      first = i;
-    }
-  });
+  ranges.sort((a, b) => a.start - b.start);
+  const merged: { start: number; end: number }[] = [];
+  for (const range of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
+    else merged.push({ ...range });
+  }
 
-  return first === -1 ? 1 : first + 1;
+  const parts: { text: string; mark: boolean }[] = [];
+  let cursor = 0;
+  for (const range of merged) {
+    if (range.start > cursor) parts.push({ text: text.slice(cursor, range.start), mark: false });
+    parts.push({ text: text.slice(range.start, range.end), mark: true });
+    cursor = range.end;
+  }
+  if (cursor < text.length) parts.push({ text: text.slice(cursor), mark: false });
+  return parts;
 }
-/** The quoted word a referent item targets, e.g. `"They" (underlined)`. */
+
+/** The word a referent item targets, in any of the shapes a model emits. */
 export function referentTarget(item: PaperItem): string | null {
-  const m = UNDERLINED.exec(item.text.trim());
-  return m ? m[1] : null;
+  const text = item.text.trim();
+  if (!text) return null;
+
+  // Explicit shape: `"They" (underlined)` / `They (underlined)`.
+  const quoted = UNDERLINED.exec(text);
+  if (quoted) return quoted[1].trim();
+  const tagged = /^(.+?)\s+\(underlined\)$/i.exec(text);
+  if (tagged) return tagged[1].replace(/^["'“”]+|["'“”]+$/g, "").trim();
+
+  // Bare shape: the whole item is the target ("they", `"they"`, "the former").
+  // A full question or a sentence must never be mistaken for a target, so the
+  // candidate is bounded in length and punctuation.
+  if (/[?!]$/.test(text) || /\brefers?\s+to\b/i.test(text)) return null;
+  const bare = text.replace(/^["'“”]+|["'“”]+$/g, "").trim();
+  if (!bare || bare.split(/\s+/).length > 4 || /[.!]$/.test(bare)) return null;
+  return bare;
 }
 
 /**
  * Rewrites referent items in place: the target word is kept, and its paragraph
- * is resolved against the passage so the paper can print "They (§2): ...".
+ * is resolved against the passage so the paper can print "they (§2)".
+ *
+ * Accepts every shape a model has been seen to produce — `"they" (underlined)`
+ * (the mock/grounding contract), a bare `they` line (what the live model
+ * actually returns), and an item that already carries `(§2)` (the parser has
+ * stripped the reference by the time this runs). Before this, only the quoted
+ * form was recognised, so a live exam printed unmarked options with no
+ * paragraph references even though the passage and the items agreed.
+ *
  * A target that is not a referent (a content word) is reported through the
  * returned `rejected` list so the caller can surface it.
  */
-export function resolveReferents(tasks: PaperTask[], passage: string): { applied: string[]; rejected: string[] } {
-  const applied: string[] = [];
+export function resolveReferents(
+  tasks: PaperTask[],
+  passage: string
+): { applied: EmphasisMark[]; rejected: string[] } {
+  const applied: EmphasisMark[] = [];
   const rejected: string[] = [];
+  const seen = new Set<string>();
 
   for (const task of tasks) {
+    if (!isReferentTask(task)) continue;
+
     for (const item of task.items) {
       const target = referentTarget(item);
       if (target === null) continue;
 
-      if (!isReferentWord(target) || paragraphIndexOf(passage, target) === null) {
+      if (!isReferentWord(target)) {
+        // A single content word cannot be a referent, but a multi-word noun
+        // phrase can: "the problem" stands in for an antecedent just as "it"
+        // does, and the user's reference format includes exactly that shape.
+        // The pronoun rules bound what the generator picks; export must still
+        // render a phrase the teacher kept.
+        const isPhrase = target.trim().split(/\s+/).length >= 2;
+        if (!isPhrase) {
+          rejected.push(target);
+          continue;
+        }
+      }
+      const at = locateReferent(passage, target);
+      if (!at) {
         rejected.push(target);
         continue;
       }
+
       item.text = target;
-      // Prefer a paragraph where the referent is not the opening word, so the
-      // items spread across the text instead of all reading "(§1)".
-      item.ref = `(§${chooseParagraph(passage, target)})`;
+      item.ref = `(§${at.paragraph})`;
       item.referent = true;
-      item.gap = true;
-      applied.push(target);
+      // No dotted leader: the official format is "a) them (§1)" on one line,
+      // and a leader after the reference would be handwriting space where the
+      // user asked for spacing between the options.
+      item.gap = false;
+
+      const key = `${target.toLowerCase()}|${at.paragraph}|${at.occurrence}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        applied.push({ word: target, paragraph: at.paragraph, occurrence: at.occurrence });
+      }
     }
   }
 
   return { applied, rejected };
+}
+
+/**
+ * A task is the referent task when its family says so, or — for rows saved
+ * before `family` was stamped — when its wording is the official question.
+ */
+function isReferentTask(task: PaperTask): boolean {
+  if (task.family === "COHESIVE_MARKERS") return true;
+  return /underlined\s+words?\b.*\brefer\b/i.test(task.instruction);
 }
 
 function toPaperTask(task: ExportTask, number: number): PaperTask {
@@ -517,7 +611,10 @@ export function buildPaper(doc: ExportDocument): Paper {
 
   const passageText = doc.sections.find((s) => s.text?.body)?.text?.body ?? "";
   const { applied } = resolveReferents(paperTasks.flat(), passageText);
-  const emphasis = applied;
+  // `emphasis` stays a flat, de-duplicated word list for callers/tests that
+  // only need the vocabulary; the renderers use `emphasisMarks` so exactly one
+  // occurrence is marked and multi-word targets can be matched at all.
+  const emphasis = [...new Set(applied.map((m) => m.word))];
 
   const blocks: PaperBlock[] = [
     { kind: "masthead", title: doc.title, subtitle: doc.subtitle, meta: doc.meta },
@@ -540,6 +637,7 @@ export function buildPaper(doc: ExportDocument): Paper {
           .map((p) => p.replace(/\n/g, " ").trim())
           .filter(Boolean),
         emphasis,
+        emphasisMarks: applied,
       });
     }
 

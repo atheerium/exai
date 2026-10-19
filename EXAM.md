@@ -196,9 +196,9 @@ register them in `WEIGHTS` (`src/lib/export/pdf.ts`) to use the genuine cuts.
 | Task stem | Times-**BoldItalic** — the wording itself is bold italic |
 | Item label | Times-**Bold** `a.)` |
 | Item text | Times New Roman 12pt, never bold |
-| Referent items | **Two-up on one line**: `a.) its (§2) ……  b.) them (§1) ……` |
+| Referent items | **All three on ONE line**: `a) them (§1)   b) their (§2)   c) the problem (§3)` — spaces between, never a table |
 | Paragraph ref | `(§2)` after the item word, regular weight |
-| Answer gaps | `……` dotted leaders inline after the item |
+| Answer gaps | `……` dotted leaders inline after the item; referent items carry **none** |
 | Table headers | Times-Bold, **centred**, 0.8pt black grid, **no shading, no zebra** |
 | Topic label | Times-BoldItalic and **underlined**: `Topic One:` |
 | Notes heading | Times-Bold, full sentence with a colon |
@@ -305,9 +305,9 @@ deliberately left visible rather than papered over.
 | `masthead` | title, subtitle, meta (suppressed in the PDF; the Arabic header carries identification) |
 | `sectionHead` | heading + marks |
 | `instruction` | the "Read the text carefully..." line |
-| `passage` | title, paragraphs, emphasis words to underline |
+| `passage` | title, paragraphs, `emphasis` words, `emphasisMarks` (word + paragraph + occurrence) |
 | `sourceNote` | the "Adapted from..." line |
-| `task` | number, instruction, lead lines, lettered items, optional word list, optional table |
+| `task` | number, instruction, lead-in lines, lettered items, optional word list, optional table |
 | `wordList` | a centred `a - b - c` list under an affix task stem |
 | `table` | a task's table, rendered separately for pagination |
 | `topic` | writing topic label, lines, notes |
@@ -333,7 +333,10 @@ must render as lettered items:
   are stripped and re-rendered as a dotted leader.
 - `(§2)` is a paragraph reference: it is pulled out of the text and reprinted
   inline after the item, so the stem stays clean.
-- `"Word" (underlined)` names a passage target word to underline.
+- `"Word" (underlined)` names a passage target word to underline. A bare target
+  line (`they`, `this`, `it`) is accepted too: it is what the live model actually
+  returns for question 4, and the export resolver must not depend on the mock's
+  quoting convention.
 
 ## 7. Referent items: pronouns only, with paragraph references
 
@@ -384,10 +387,17 @@ substitute for a repeated subject, so the item cannot be answered from the text
 and is meaningless in context. A generator that emits them produces a broken
 question even when every other rule passes.
 
+The export linker is deliberately a little more permissive than the generator:
+a **multi-word noun phrase** that occurs in the passage (`the problem`) is
+linked and underlined too, because it substitutes for an antecedent in the same
+way a pronoun does. A single content word is still rejected — the pronoun rules
+above decide what the question may be built from, but a valid phrase the teacher
+kept must not render unlinked.
+
 `pickReferents(passage, count)` draws targets from the passage itself, in order
 of first appearance and without repeats, so every target is guaranteed present.
 
-### Rule 4 — every item carries its paragraph
+### Rule 4 — every item carries its paragraph, and all three share one line
 
 The passage itself carries **no printed paragraph numbers** — the reference
 appears only on the item, so the passage stays clean prose. Each referent item
@@ -399,19 +409,31 @@ live together. ...
 Pupils who organise their time carefully usually remember their lessons better.
 
 4.  Find what or who the underlined words in the text refer to.
-    a.) It (§2) ……    b.) They (§1) ……    c.) Their (§4) ……
+    a) It (§2)        b) They (§1)        c) Their (§4)
 ```
 
-- Items run **two-up on one line**, separated by a wide gap. They fall back to
-  one per line only when a pair would overflow the measure.
+- Question 4 always has **exactly three options**, all on **one line**, separated
+  by whitespace (user instruction, 2026-10-19). They never wrap and never print
+  as a vertical list.
+- Each option is `label + one space + target + one space + (paragraph)`, e.g.
+  `a) them (§1)`. There is **no dotted leader** after the reference.
 - The symbol is `(§N)` — U+00A7 SECTION SIGN inside parentheses, one-based.
 - `N` is the paragraph containing the **first non-sentence-initial** occurrence,
-  chosen so several items do not all collapse to `(§1)`.
+  chosen so several items do not all collapse to `(§1)`. When every occurrence
+  opens a sentence, the first paragraph is used.
+- The target word in the passage is **bold + underlined**. Only the occurrence
+  the item points at is marked, not every appearance of the word: `it` commonly
+  appears three times in a paragraph and the other two are different referents.
+  `EmphasisMark` (`{ word, paragraph, occurrence }`) carries that location, and
+  `highlightRuns` turns it into plain/marked runs for PDF, DOCX and preview
+  alike.
 - `resolveReferents` (`src/lib/export/paper.ts`) runs at **export** time, not
   generation time, because generation is a separate request that never sees the
   accepted passage. This means existing saved exams pick the behaviour up too.
-- The target word in the passage is **bold + underlined**; the `(§N)` marker in
-  the item is plain.
+- It accepts both prompt shapes: `"they" (underlined)` (the mock and the
+  family-keyed parser) and a bare `they` line (what the live model returns).
+- The `(§N)` marker in the item is plain; only the word in the passage is
+  emphasised.
 
 ### Rule 5 — no duplicate chart
 
@@ -455,7 +477,7 @@ rendered. "Gap" means the item ends in a dotted leader the student writes into.
 | 2B Sentence ordering | "Put the following ideas in the order they appear in the text." | 3-4 ideas | lettered items |
 | 2C Table completion | "Fill in the following table with information from the text." | exactly 4 items filled | table, answer column blank |
 | 3 Direct/inferential | "Answer the following questions according to the text." | 3-4 questions, exactly 1 inference | lettered questions |
-| 4 Cohesive markers | "Find who or what the underlined words refer to in the text." | 2-4 referents (section 7) | lettered items, each `(§N)` + gap; **no chart** |
+| 4 Cohesive markers | "Find who or what the underlined words refer to in the text." | exactly 3 referents (section 7) | three options on ONE line, each `(§N)`; no gap leader; **no chart** |
 | 5A Title | "Copy the title you think is the most appropriate." / "Give a title to the text." | 3 suggested titles, or open | lettered options |
 | 5B General idea | "Choose the general idea of the text." / "Give the general idea of the text." | 3 options, or open | lettered options |
 | 5C Discourse type | "The text is... a) descriptive b) narrative c) argumentative d) prescriptive." | only if one type dominates | lettered options |

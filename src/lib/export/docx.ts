@@ -14,10 +14,11 @@ import {
   Footer,
   PageNumberElement,
   SimpleField,
+  TabStopType,
 } from "docx";
 import type { ExportDocument } from "./assemble";
-import type { PaperItem, PaperTable, PaperTask, PaperTopic } from "./paper";
-import { buildPaper, WORD_BANK_SEPARATOR } from "./paper";
+import type { EmphasisMark, PaperItem, PaperTable, PaperTask, PaperTopic } from "./paper";
+import { buildPaper, highlightRuns, WORD_BANK_SEPARATOR } from "./paper";
 import { BLANK_ROW_HEIGHT } from "./tables";
 
 const BODY = 20;
@@ -159,22 +160,12 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
   const runs = (parts: { text: string; mark?: boolean }[]) =>
     parts.map((part) => t(part.text, { bold: part.mark, underline: part.mark ? {} : undefined }));
 
-  const passageParagraph = (text: string, emphasis: string[]) => {
-    const targets = emphasis.filter((w) => w.length > 1);
+  const passageParagraph = (text: string, marks: EmphasisMark[]) => {
+    const parts = highlightRuns(text, marks);
     // Rule (user 2026-10-11): passages carry NO first-line indent; paragraphs are
     // separated by whitespace instead. DOCX spacing is in twentieths of a point,
     // so PASSAGE_GAP_AFTER here and PARA_GAP in pdf.ts express the same rhythm.
-    if (targets.length === 0) return p(text, { justify: true, after: PASSAGE_GAP_AFTER });
-    const re = new RegExp(`\\b(${targets.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "gi");
-    const parts: { text: string; mark?: boolean }[] = [];
-    let cursor = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(text)) !== null) {
-      if (m.index > cursor) parts.push({ text: text.slice(cursor, m.index) });
-      parts.push({ text: m[0], mark: true });
-      cursor = m.index + m[0].length;
-    }
-    if (cursor < text.length) parts.push({ text: text.slice(cursor) });
+    if (!parts.some((part) => part.mark)) return p(text, { justify: true, after: PASSAGE_GAP_AFTER });
 
     return new Paragraph({
       alignment: AlignmentType.JUSTIFIED,
@@ -250,9 +241,48 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
       children: [
         t(`${item.label} `, { bold: true }),
         t(item.text),
+        ...(item.ref ? [t(` ${item.ref}`)] : []),
         ...(item.gap ? [t(`  ${GAP_LEADER}`)] : []),
       ],
     });
+
+  /**
+   * Referent options share ONE line, exactly as the paper prints them:
+   *   a) them (§1)        b) their (§2)        c) the problem (§3)
+   *
+   * Tab stops rather than a table: the gaps are whitespace, not a grid, and a
+   * table border would print. They are placed at equal fractions of the text
+   * block so the row stays balanced for three (or four, on legacy guides)
+   * options. Before this, each option was its own paragraph and the `(§N)`
+   * reference was missing from the DOCX entirely.
+   */
+  const referentParagraph = (items: PaperItem[]) => {
+    // A4 minus 720-twip margins is 10466; keep a little slack for the page.
+    const usable = 10000;
+    const tabStops =
+      items.length > 1
+        ? items.slice(1).map((_, i) => ({
+            type: TabStopType.LEFT,
+            position: Math.floor((usable / items.length) * (i + 1)),
+          }))
+        : undefined;
+
+    const children = items.flatMap((item, i) => [
+      ...(i > 0 ? [t("\t")] : []),
+      t(`${item.label} `, { bold: true }),
+      t(item.text),
+      ...(item.ref ? [t(` ${item.ref}`)] : []),
+    ]);
+
+    return new Paragraph({
+      // Align the row under the stem like every other item; the tab stops stay
+      // measured from the left margin, so only the first option shifts.
+      indent: { left: INDENT + 320 },
+      spacing: { after: 40 },
+      tabStops,
+      children,
+    });
+  };
 
   const drawTable = (table: PaperTable) => {
     // Official style (user screenshot, 2026-10-11): table centred, headers bold
@@ -326,7 +356,8 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
     // the PDF. Absent from the DOCX entirely before this, so a GAP_FILL task was
     // unanswerable in Word.
     if (task.wordList) children.push(p(task.wordList.join(WORD_BANK_SEPARATOR), { align: "center" }));
-    for (const item of task.items) children.push(itemParagraph(item));
+    if (task.items.some((item) => item.referent)) children.push(referentParagraph(task.items));
+    else for (const item of task.items) children.push(itemParagraph(item));
   };
 
   const drawTopic = (topic: PaperTopic) => {
@@ -361,7 +392,14 @@ export async function renderDocx(docModel: ExportDocument): Promise<Buffer> {
         break;
       case "passage":
         if (block.title) children.push(p(block.title, { size: 21, bold: true, align: "center" }));
-        for (const paragraph of block.paragraphs) children.push(passageParagraph(paragraph, block.emphasis));
+        block.paragraphs.forEach((paragraph, pi) =>
+          children.push(
+            passageParagraph(
+              paragraph,
+              block.emphasisMarks.filter((mark) => mark.paragraph === pi + 1)
+            )
+          )
+        );
         break;
       case "sourceNote":
         children.push(p(block.text, { size: 18, align: "right", italics: true, bold: true }));

@@ -196,6 +196,20 @@ test("Part One prompt asks for bare PARAGRAPH_ID options, not repeated lead-ins"
   assert.match(request, /end each option with a period, not a question mark/i);
 });
 
+test("Part One prompt states the bare referent shape and the three-option format", async () => {
+  sent = [];
+  await createCompatibleGenerators(config).generatePartOneCandidates(ctx(PASSAGE));
+  const request = String(sent[0].request);
+  assert.match(request, /For COHESIVE_MARKERS, the prompt is ONLY the underlined words/i);
+  assert.match(request, /one bare target per line/i);
+  assert.match(request, /Do NOT repeat the question wording inside the prompt/i);
+
+  const families = sent[0].families as { family: string; itemCount?: number }[];
+  const referent = families.find((f) => f.family === "COHESIVE_MARKERS");
+  assert.ok(referent, "the guide must still carry the referent family");
+  assert.equal(referent.itemCount, 3, "question 4 always prints three options");
+});
+
 // A repair is only a repair if the model is TOLD what was wrong. `repairOf`
 // travels in the payload, and a payload field no request string mentions is
 // inert -- the "corrected" call was byte-identical to the failed one.

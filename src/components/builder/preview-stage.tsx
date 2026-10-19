@@ -5,7 +5,7 @@ import { Download, FileText, FileDown, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 import { assembleDocument, type ExportDocument } from "@/lib/export/assemble";
-import { buildPaper, WORD_BANK_SEPARATOR } from "@/lib/export/paper";
+import { buildPaper, highlightRuns, WORD_BANK_SEPARATOR, type EmphasisMark } from "@/lib/export/paper";
 import { BLANK_ROW_HEIGHT } from "@/lib/export/tables";
 import type { ExamDto } from "@/types";
 
@@ -85,7 +85,10 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                   // No first-line indent (user rule 2026-10-11); the whitespace
                   // between paragraphs carries the separation, as in the PDF.
                   <p key={pi} className="mt-4 text-justify text-[15px] leading-snug first:mt-0">
-                    <Underlined text={paragraph} emphasis={block.emphasis} />
+                    <Underlined
+                      text={paragraph}
+                      marks={block.emphasisMarks.filter((mark) => mark.paragraph === pi + 1)}
+                    />
                   </p>
                 ))}
               </div>
@@ -119,20 +122,36 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
                     {block.task.wordList.join(WORD_BANK_SEPARATOR)}
                   </p>
                 )}
-                {block.task.items.map((item) => (
-                  <p key={item.label} className="pl-8 text-[15px] leading-snug">
-                    {/* Label and text are separated by exactly one space; a fixed
-                        width plus a flex gap read as a wide column (user
-                        instruction 2026-10-11). */}
-                    <span className="font-bold">{item.label}</span>{" "}
-                    <span>
-                      {item.text}
-                      {item.gap && (
-                        <span className="whitespace-nowrap">{" . . . . . . . . . . . . . . . . . ."}</span>
-                      )}
-                    </span>
-                  </p>
-                ))}
+                {block.task.items.some((item) => item.referent) ? (
+                  // Referent options share one line: a) them (§1)  b) their (§2)
+                  // c) the problem (§3) (user instruction, 2026-10-19). Spaces
+                  // between the options, never a table or a grid.
+                  <div className="flex flex-nowrap items-baseline justify-between gap-6 pl-8 text-[15px] leading-snug">
+                    {block.task.items.map((item) => (
+                      <span key={item.label} className="whitespace-nowrap">
+                        <span className="font-bold">{item.label}</span>{" "}
+                        {item.text}
+                        {item.ref && <> {item.ref}</>}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  block.task.items.map((item) => (
+                    <p key={item.label} className="pl-8 text-[15px] leading-snug">
+                      {/* Label and text are separated by exactly one space; a fixed
+                          width plus a flex gap read as a wide column (user
+                          instruction 2026-10-11). */}
+                      <span className="font-bold">{item.label}</span>{" "}
+                      <span>
+                        {item.text}
+                        {item.ref && <> {item.ref}</>}
+                        {item.gap && (
+                          <span className="whitespace-nowrap">{" . . . . . . . . . . . . . . . . . ."}</span>
+                        )}
+                      </span>
+                    </p>
+                  ))
+                )}
               </div>
             );
 
@@ -219,23 +238,9 @@ function ExamDocument({ doc }: { doc: ExportDocument }) {
   );
 }
 
-function Underlined({ text, emphasis }: { text: string; emphasis: string[] }) {
-  const targets = emphasis.filter((w) => w.length > 1);
-  if (targets.length === 0) return <>{text}</>;
-
-  const pattern = new RegExp(
-    "\\b(" + targets.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")\\b",
-    "gi"
-  );
-  const parts: { text: string; mark: boolean }[] = [];
-  let cursor = 0;
-  let m: RegExpExecArray | null;
-  while ((m = pattern.exec(text)) !== null) {
-    if (m.index > cursor) parts.push({ text: text.slice(cursor, m.index), mark: false });
-    parts.push({ text: m[0], mark: true });
-    cursor = m.index + m[0].length;
-  }
-  if (cursor < text.length) parts.push({ text: text.slice(cursor), mark: false });
+function Underlined({ text, marks }: { text: string; marks: EmphasisMark[] }) {
+  const parts = highlightRuns(text, marks);
+  if (!parts.some((part) => part.mark)) return <>{text}</>;
 
   return (
     <>

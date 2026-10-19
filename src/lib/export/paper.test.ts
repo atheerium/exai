@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildPaper, letterLabel, parseTaskBody, emphasisFrom, extractWordBank, WORD_BANK_SEPARATOR } from "./paper";
+import { buildPaper, letterLabel, parseTaskBody, emphasisFrom, extractWordBank, highlightRuns, WORD_BANK_SEPARATOR } from "./paper";
 import { assembleDocument } from "./assemble";
 import { getGuide } from "@/data/guides";
 import type { ExamDto, SectionDto } from "@/types";
@@ -158,7 +158,116 @@ test("buildPaper prints the paragraph reference beside each referent item", () =
   assert.ok(task && task.kind === "task");
   assert.deepEqual(task.task.items.map((i) => i.ref), ["(§2)", "(§2)"]);
   assert.equal(task.task.items[0].text, "They");
-  assert.equal(task.task.items[0].gap, true);
+  // No dotted leader: the official row is "a) them (§1)   b) their (§2)".
+  assert.equal(task.task.items[0].gap, false);
+});
+
+test("buildPaper links bare referent options to the passage", () => {
+  const doc = assembleDocument(
+    exam({
+      sections: [
+        section({
+          id: "s-text",
+          type: "TEXT",
+          text:
+            "They met early. The plan was simple.\n\n" +
+            "Nothing changed that day.\n\n" +
+            "This mattered to it in the end.",
+          sourceIndex: 0,
+        }),
+        section({
+          id: "s-p1",
+          type: "PART_ONE",
+          tasks: [
+            {
+              id: "t1",
+              // The live model returns bare targets, not `"they" (underlined)`.
+              prompt: "they\nthis\nit",
+              instruction: "Who or what do the underlined words refer to in the text?",
+              marks: 3,
+              order: 0,
+              manualEdited: false,
+              family: "COHESIVE_MARKERS",
+              candidates: [],
+            },
+          ],
+        }),
+      ],
+    })
+  );
+  const built = buildPaper(doc);
+  const task = built.blocks.find((b) => b.kind === "task");
+  assert.ok(task && task.kind === "task");
+  assert.deepEqual(
+    task.task.items.map((i) => ({ text: i.text, ref: i.ref, referent: i.referent, gap: i.gap })),
+    [
+      { text: "they", ref: "(§1)", referent: true, gap: false },
+      { text: "this", ref: "(§3)", referent: true, gap: false },
+      { text: "it", ref: "(§3)", referent: true, gap: false },
+    ]
+  );
+
+  const passage = built.blocks.find((b) => b.kind === "passage");
+  assert.ok(passage && passage.kind === "passage");
+  assert.deepEqual(passage.emphasisMarks, [
+    { word: "they", paragraph: 1, occurrence: 0 },
+    { word: "this", paragraph: 3, occurrence: 0 },
+    { word: "it", paragraph: 3, occurrence: 0 },
+  ]);
+});
+
+test("buildPaper links a multi-word noun-phrase referent", () => {
+  const doc = assembleDocument(
+    exam({
+      sections: [
+        section({
+          id: "s-text",
+          type: "TEXT",
+          text: "Something happened.\n\nStudents discussed the problem again.",
+          sourceIndex: 0,
+        }),
+        section({
+          id: "s-p1",
+          type: "PART_ONE",
+          tasks: [
+            {
+              id: "t1",
+              prompt: "the problem",
+              instruction: "Who or what do the underlined words refer to in the text?",
+              marks: 1,
+              order: 0,
+              manualEdited: false,
+              family: "COHESIVE_MARKERS",
+              candidates: [],
+            },
+          ],
+        }),
+      ],
+    })
+  );
+  const built = buildPaper(doc);
+  const task = built.blocks.find((b) => b.kind === "task");
+  assert.ok(task && task.kind === "task");
+  assert.equal(task.task.items[0].ref, "(§2)");
+  assert.equal(task.task.items[0].referent, true);
+
+  const passage = built.blocks.find((b) => b.kind === "passage");
+  assert.ok(passage && passage.kind === "passage");
+  assert.deepEqual(passage.emphasisMarks, [
+    { word: "the problem", paragraph: 2, occurrence: 0 },
+  ]);
+});
+
+test("highlightRuns marks exactly one occurrence, phrase-aware", () => {
+  assert.deepEqual(highlightRuns("it is it", [{ word: "it", paragraph: 2, occurrence: 1 }]), [
+    { text: "it is ", mark: false },
+    { text: "it", mark: true },
+  ]);
+  assert.deepEqual(highlightRuns("they chose the former way", [{ word: "the former", paragraph: 1, occurrence: 0 }]), [
+    { text: "they chose ", mark: false },
+    { text: "the former", mark: true },
+    { text: " way", mark: false },
+  ]);
 });
 
 test("buildPaper rejects a content word used as a referent target", () => {

@@ -169,3 +169,71 @@ export function paragraphIndexOf(passage: string, word: string): number | null {
   }
   return null;
 }
+
+export interface ReferentLocation {
+  /** One-based paragraph number, as printed in `(§N)`. */
+  paragraph: number;
+  /**
+   * Zero-based ordinal of the occurrence WITHIN that paragraph. The paper
+   * underlines exactly one occurrence, so the renderer needs to know which one.
+   */
+  occurrence: number;
+}
+
+/**
+ * Character ranges where `phrase` occurs in `text`, matched whole-word and
+ * case-insensitively. Works for both a single word ("they") and a multi-word
+ * substitute ("the former"), which is why it is not built on token equality.
+ */
+export function phraseRanges(text: string, phrase: string): { start: number; end: number }[] {
+  const needle = phrase.trim();
+  if (!needle) return [];
+
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(^|[^\\p{L}\\p{N}'’])(${escaped})(?=$|[^\\p{L}\\p{N}'’])`, "giu");
+  const out: { start: number; end: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const start = m.index + m[1].length;
+    const end = start + m[2].length;
+    out.push({ start, end });
+    // The lookahead does not consume the trailing boundary, so advance past
+    // the phrase explicitly or the next exec could rematch inside it.
+    re.lastIndex = end;
+  }
+  return out;
+}
+
+/**
+ * Locate a referent inside the passage: the paragraph to cite and which
+ * occurrence in that paragraph to underline.
+ *
+ * The first paragraph containing a NON-sentence-initial occurrence wins, so a
+ * set of items does not collapse to "(§1)" when the same pronoun also opens a
+ * paragraph elsewhere. When every occurrence is sentence-initial the first
+ * paragraph is used, which is still answerable.
+ */
+export function locateReferent(passage: string, word: string): ReferentLocation | null {
+  const needle = word.trim();
+  // No minimum length: "I" is a valid pronoun, and `phraseRanges` already
+  // rejects an empty target. A two-character floor silently unlinked it.
+  if (!needle) return null;
+
+  const paragraphs = passage.split(/\n{2,}/);
+  let fallback: ReferentLocation | null = null;
+
+  for (let i = 0; i < paragraphs.length; i++) {
+    const ranges = phraseRanges(paragraphs[i], needle);
+    if (ranges.length === 0) continue;
+
+    const nonInitial = ranges.findIndex((r) => r.start > 0);
+    const location: ReferentLocation = {
+      paragraph: i + 1,
+      occurrence: nonInitial === -1 ? 0 : nonInitial,
+    };
+    if (nonInitial !== -1) return location;
+    if (!fallback) fallback = location;
+  }
+
+  return fallback;
+}

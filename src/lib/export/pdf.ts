@@ -1,7 +1,7 @@
 import PDFDocument from "pdfkit";
 import type { ExportDocument, ExportHeader } from "./assemble";
-import type { PaperBlock, PaperItem, PaperTable, PaperTask, PaperTopic } from "./paper";
-import { buildPaper } from "./paper";
+import type { EmphasisMark, PaperBlock, PaperItem, PaperTable, PaperTask, PaperTopic } from "./paper";
+import { buildPaper, highlightRuns } from "./paper";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { arabicLine, arabicMixedRun, arabicPageFooter, isShaped } from "./arabic";
@@ -27,8 +27,6 @@ const MARKS = 12;
 const HEADING = 13;
 const ITEM_INDENT = 30;
 const ITEM_TEXT_INDENT = 52;
-// Q4 items run two-up on one line: "a) its (§1)      b) them (§2)"
-const INLINE_ITEM_GAP = 26;
 const GAP_LEADER = "................";
 /**
  * Vertical whitespace between passage paragraphs, in pdfkit line units
@@ -282,15 +280,24 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
   // continued run, so emphasised words cannot be marked inline. Wrapping,
   // justification and underlining are therefore driven manually: words are
   // measured, packed into lines, then drawn one by one at a pinned baseline.
-  const richText = (text: string, emphasis: string[], opts: RichOpts) => {
+  //
+  // `marks` is the exact occurrence list from `buildPaper`, not a word set:
+  // "it" may appear three times in a paragraph and only the occurrence the
+  // question points at may be underlined. `highlightRuns` resolves the ranges,
+  // so a multi-word target ("the former") is underlined too.
+  const richText = (text: string, marks: EmphasisMark[], opts: RichOpts) => {
     font(BODY).fillColor("#000000");
     const lineHeight = opts.lineHeight ?? LINE_HEIGHT;
     const textX = opts.x ?? left + (opts.indent ?? 0);
     const textWidth = opts.width - (opts.indent ?? 0);
-    const marks = new Set(emphasis.filter((w) => w.length > 1).map((w) => w.toLowerCase()));
 
     const space = doc.widthOfString(" ");
-    const words = text.split(/\s+/).filter(Boolean);
+    const words = highlightRuns(text, marks).flatMap((part) =>
+      part.text
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((word) => ({ word, marked: part.mark }))
+    );
     if (words.length === 0) return;
 
     // A marked word may carry punctuation ("motivated." / "organisation,"), so
@@ -302,30 +309,25 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
       return { core: m[1], start: m.index, end: m.index + m[1].length };
     };
 
-    const isMarked = (token: string): boolean => {
-      const core = splitCore(token);
-      return core !== null && marks.has(core.core.toLowerCase());
-    };
-
     // Marked words are set bold, so they must be measured as bold both when
     // packing lines and when placing them, or wrapping drifts.
-    const wordWidth = (word: string): number => {
-      font(BODY, isMarked(word)).fillColor("#000000");
+    const wordWidth = (word: string, marked: boolean): number => {
+      font(BODY, marked).fillColor("#000000");
       return doc.widthOfString(word);
     };
 
-    const lines: { words: string[]; width: number }[] = [];
-    let current: string[] = [];
+    const lines: { words: { word: string; marked: boolean }[]; width: number }[] = [];
+    let current: { word: string; marked: boolean }[] = [];
     let currentWidth = 0;
-    for (const word of words) {
-      const ww = wordWidth(word);
+    for (const entry of words) {
+      const ww = wordWidth(entry.word, entry.marked);
       const advance = (current.length > 0 ? space : 0) + ww;
       if (current.length > 0 && currentWidth + advance > textWidth) {
         lines.push({ words: current, width: currentWidth });
-        current = [word];
+        current = [entry];
         currentWidth = ww;
       } else {
-        current.push(word);
+        current.push(entry);
         currentWidth += advance;
       }
     }
@@ -342,23 +344,23 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
       const isLast = li === lines.length - 1;
       const gap = justify && !isLast && line.words.length > 1 ? (textWidth - line.width) / line.words.length : 0;
       let x = textX;
-      for (const word of line.words) {
-        const core = splitCore(word);
-        const marked = core !== null && marks.has(core.core.toLowerCase());
-        const ww = wordWidth(word);
+      for (const entry of line.words) {
+        const core = splitCore(entry.word);
+        const marked = entry.marked;
+        const ww = wordWidth(entry.word, marked);
         if (!marked || core === null) {
-          doc.text(word, x, y, { underline: marked, lineBreak: false, width: ww });
+          doc.text(entry.word, x, y, { underline: marked, lineBreak: false, width: ww });
           x += ww + space + gap;
           continue;
         }
         // Draw the punctuation, then the bold+underlined core, then the rest.
-        const prefix = word.slice(0, core.start);
-        const suffix = word.slice(core.end);
+        const prefix = entry.word.slice(0, core.start);
+        const suffix = entry.word.slice(core.end);
         if (prefix) doc.text(prefix, x, y, { lineBreak: false, width: doc.widthOfString(prefix) });
         x += doc.widthOfString(prefix);
-        const coreW = doc.widthOfString(word.slice(core.start, core.end));
+        const coreW = doc.widthOfString(entry.word.slice(core.start, core.end));
         font(BODY, true).fillColor("#000000");
-        doc.text(word.slice(core.start, core.end), x, y, { underline: true, lineBreak: false, width: coreW });
+        doc.text(entry.word.slice(core.start, core.end), x, y, { underline: true, lineBreak: false, width: coreW });
         x += coreW;
         if (suffix) {
           font(BODY).fillColor("#000000");
@@ -386,9 +388,9 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
   };
 
   /**
-   * Referent items print two-up on one line, separated by a wide gap:
-   *   a) its (§1).............     b) them (§2).............
-   * Falls back to one-per-line when the pair would not fit the measure.
+   * Referent items print on one line, separated by a wide gap:
+   *   a) its (§1)        b) them (§2)        c) the problem (§3)
+   * No dotted leader: the reference IS the item (user rule, 2026-10-19).
    */
   const drawInlineItem = (item: PaperItem, x: number, y: number): number => {
     font(BODY, true).fillColor("#000000").text(`${item.label}`, x, y, { lineBreak: false });
@@ -584,22 +586,29 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
     }
 
     if (task.items.some((i) => i.referent)) {
-      // Referent items share lines two-up, exactly as the official papers print them.
+      // Referent items share ONE line, as the official paper prints them:
+      //   a) them (§1)        b) their (§2)        c) the problem (§3)
+      // (user instruction, 2026-10-19). The old two-up flow wrapped the third
+      // item onto a second line. Gaps absorb the leftover measure so the row
+      // is spaced rather than crammed; if the items are genuinely too wide
+      // the gap falls back to a single space and the row still stays one line.
+      if (y + BODY * 1.5 > doc.page.height - doc.page.margins.bottom) {
+        doc.addPage();
+        if (header) drawRunningHeader(header);
+        y = doc.y;
+      }
+      const widths = task.items.map(itemWidth);
+      const available = contentWidth - ITEM_INDENT;
+      const sum = widths.reduce((total, w) => total + w, 0);
+      const gap =
+        task.items.length > 1
+          ? Math.max(6, (available - sum) / (task.items.length - 1))
+          : 0;
+
       let x = left + ITEM_INDENT;
       for (const item of task.items) {
-        if (y + BODY * 1.5 > doc.page.height - doc.page.margins.bottom) {
-          doc.addPage();
-          if (header) drawRunningHeader(header);
-          y = doc.y;
-          x = left + ITEM_INDENT;
-        }
-        const need = itemWidth(item);
-        if (x > left + ITEM_INDENT && x + need > left + contentWidth) {
-          y += ITEM_ADVANCE;
-          x = left + ITEM_INDENT;
-        }
         drawInlineItem(item, x, y);
-        x += Math.max(need, INLINE_ITEM_GAP) + INLINE_ITEM_GAP;
+        x += itemWidth(item) + gap;
       }
       doc.y = y + ITEM_ADVANCE;
       doc.x = left;
@@ -681,10 +690,14 @@ const WEIGHTS: [name: string, file: string | null, fallback: string][] = [
         // by PARA_GAP whitespace instead. DOCX mirrors this with
         // PASSAGE_GAP_AFTER; tune the two together against a real render.
         block.paragraphs.forEach((paragraph, pi) => {
-          richText(paragraph, block.emphasis, {
-            width: contentWidth,
-            align: "justify",
-          });
+          richText(
+            paragraph,
+            block.emphasisMarks.filter((mark) => mark.paragraph === pi + 1),
+            {
+              width: contentWidth,
+              align: "justify",
+            }
+          );
           if (pi < block.paragraphs.length - 1) doc.moveDown(PARA_GAP);
         });
         break;

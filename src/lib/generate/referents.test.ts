@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isReferentWord, isRepetitionAvoiding, pickReferents, paragraphIndexOf, referentCategories, REFERENT_WORDS } from "./referents";
+import { isReferentWord, isRepetitionAvoiding, locateReferent, pickReferents, paragraphIndexOf, referentCategories, REFERENT_WORDS } from "./referents";
 
 // A referent target must be able to stand in for a noun phrase. Content words
 // ("honest", "trust", "curiosity") have no such antecedent, so the official
@@ -124,4 +124,36 @@ test("paragraphIndexOf ignores punctuation around the word", () => {
 test("paragraphIndexOf returns null for a word absent from the passage", () => {
   const passage = "First line here.\n\nSecond line here.";
   assert.equal(paragraphIndexOf(passage, "missing"), null);
+});
+
+test("locateReferent returns the one-based paragraph and the occurrence", () => {
+  const passage = "They met.\n\nNothing.\n\nThis mattered to it in the end.";
+  assert.deepEqual(locateReferent(passage, "they"), { paragraph: 1, occurrence: 0 });
+  assert.deepEqual(locateReferent(passage, "it"), { paragraph: 3, occurrence: 0 });
+});
+
+test("locateReferent prefers a paragraph where the word is not sentence-initial", () => {
+  const passage = "They spoke.\n\nPeople listened, then they answered.";
+  assert.deepEqual(locateReferent(passage, "they"), { paragraph: 2, occurrence: 0 });
+});
+
+test("locateReferent counts occurrences within the chosen paragraph", () => {
+  const passage = "Something happened.\n\nIt began, then it ended.";
+  assert.deepEqual(locateReferent(passage, "it"), { paragraph: 2, occurrence: 1 });
+});
+
+test("locateReferent matches a multi-word substitute", () => {
+  const passage = "Two plans were offered.\n\nPupils chose the former.";
+  assert.deepEqual(locateReferent(passage, "the former"), { paragraph: 2, occurrence: 0 });
+});
+
+test("locateReferent returns null for an absent word", () => {
+  const passage = "They met.\n\nNothing changed.";
+  assert.equal(locateReferent(passage, "it"), null);
+});
+
+test("locateReferent accepts a one-letter pronoun", () => {
+  // "I" is in REFERENT_WORDS; a minimum length here silently unlinked it.
+  const passage = "I began.\n\nThen I stopped.";
+  assert.deepEqual(locateReferent(passage, "I"), { paragraph: 2, occurrence: 0 });
 });

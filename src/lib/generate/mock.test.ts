@@ -313,7 +313,9 @@ test("Bac foreign_languages stream has correct itemCounts per stream variant", (
   assert.equal(trueFalseRule?.itemCount, 4);
   assert.equal(questionsRule?.itemCount, 4);
   assert.equal(paragraphRule?.itemCount, 4);
-  assert.equal(cohesiveRule?.itemCount, 4);
+  // The referent task always prints THREE options (user format rule,
+  // 2026-10-19), on one line. Do not raise this to 4.
+  assert.equal(cohesiveRule?.itemCount, 3);
   assert.equal(titleRule?.itemCount, 1);
 });
 

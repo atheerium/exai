@@ -988,8 +988,8 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
       instruction: "Who or what do the underlined words refer to in the text?",
       exactWording: "Who or what do the underlined words refer to in the text?",
       tableRequired: false,
-      itemCount: 4,
-      constraints: { maxWords: 4 },
+      itemCount: 3,
+      constraints: { maxWords: 3 },
     },
     {
       family: "TITLE_OR_IDEA",
@@ -1051,8 +1051,8 @@ function guide(key: string, name: string, level: Level, grade: string, stream?: 
         instruction: "Who or what do the underlined words refer to in the text?",
         exactWording: "Who or what do the underlined words refer to in the text?",
         tableRequired: false,
-        itemCount: 4,
-        constraints: { maxWords: 4 },
+        itemCount: 3,
+        constraints: { maxWords: 3 },
       },
       {
         family: "TITLE_OR_IDEA",
