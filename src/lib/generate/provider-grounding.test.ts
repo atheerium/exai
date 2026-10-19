@@ -174,13 +174,17 @@ test("the prompt names the passage field it must ground on", async () => {
   );
 });
 
-test("Part One prompt asks for direct True/False statements without source attribution", async () => {
+test("Part One prompt bans any source attribution in True/False statements", async () => {
   sent = [];
   await createCompatibleGenerators(config).generatePartOneCandidates(ctx(PASSAGE));
   const request = String(sent[0].request);
-  assert.match(request, /For TRUE_FALSE items, write each statement as a direct, natural claim/i);
-  assert.match(request, /avoid phrases such as "the passage\/text states", "according to the text"/i);
-  assert.match(request, /write "Colour and music can trigger subconscious cravings\." rather than/i);
+  assert.match(request, /For TRUE_FALSE items, each statement MUST be a direct claim/i);
+  assert.match(request, /The statement MUST NOT contain ANY reference to the source/i);
+  assert.match(request, /NEVER write "the passage", "the text", "the article"/i);
+  assert.match(
+    request,
+    /write "Colour schemes have no effect on consumer emotions\." and NEVER "The passage says that/i
+  );
 });
 
 test("Part One prompt asks for bare PARAGRAPH_ID options, not repeated lead-ins", async () => {

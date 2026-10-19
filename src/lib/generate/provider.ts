@@ -354,11 +354,20 @@ const PART_ONE_TABLE_RULE =
   "same as being told the exact field to omit. ";
 
 const PART_ONE_DIRECT_STATEMENTS_RULE =
-  " For TRUE_FALSE items, write each statement as a direct, natural claim for students to judge against the reading. " +
-  "Do not frame it as a report about the source: avoid phrases such as \"the passage/text states\", \"according to the text\", " +
-  "or \"the research mentioned\". For example, write \"Colour and music can trigger subconscious cravings.\" " +
-  "rather than \"The passage states that colour and music can trigger subconscious cravings.\" " +
-  "This applies to the statement itself; preserve the official task instruction. ";
+  " For TRUE_FALSE items, each statement MUST be a direct claim about the subject matter, written in the active voice " +
+  "as a fact the student judges on its own. " +
+  "The statement MUST NOT contain ANY reference to the source. NEVER write \"the passage\", \"the text\", " +
+  "\"the article\", \"the author\", \"the writer\", \"the source\", \"the excerpt\", \"according to\", " +
+  "\"it is said\", \"it is stated\", \"the research mentioned\", or any similar attribution -- not at the start, " +
+  "not in the middle, and not in a question tag. " +
+  "State the claim itself instead of reporting it. " +
+  "For example, write \"Colour schemes have no effect on consumer emotions.\" and NEVER " +
+  "\"The passage says that colour schemes have no effect on consumer emotions.\" " +
+  "Likewise write \"Colour and music can trigger subconscious cravings.\" and NEVER " +
+  "\"The passage states that colour and music can trigger subconscious cravings.\" " +
+  "Live 2026-10-19: even after a general warning not to attribute statements, one item still began " +
+  "\"The passage says that...\". Treat this as an absolute ban, not a style preference. " +
+  "This applies to every statement; preserve the official task instruction unchanged. ";
 
 const PART_ONE_PARAGRAPH_ID_RULE =
   " For PARAGRAPH_ID items, write each option as the bare statement itself, not as a separate question. " +
