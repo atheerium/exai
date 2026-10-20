@@ -203,6 +203,7 @@ provider is never silently overridden.
 | `npm run vercel-build` | `prisma generate && next build` — the Vercel entrypoint |
 | `bash scripts/smoke.sh` | End-to-end smoke test; needs a running dev server and a real database |
 | `npx tsx scripts/render-check.ts` | Renders a full generated exam to a PDF with no database, for checking the paper format |
+| `npm run ship -- -m "…"` | Tests, typecheck, commit, push, and wait for the Vercel deploy to go live |
 
 `npm run lint` is **not** a usable gate: ESLint is not installed, so `next lint`
 drops into an interactive setup prompt and exits non-zero. Typecheck and the test
@@ -215,6 +216,12 @@ Because the pnpm lockfiles were removed on purpose, **use npm only** — committ
 `pnpm-lock.yaml` makes Vercel choose pnpm and fail the install. Set `DATABASE_URL`,
 the session variables, `APP_URL` and `SMTP_HOST` in the project environment before
 the first production build.
+
+A push to `main` starts the production build by itself, so the loop is:
+`npm run ship -- -m "fix(scope): what changed"`. It runs the gates, commits,
+pushes, resolves the deployment for **that commit** and blocks until it is live
+(see `scripts/ship.sh`). Add `--build` to run `next build` first; use
+`--wait-only` later to ask "is my last commit actually live?".
 
 ## Project layout
 

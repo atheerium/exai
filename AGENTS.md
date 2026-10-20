@@ -51,6 +51,7 @@ the product for its users. All three are required reading.
 | `npm run vercel-build` | — | `prisma generate && next build`. Vercel entrypoint. |
 | `npm run db:push` / `db:seed` | — | `prisma db push` / `prisma db seed` (`tsx prisma/seed.ts`). |
 | `bash scripts/smoke.sh` | — | 451-line E2E. Needs a **running dev server** + real DB. `BASE_URL`/`EMAIL` overridable. |
+| `npm run ship -- -m "…"` | 0/1 | Commit → push → wait for the Vercel production build of **that SHA**. Resolves the deployment with `vercel ls -F json -m githubCommitSha=$SHA` (never scrape the table) and blocks on `vercel inspect --wait`; then curls the aliases so "Ready" is backed by an HTTP status. `--build` adds `next build`, `--wait-only` re-checks HEAD, `--dry-run` changes nothing. Refuses to ship with a pnpm lockfile present (landmine 2). |
 
 ```bash
 npm install          # postinstall runs `prisma generate`
