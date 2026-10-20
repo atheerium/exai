@@ -15,6 +15,9 @@
 //   - Never below one sentence per paragraph. Paragraph count is a teacher
 //     choice and is checked exactly; a trim that emptied the last paragraph
 //     would trade a length rejection for a paragraph-count rejection.
+//   - Never below the paragraph-balance floor (paragraph-balance.ts). Cutting
+//     the last paragraph down to a fragment would trade a length rejection for
+//     the "paragraph 3 is a fragment" rejection the floor exists to catch.
 //   - Only over-ceiling passages. An under-length passage cannot be fixed in
 //     code without inventing text, so it is left to the caller's repair/fail
 //     path. The model overshoots; it does not undershoot.
@@ -24,6 +27,7 @@
 // different problem that gets reported to the teacher instead.
 
 import { countWords } from "./rng";
+import { minParagraphWords, splitPassageParagraphs } from "./paragraph-balance";
 
 export interface TrimOptions {
   /** Teacher-requested length; the band is ±20% of it, as validateCandidate uses. */
@@ -45,7 +49,7 @@ function splitSentences(paragraph: string): string[] {
 }
 
 function paragraphs(text: string): string[] {
-  return text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  return splitPassageParagraphs(text);
 }
 
 export function lengthBandWords(length: number): { min: number; max: number } {
@@ -74,14 +78,20 @@ export function trimPassageToBand(text: string, opts: TrimOptions): TrimResult {
       const sentences = splitSentences(paras[i]);
       if (sentences.length <= 1) continue;
       const dropped = sentences.pop()!;
+      const remaining = countWords(sentences.join(" "));
+      // Refuse a cut that would make this paragraph a fragment. The floor is
+      // derived from the passage AFTER the cut, exactly as the validator will
+      // derive it, so the trim cannot create the failure it is meant to avoid.
+      if (remaining < minParagraphWords(total - countWords(dropped), paras.length)) continue;
       paras[i] = sentences.join(" ").trim();
       total -= countWords(dropped);
       removed = true;
       break;
     }
-    // Every paragraph is down to one sentence and we are still over: stop. The
-    // caller re-validates and reports the original issue rather than shipping a
-    // passage that has been stripped of everything but sentence fragments.
+    // Every paragraph is down to one sentence, or to its balance floor, and we
+    // are still over: stop. The caller re-validates and reports the original
+    // issue rather than shipping a passage that has been stripped of everything
+    // but sentence fragments.
     if (!removed) break;
   }
 

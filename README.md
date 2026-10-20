@@ -71,6 +71,9 @@ the dashboard; past exams live in your library.
   custom topic, and word-length choices that come from the curriculum rules.
 - **Reading text stage** — editable passage, alternatives, source attribution, and
   Simplify / Make harder rewrites. The passage is never destroyed by a regeneration.
+  Every paragraph is a developed paragraph: the app rejects a passage whose closing
+  paragraph is a single short line, while still allowing paragraphs of different
+  lengths the way real papers do.
 - **Part One: Reading** — comprehension tasks with marks and per-task replacement.
 - **B. Text Exploration** — five skill categories (vocabulary, morphology, phonology,
   grammar and discourse), including the prefix/root/suffix, word-derivation and

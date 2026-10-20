@@ -16,6 +16,7 @@ import {
   DEFAULT_PARAGRAPH_COUNT,
 } from "@/lib/guide";
 import { countWords } from "./rng";
+import { checkParagraphBalance, splitPassageParagraphs } from "./paragraph-balance";
 import { checkTaskLinkage, checkTopicAnchoring, type LinkableTask } from "./grounding";
 import { taskHasTable } from "@/lib/export/tables";
 // The word-bank reader lives with the layout that prints it, so the shape the
@@ -409,11 +410,16 @@ export function validateCandidate(
       // exactly rather than as a band: a 4-paragraph passage when the teacher
       // asked for 3 is a different artefact, not a near miss.
       if (opts?.paragraphCount) {
-        const actual = t.text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean).length;
+        const actual = splitPassageParagraphs(t.text).length;
         if (actual !== opts.paragraphCount) {
           issues.push(`Generated text has ${actual} paragraph(s) instead of ${opts.paragraphCount}.`);
         }
       }
+      // A paragraph that is one short sentence is a fragment, not a paragraph:
+      // the reported 2026-10-20 passage had 58 / 54 / 16 words and passed every
+      // other check. The floor is computed from the actual text, so it also
+      // covers a passage that is merely shorter than the teacher asked for.
+      issues.push(...checkParagraphBalance(t.text));
       // Topicality and cohesion are ADVISORY. Two mechanical attempts were made
       // and both rejected good passages — including a coherent one held together
       // by pronoun chains, and passages that say "prehistoric" rather than the

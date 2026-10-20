@@ -1063,9 +1063,9 @@ Verified live after the fix: the topic appears in 1 of 3 paragraphs instead of
 excavation (evidence) -> consequence for modern legal systems (conclusion).
 
 **What is still hard-enforced** is only what is exactly computable: the word band,
-the paragraph count, and the schema. Topicality, cohesion and semantic
-answerability are prompt-enforced, in the same category, because a mechanical
-proxy for any of them rejects good writing.
+the paragraph count, the paragraph-balance floor (12.2a) and the schema.
+Topicality, cohesion and semantic answerability are prompt-enforced, in the same
+category, because a mechanical proxy for any of them rejects good writing.
 
 ### 12.2 Paragraph count is a teacher choice: 3 or 4, default 3
 
@@ -1080,6 +1080,50 @@ proxy for any of them rejects good writing.
   passes it: a 4-paragraph passage when 3 was asked for is a different artefact,
   not a near miss. Callers with no teacher choice (REWRITE, alternatives) pass
   nothing and are not affected.
+
+### 12.2a Paragraph balance: a floor, not equal lengths
+
+Teacher instruction, 2026-10-20. The rule is **not** "make paragraphs the same
+length" — real exam passages are not equal. It is "no paragraph may be a
+fragment":
+
+> The first and second paragraphs are so much larger than the third. The third
+> paragraph is basically just a phrase. They don't have to have the same number
+> of words, but there should not be a paragraph with one phrase.
+
+The reported passage (58 / 54 / 16 words) passed every check that existed at the
+time: the paragraph count was right and the total was inside the band, so the
+paper printed a passage that visibly trails off. The reference paper used as the
+counter-example runs 60 / 47 / 50 — unequal, all developed.
+
+- **Floor: a paragraph must be at least 55% of the average paragraph length**
+  (`MIN_PARAGRAPH_SHARE_OF_AVERAGE` in `generate/paragraph-balance.ts`). At 120
+  words that is 22 words for 3 paragraphs and 17 for 4. `minParagraphWords()` is
+  the single source of the number for the validator, the prompt and the trim.
+- **Computed from the actual text**, not the teacher's target length, so a
+  passage shorter than requested is measured against itself rather than against
+  a number it never reached.
+- **No ceiling.** An opening paragraph legitimately carries the most
+  information; a max would reject good writing for no reader-visible gain.
+- `checkParagraphBalance()` is called by `validateCandidate("TEXT")`, so a
+  fragment fails the section and goes through the usual one-repair path with the
+  issue string ("Paragraph 3 is a fragment: 16 words where every paragraph must
+  be at least 31 …") carried back verbatim.
+- **The prompt states the literal number** (`coherenceNote` and
+  `passageShapeRule`): "with 3 paragraphs across 120 words, no paragraph may be
+  shorter than 22 words … a paragraph made of one short sentence is INVALID."
+  Stated as a minimum, never as a target, so the model develops the paragraph
+  instead of padding it to a round number.
+- **The trim respects the floor** (`trim.ts`): it refuses a cut that would take
+  a paragraph below the floor of the *post-trim* passage, so fixing an
+  over-length passage can never convert it into a fragment. If it cannot reach
+  the band without fragmenting, it stops and the caller reports the length issue
+  it started with.
+- **Not enforced:** cohesion, topic anchoring and whether the paragraph is
+  *good* — see 12.1. The floor only catches a paragraph that cannot be one.
+
+`src/lib/generate/paragraph-balance.test.ts` pins the reported passage, the
+reference paper, the arithmetic, the validator wiring and the trim guard.
 
 ### 12.3 The model roster churns; verify before trusting it
 

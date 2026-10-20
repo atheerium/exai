@@ -9,6 +9,7 @@ import { officialTable, rulePrescribesTable, type RawTable } from "@/lib/export/
 import { normaliseParagraphIdPrompt } from "@/lib/export/paragraph-id";
 import { stripAnswerLines } from "@/lib/export/answer-lines";
 import { candidateCount, DEFAULT_CANDIDATES } from "./candidates";
+import { minParagraphWords } from "./paragraph-balance";
 import { isReferentWord, locateReferent, pickReferents } from "./referents";
 import type { GenContext } from "./index";
 
@@ -287,6 +288,12 @@ function coherenceNote(ctx: GenContext): string {
     "Structure the passage as a short report that develops ONE idea: the opening paragraph states the main point, " +
     `the following paragraph${paragraphs > 3 ? "s develop it" : " develops it"} ` +
     "with related information, and the closing paragraph adds the consequence or conclusion without introducing new facts. " +
+    // Balance, stated as a minimum rather than an equality: real exam passages
+    // run 60 / 47 / 50 words, and demanding equal paragraphs makes the model
+    // pad rather than develop. The reported failure was 58 / 54 / 16.
+    `Every paragraph must carry real content: with ${paragraphs} paragraphs across ${ctx.length} words, ` +
+    `no paragraph may be shorter than ${minParagraphWords(ctx.length, paragraphs)} words, and a paragraph made of ` +
+    "one short sentence is INVALID. Paragraphs may differ in length, but none may read as a leftover closing remark. " +
     "Hold the paragraphs together the way a well-written article does: carry a subject across the boundary and refer " +
     "back to it with pronouns, synonyms and related words (for example a subject named once is then called `it`, " +
     "`they`, `such research`, or simply is not renamed). " +
@@ -319,7 +326,9 @@ function passageShapeRule(ctx: GenContext): string {
   return (
     ` HARD REQUIREMENTS for the "text" field: it MUST contain exactly ${paragraphs} paragraphs ` +
     `separated by two newlines (\\n\\n), and its word count MUST be between ${minWords} and ${maxWords}. ` +
-    "A one-paragraph answer or a passage outside that word range is INVALID. Count the paragraphs and " +
+    `No paragraph may be shorter than ${minParagraphWords(ctx.length, paragraphs)} words -- a paragraph of one ` +
+    "short sentence is INVALID. " +
+    "A one-paragraph answer, a fragment paragraph or a passage outside that word range is INVALID. Count the paragraphs and " +
     "words before you reply; if your draft fails either check, rewrite it before returning JSON."
   );
 }
