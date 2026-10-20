@@ -207,17 +207,36 @@ fi
 
 # --- the plan ----------------------------------------------------------------
 
-[[ -n "$MSG" ]] || die "a commit message is required: -m \"type(scope): summary\""
+# How many local commits are not on the remote yet. A clean tree is not the same
+# as "nothing to ship": another session (or the agent) may have committed and
+# left the push for later, which is the common case for this script.
+unpushed_count() {
+  if git rev-parse --verify --quiet "origin/$BRANCH" >/dev/null 2>&1; then
+    git rev-list --count "origin/$BRANCH..HEAD" 2>/dev/null || echo 0
+  else
+    # Branch not on the remote yet: publishing it is the job.
+    echo 1
+  fi
+}
+
+AHEAD="$(unpushed_count)"
 
 # `--dry-run` must not touch the index either; report the plan from status.
 if [[ "$DRY_RUN" == "1" ]]; then
   PLAN="$(git status --short)"
   if [[ -z "$PLAN" ]]; then
     ok "nothing to commit — working tree matches HEAD"
+    if [[ "$AHEAD" == "0" ]]; then
+      ok "nothing unpushed — HEAD is already on origin/$BRANCH"
+      exit 0
+    fi
+    warn "would push $AHEAD unpushed commit(s), no new commit"
+    warn "would run: npm run build is unaffected; gates still run"
     exit 0
   fi
   say "Would stage"
   printf '%s\n' "$PLAN"
+  [[ -n "$MSG" ]] || die "a commit message is required: -m \"type(scope): summary\""
   say "Dry run — would commit on '$BRANCH' with: $MSG"
   if [[ "$SKIP_TESTS" == "0" ]]; then warn "would run: npm test"; fi
   warn "would run: npm run typecheck"
@@ -230,14 +249,19 @@ fi
 git add -A
 
 STAT="$(git diff --cached --stat)"
+SKIP_COMMIT=0
 if [[ -z "$STAT" ]]; then
-  ok "nothing staged — working tree matches HEAD"
-  say "Skipping commit; nothing to ship"
-  exit 0
+  if [[ "$AHEAD" == "0" ]]; then
+    ok "nothing to commit and nothing unpushed — HEAD is already on origin/$BRANCH"
+    exit 0
+  fi
+  ok "nothing to commit, but $AHEAD commit(s) are unpushed — pushing those"
+  SKIP_COMMIT=1
+else
+  [[ -n "$MSG" ]] || die "a commit message is required: -m \"type(scope): summary\""
+  say "Changes to commit"
+  printf '%s\n' "$STAT"
 fi
-
-say "Changes to commit"
-printf '%s\n' "$STAT"
 
 # --- gates -------------------------------------------------------------------
 
@@ -274,8 +298,13 @@ fi
 
 # --- commit + push -----------------------------------------------------------
 
-say "Committing"
-git commit -q -m "$MSG"
+if [[ "$SKIP_COMMIT" == "0" ]]; then
+  say "Committing"
+  git commit -q -m "$MSG" || die "git commit failed"
+  ok "$(git rev-parse --short HEAD)"
+else
+  say "No commit to make — shipping the $AHEAD existing commit(s)"
+fi
 SHA="$(git rev-parse HEAD)"
 ok "$SHA"
 
