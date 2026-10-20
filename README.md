@@ -126,7 +126,9 @@ headings, marks and typography:
   per blank; every blank in the passage is numbered, so students answer with the
   number and the word.
 
-The answer key is stored but **never printed** on either format.
+The answer key is stored for the teacher's **Answer key** toggle and **never
+printed** on either format. The exported paper is the student sheet: no answer
+text appears on it, including when a generated prompt accidentally contains one.
 
 ## Good to know
 

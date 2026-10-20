@@ -129,6 +129,36 @@ test("examToDto orders tasks and topics by their stored order", async () => {
   assert.deepEqual(dto.sections[0].topics.map((t) => t.id), ["p1", "p2"]);
 });
 
+test("examToDto never exposes a leaked answer line in a task prompt", async () => {
+  const dto = await examToDto(
+    examRow({
+      sections: [
+        {
+          ...SECTION,
+          tasks: [
+            {
+              id: "t1",
+              skill: "GRAMMAR",
+              prompt: "A) One.\nB) Two ..........\nanswer: Two is the same as one.",
+              instruction: "Rewrite sentence B so that it means the same as sentence A.",
+              answer: "Two is the same as one.",
+              marks: 2,
+              order: 1,
+              manualEdited: false,
+              family: "REWRITE",
+              tableData: null,
+              candidates: null,
+            },
+          ],
+        },
+      ],
+    })
+  );
+  const task = dto.sections[0].tasks[0];
+  assert.equal(task.prompt, "A) One.\nB) Two ..........");
+  assert.equal(task.answer, "Two is the same as one.");
+});
+
 test("examToDto tolerates unparseable section content instead of throwing", async () => {
   const dto = await examToDto(examRow({ sections: [{ ...SECTION, content: "{not json" }] }));
   assert.equal(dto.sections[0].text, null);

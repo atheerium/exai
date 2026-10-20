@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildPaper, letterLabel, parseTaskBody, emphasisFrom, extractWordBank, highlightRuns, WORD_BANK_SEPARATOR } from "./paper";
+import { isParagraphIdTask, normaliseParagraphIdOption, normaliseParagraphIdPrompt } from "./paragraph-id";
+import { stripAnswerLines } from "./answer-lines";
 import { assembleDocument } from "./assemble";
 import { getGuide } from "@/data/guides";
 import type { ExamDto, SectionDto } from "@/types";
@@ -647,6 +649,39 @@ test("a grammar prompt with no A/B pair still uses the generic letters", () => {
   assert.deepEqual(items.map((i) => i.label), ["a)", "b)"]);
 });
 
+test("an answer line leaked into a prompt is never printed", () => {
+  // Measured live 2026-10-20: the model appended the answer to the rewrite
+  // prompt. `parseTaskBody` put it in `lead`, so it printed ABOVE the pair on
+  // the student sheet. The paper carries no answers.
+  const prompt =
+    "A) Marketers use colour, music, and timing to create an immediate impression.\n" +
+    "B) An immediate impression ..........\n" +
+    "answer: An immediate impression is created by marketers using colour, music, and timing.";
+  const { lead, items } = parseTaskBody(
+    prompt,
+    "Rewrite sentence B so that it means the same as sentence A.",
+    "REWRITE"
+  );
+  assert.deepEqual(lead, []);
+  assert.deepEqual(items.map((i) => i.text), [
+    "Marketers use colour, music, and timing to create an immediate impression.",
+    "An immediate impression",
+  ]);
+  assert.equal(items[1].gap, true);
+});
+
+test("answer lines are stripped and a real instruction is not", () => {
+  assert.equal(stripAnswerLines("A) One.\nB) Two ..........\nanswer: Two."), "A) One.\nB) Two ..........");
+  assert.equal(stripAnswerLines("A) One.\n**Answer:** Two."), "A) One.");
+  assert.equal(stripAnswerLines("A) One.\nANSWER KEY\nB) Two .........."), "A) One.\nB) Two ..........");
+  // A task instruction is not an answer label.
+  assert.equal(
+    stripAnswerLines("Answer the following questions according to the text."),
+    "Answer the following questions according to the text."
+  );
+  assert.equal(stripAnswerLines("Answer:"), "");
+});
+
 test("a lead-in still wins when prefixed items follow it", () => {
   const { lead, items } = parseTaskBody("Match each idea.\n1. One\n2. Two");
   assert.deepEqual(lead, ["Match each idea."]);
@@ -764,4 +799,94 @@ test("numbered gaps preserve reading order across the passage", () => {
   assert.ok(first >= 0 && second > first, "both blanks are numbered in order");
   // The first numbered blank must appear BEFORE the second gap's sentence text.
   assert.ok(first < text.indexOf("Beta"), "gap 1 precedes the second sentence");
+});
+
+// ---------------------------------------------------------------------------
+// PARAGRAPH_ID: the stem prints once, each option is the bare statement.
+// Teacher report 2026-10-20 (the whole point of the task is placing an idea, so
+// repeating "In which paragraph is it mentioned that" four times is noise).
+// ---------------------------------------------------------------------------
+const LIVE_PARAGRAPH_ID_OPTIONS = [
+  "a) In which paragraph is it mentioned that marketers use colour, music, and timing to create an immediate impression?",
+  "b) In which paragraph is it mentioned that a simple change in font style can alter perceived trustworthiness within seconds?",
+  "c) In which paragraph is it mentioned that shoppers who viewed ads featuring aspirational scenery were willing to pay up to 20% more for the same product?",
+  "d) In which paragraph is it mentioned that the consequence of the psychological approach is a market where persuasion is often invisible yet powerful?",
+].join("\n");
+
+const PARAGRAPH_ID_STEM = "In which paragraph is it mentioned that...?";
+
+test("PARAGRAPH_ID options print as bare statements, not the repeated lead-in", () => {
+  const { items } = parseTaskBody(LIVE_PARAGRAPH_ID_OPTIONS, PARAGRAPH_ID_STEM, "PARAGRAPH_ID");
+  assert.equal(items.length, 4, "four options, one per line");
+  assert.deepEqual(items.map((i) => i.label), ["a)", "b)", "c)", "d)"]);
+  assert.equal(items[0].text, "Marketers use colour, music, and timing to create an immediate impression.");
+  assert.equal(
+    items[1].text,
+    "A simple change in font style can alter perceived trustworthiness within seconds."
+  );
+  assert.equal(
+    items[3].text,
+    "The consequence of the psychological approach is a market where persuasion is often invisible yet powerful."
+  );
+  for (const item of items) {
+    assert.doesNotMatch(item.text, /in which paragraph/i, "the lead-in never reaches an option");
+    assert.doesNotMatch(item.text, /\?$/, "options end with a period, never a question mark (EXAM.md 2A)");
+  }
+});
+
+test("a bare PARAGRAPH_ID statement is left untouched", () => {
+  const { items } = parseTaskBody("Marketers use colour, music, and timing.", PARAGRAPH_ID_STEM, "PARAGRAPH_ID");
+  assert.equal(items[0].text, "Marketers use colour, music, and timing.");
+});
+
+test("the lead-in is stripped from a legacy row that has no family stamped", () => {
+  const { items } = parseTaskBody(LIVE_PARAGRAPH_ID_OPTIONS, PARAGRAPH_ID_STEM);
+  assert.equal(items[0].text, "Marketers use colour, music, and timing to create an immediate impression.");
+});
+
+test("the stem line itself is dropped, not turned into an empty option", () => {
+  const prompt = `${PARAGRAPH_ID_STEM}\n${LIVE_PARAGRAPH_ID_OPTIONS}`;
+  const { lead, items } = parseTaskBody(prompt, PARAGRAPH_ID_STEM, "PARAGRAPH_ID");
+  assert.equal(items.length, 4, "the duplicate stem is not an item");
+  assert.deepEqual(lead, [], "and it is not printed as a second lead-in either");
+});
+
+test("normaliseParagraphIdOption is idempotent and keeps labels off the body", () => {
+  const once = normaliseParagraphIdOption(
+    "According to the text, marketers use colour to create an immediate impression?"
+  );
+  assert.equal(once, "Marketers use colour to create an immediate impression.");
+  assert.equal(normaliseParagraphIdOption(once), once);
+});
+
+test("normaliseParagraphIdPrompt cleans every labelled line of a stored prompt", () => {
+  const cleaned = normaliseParagraphIdPrompt(
+    "1. In which paragraph is it mentioned that marketers use colour?\n2. In which paragraph is it mentioned that fonts alter trust?"
+  );
+  assert.equal(cleaned, "1. Marketers use colour.\n2. Fonts alter trust.");
+});
+
+test("isParagraphIdTask recognises the family and the official wording", () => {
+  assert.equal(isParagraphIdTask("PARAGRAPH_ID"), true);
+  assert.equal(isParagraphIdTask(null, PARAGRAPH_ID_STEM), true);
+  assert.equal(isParagraphIdTask("TRUE_FALSE", "Say whether the following statements are true or false."), false);
+});
+
+test("a lead-in line without the ellipsis is dropped, not printed as a second stem", () => {
+  const prompt = `In which paragraph is it mentioned that\n${LIVE_PARAGRAPH_ID_OPTIONS}`;
+  const { lead, items } = parseTaskBody(prompt, PARAGRAPH_ID_STEM, "PARAGRAPH_ID");
+  assert.deepEqual(lead, [], "the stem is not printed twice");
+  assert.equal(items.length, 4, "and the lead-in does not become an option");
+});
+
+test("a lead-in-only prompt line is never stored as an option", () => {
+  const prompt = normaliseParagraphIdPrompt(
+    "In which paragraph is it mentioned that?\n1. In which paragraph is it mentioned that marketers use colour?\n2. In which paragraph is it mentioned that fonts alter trust?"
+  );
+  assert.equal(prompt, "1. Marketers use colour.\n2. Fonts alter trust.");
+});
+
+test("normaliseParagraphIdOption returns empty for the bare stem", () => {
+  assert.equal(normaliseParagraphIdOption("In which paragraph is it mentioned that...?"), "");
+  assert.equal(normaliseParagraphIdOption("In which paragraph is it mentioned that"), "");
 });

@@ -43,10 +43,10 @@ before(async () => {
       // mismatch -- so deriving them from the payload keeps the stub honest for
       // whichever guide the context resolved.
       const payload = sent[sent.length - 1] as any;
-      const rules: { marks: number; skill: string }[] =
+      const rules: { marks: number; skill: string; family?: string }[] =
         payload?.kind === "TEXT_EXPLORATION"
           ? (payload.skills ?? []).map((s: any) => ({ marks: s.marks, skill: s.skill }))
-          : (payload?.families ?? []).map((f: any) => ({ marks: f.marks, skill: "READING" }));
+          : (payload?.families ?? []).map((f: any) => ({ marks: f.marks, skill: "READING", family: f.family }));
       // Tabular skills come back with the answer cells FILLED. That is the real
       // failure the blanking stamp exists to absorb: the model answers its own
       // chart. Only the skills the payload marks as tabular get a table at all.
@@ -57,7 +57,13 @@ before(async () => {
       );
       const sets = [0, 1, 2].map(() => ({
         tasks: rules.map((r) => ({
-          prompt: "1. Curiosity -> ..........",
+          // The paragraph-identification task reprints its stem on every option,
+          // which is what a live model actually returned (2026-10-20). The stamp
+          // has to absorb it — the prompt rule alone did not hold.
+          prompt:
+            r.family === "PARAGRAPH_ID"
+              ? "1. In which paragraph is it mentioned that marketers use colour, music, and timing?\n2. In which paragraph is it mentioned that fonts alter perceived trust?"
+              : "1. Curiosity -> ..........",
           instruction: "Do it.",
           answer: "",
           marks: r.marks,
@@ -194,6 +200,18 @@ test("Part One prompt asks for bare PARAGRAPH_ID options, not repeated lead-ins"
   assert.match(request, /For PARAGRAPH_ID items, write each option as the bare statement itself/i);
   assert.match(request, /do NOT repeat the lead-in "In which paragraph is it mentioned that"/i);
   assert.match(request, /end each option with a period, not a question mark/i);
+});
+
+test("PARAGRAPH_ID options are stripped of the repeated lead-in at stamp time", async () => {
+  sent = [];
+  const sets = await createCompatibleGenerators(config).generatePartOneCandidates(ctx(PASSAGE));
+  const task = sets[0].find((t) => t.family === "PARAGRAPH_ID");
+  assert.ok(task, "the 3as guide carries a paragraph-identification task");
+  assert.equal(
+    task!.prompt,
+    "1. Marketers use colour, music, and timing.\n2. Fonts alter perceived trust.",
+    "the lead-in prints once as the stem, never on the options"
+  );
 });
 
 test("Part One prompt states the bare referent shape and the three-option format", async () => {

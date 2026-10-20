@@ -32,7 +32,7 @@ Change the layout there and all three follow.
 
 | Rule | Enforced in |
 |---|---|
-| No answers on the paper | `src/lib/export/assemble.ts`, `src/lib/generate/mock.ts` |
+| No answers on the paper | `src/lib/export/assemble.ts`, `src/lib/export/paper.ts` (`stripAnswerLines`), `src/lib/export/answer-lines.ts`, `src/lib/generate/mock.ts` |
 | Paper structure and headings | `src/lib/export/assemble.ts` |
 | Typography, tables, Arabic header | `src/lib/export/pdf.ts`, `src/lib/export/arabic.ts` |
 | Block model (single layout source) | `src/lib/export/paper.ts` |
@@ -79,8 +79,16 @@ Two mechanisms enforce this:
 - The live providers (`provider.ts`) are instructed: any table cell the student
   must fill is an empty string; the correct value goes only in `answer`.
 
+A third mechanism catches the leak the first two miss: **a model writing the
+answer into the prompt itself** (`answer: ...`), which the paper would print
+verbatim. `stripAnswerLines()` in `src/lib/export/answer-lines.ts` removes such
+lines at stamp time in `provider.ts` and again inside `parseTaskBody`, so drafts
+saved before the fix print clean too. Measured live 2026-10-20 on the sentence
+rephrasing task. A prompt instruction alone did not hold.
+
 Exports (`assemble.ts`) never read the `answer` field, so PDF and DOCX cannot
-carry an answer key. `buildPaper` drops it structurally.
+carry an answer key. `buildPaper` drops it structurally. **The paper is the
+student sheet: no answer text may appear on it in any surface, ever.**
 
 ## 2. Paper structure
 
@@ -486,7 +494,7 @@ rendered. "Gap" means the item ends in a dotted leader the student writes into.
 | 1B True/False | "Say whether the following statements are true or false." | 3-4 statements | lettered items; optional Statement/Answer chart with blank answer column; **no source attribution**: a statement never says "the passage says/states", "the text", "the article", "the author", "according to", or any similar framing, and is stated directly in the active voice (e.g. "Colour schemes have no effect on consumer emotions.") |
 | 1C True/False + correction | "Say whether the following statements are true or false and correct the false ones." | 3-4 statements | as 1B, including the absolute ban on source attribution; statements are direct active-voice claims |
 | 1D Multiple choice | "Write the letter that corresponds to the right answer." / "Choose the answer to complete each statement." | <=4 items, exactly 3 choices each | lettered items with choices inline |
-| 2A Paragraph identification | "Identify the paragraph in which the following ideas are mentioned." | 2 ideas from 2 different paragraphs | lettered ideas, each the bare statement itself (e.g. "Marketers combine visual appeal with storytelling."); no repeated "In which paragraph is it mentioned that..." lead-in per item and no question mark; optional Idea/Paragraph chart |
+| 2A Paragraph identification | "Identify the paragraph in which the following ideas are mentioned." | 2 ideas from 2 different paragraphs | lettered ideas, each the bare statement itself (e.g. "Marketers combine visual appeal with storytelling."); the "In which paragraph is it mentioned that..." lead-in prints ONCE as the stem, never per item, and no option ends in a question mark — enforced in code (`export/paragraph-id.ts`) at stamp and print time, not only requested in the prompt; optional Idea/Paragraph chart |
 | 2B Sentence ordering | "Put the following ideas in the order they appear in the text." | 3-4 ideas | lettered items |
 | 2C Table completion | "Fill in the following table with information from the text." | exactly 4 items filled | table, answer column blank |
 | 3 Direct/inferential | "Answer the following questions according to the text." | 3-4 questions, exactly 1 inference | lettered questions |

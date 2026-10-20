@@ -6,6 +6,8 @@
 
 import type { GeneratedSource, GeneratedTask, GeneratedTextCandidate, GeneratedTopic } from "@/types";
 import { officialTable, rulePrescribesTable, type RawTable } from "@/lib/export/tables";
+import { normaliseParagraphIdPrompt } from "@/lib/export/paragraph-id";
+import { stripAnswerLines } from "@/lib/export/answer-lines";
 import { candidateCount, DEFAULT_CANDIDATES } from "./candidates";
 import { isReferentWord, locateReferent, pickReferents } from "./referents";
 import type { GenContext } from "./index";
@@ -1062,6 +1064,13 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         if (!spec) return task;
         const stamped = {
           ...task,
+          // The PARAGRAPH_ID stem prints once, so an option that reprints the
+          // lead-in is stripped HERE as well as in `export/paper.ts`: the stored
+          // draft and the builder editor must show the shape the paper prints.
+          // A prompt rule alone did not hold (measured live 2026-10-20).
+          prompt: stripAnswerLines(
+            spec.family === "PARAGRAPH_ID" ? normaliseParagraphIdPrompt(task.prompt) : task.prompt
+          ),
           skill: "READING",
           marks: spec.marks,
           family: spec.family,
@@ -1128,7 +1137,18 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
       set.map((task, i) => {
         const spec = guideSkills[i];
         if (!spec) return task;
-        const stamped = { ...task, skill: spec.skill, marks: spec.marks, family: task.family ?? spec.family };
+        const stamped = {
+          ...task,
+          // The paper is the student sheet: a model that appends "answer: ..."
+          // to the prompt must not print it (measured live 2026-10-20 on the
+          // sentence-rephrasing task). Stamped here so the stored draft and the
+          // builder editor are clean; `parseTaskBody` also strips it for rows
+          // saved before this fix.
+          prompt: stripAnswerLines(task.prompt),
+          skill: spec.skill,
+          marks: spec.marks,
+          family: task.family ?? spec.family,
+        };
         // Same reasoning as the fields above: computed, not generated. A tabular
         // task's cells past column 0 ARE the student's answers, so the model
         // filling them in is not a style problem -- it is an answer key printed on

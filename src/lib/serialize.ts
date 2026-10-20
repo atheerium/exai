@@ -3,6 +3,7 @@
 import { prisma, type DbClient } from "@/lib/db";
 import type { ExamDto, SectionDto, SourceDto, TaskDto, TopicDto, ExamConfigDto } from "@/types";
 import { DEFAULT_PARAGRAPH_COUNT } from "@/lib/generate";
+import { stripAnswerLines } from "@/lib/export/answer-lines";
 
 /** Schema for the JSON stored in ExamSection.content */
 interface SectionContent {
@@ -51,7 +52,12 @@ function parseTasks(tasks: {
     .map((t) => ({
       id: t.id,
       skill: t.skill,
-      prompt: t.prompt,
+      // The paper is the student sheet. New drafts are stamped clean in
+      // `provider.ts`, but rows saved before `stripAnswerLines` existed still
+      // carry a leaked "answer: ..." line in their prompt. Cleaning the DTO
+      // repairs the builder editor, the preview and every export at once
+      // without rewriting the database.
+      prompt: stripAnswerLines(t.prompt),
       instruction: t.instruction,
       answer: t.answer,
       marks: t.marks,

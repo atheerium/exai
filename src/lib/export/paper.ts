@@ -14,6 +14,8 @@ import type { ExportDocument, ExportHeader, ExportTask, ExportTopic } from "./as
 import { isReferentWord, locateReferent, phraseRanges } from "@/lib/generate/referents";
 import { taskHasTable, tabularTaskPrintsItems, tableKindFromHeaders, type TableKind } from "./tables";
 import { hasInlineGap, numberGaps } from "./gaps";
+import { isParagraphIdTask, normaliseParagraphIdOption } from "./paragraph-id";
+import { stripAnswerLines } from "./answer-lines";
 
 export interface PaperTable {
   headers: string[];
@@ -316,11 +318,24 @@ export function parseTaskBody(
 ): { lead: string[]; items: PaperItem[] } {
   const lead: string[] = [];
   const items: PaperItem[] = [];
+  // The paper is the STUDENT sheet. A model that writes "answer: ..." into the
+  // prompt must not print it (measured live 2026-10-20, sentence rephrasing).
+  // New drafts are cleaned at stamp time in `provider.ts`; this also repairs
+  // drafts saved before that, on all three print surfaces.
+  prompt = stripAnswerLines(prompt);
   const target = (instruction ?? "").trim().toLowerCase();
+  // The paragraph-identification stem prints ONCE; each option is the bare
+  // statement. A live model still reprinted the lead-in on every option, so the
+  // printed shape is enforced here as well as at stamp time (`paragraph-id.ts`).
+  const paragraphId = isParagraphIdTask(family, instruction);
 
   const pushItem = (body: string) => {
-    const ref = PARA_REF.exec(body);
-    const withoutRef = ref ? body.replace(PARA_REF, "").trim() : body;
+    const source = paragraphId ? normaliseParagraphIdOption(body) : body;
+    // A lead-in-only line normalises to empty: the stem already printed from the
+    // task instruction, so it must not become an option of its own.
+    if (!source.trim()) return;
+    const ref = PARA_REF.exec(source);
+    const withoutRef = ref ? source.replace(PARA_REF, "").trim() : source;
     const gap = GAP.test(withoutRef);
     items.push({
       label: "",
@@ -482,7 +497,10 @@ export function parseTaskBody(
     }
 
     if (items.length === 0) {
-      // Prefixed items follow, so this bare line is the lead-in.
+      // Prefixed items follow, so this bare line is the lead-in. A lead-in that
+      // only repeats the paragraph-identification stem is dropped: the stem
+      // prints once from the instruction.
+      if (paragraphId && !normaliseParagraphIdOption(line).trim()) continue;
       lead.push(line);
       continue;
     }
@@ -646,7 +664,7 @@ function toPaperTask(task: ExportTask, number: number): PaperTask {
   // line by line). Previously `wordList` was derived with `lead.find(...)` but
   // the line stayed in `lead`, so the PDF printed a recognised bank twice: once
   // indented under the stem and once centred.
-  const bank = extractWordBank(task.prompt);
+  const bank = extractWordBank(stripAnswerLines(task.prompt));
   // A gap-fill PROMPT has two printed shapes and only the gap positions tell
   // them apart (teacher report, 2026-10-19). When a gap sits INSIDE a running
   // sentence, the sentences are a passage: it prints unlettered, indented and
