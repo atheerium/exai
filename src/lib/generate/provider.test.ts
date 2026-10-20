@@ -568,6 +568,12 @@ test("TEXT_EXPLORATION request states the gap-fill count when the guide has GAP_
     /List: \[word1, word2, word3, word4\]/,
     "the example bank must carry four words, matching the four-gap contract"
   );
+  // The paragraph shape (teacher report 2026-10-20): four blanks in a row is
+  // still four gaps, so the request must state the distribution rule and carry
+  // a worked paragraph where every gap sits inside its own phrase.
+  assert.match(userMessage, /THREE OR FOUR SENTENCES/, "the paragraph length must be stated");
+  assert.match(userMessage, /NEVER two or more gaps next to each other/, "the distribution rule must be stated");
+  assert.match(userMessage, /consider the ___ of your actions/, "the request must carry the worked paragraph example");
 });
 
 // --- Passage shape: the LAST thing the model reads (2026-10-20) --------------

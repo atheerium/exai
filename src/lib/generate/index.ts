@@ -26,7 +26,7 @@ import { taskHasTable } from "@/lib/export/tables";
 import { extractWordBank } from "@/lib/export/paper";
 // `gapCount` measures the gap markers in the task text; `extractWordBank` strips
 // the `List: [...]` line first, so the bracketed list is never mistaken for a gap.
-import { gapCount } from "@/lib/export/gaps";
+import { countSentences, gapCount, hasClusteredGaps } from "@/lib/export/gaps";
 import type { GenerationRequest } from "@/types";
 import * as mock from "./mock";
 import { createCompatibleGenerators } from "./provider";
@@ -507,6 +507,21 @@ export function validateCandidate(
               if (dupes.length > 0) {
                 issues.push(`Task ${i + 1} repeats the word(s) ${dupes.join(", ")} in its word list; each word may be used only once.`);
               }
+            }
+            // The SHAPE, not just the count (teacher report 2026-10-20): a live
+            // run emitted four blanks in a row in one sentence -- "how ___,
+            // ___, ___, ___ shape our habits" -- which is a list of blanks, not
+            // a gap-fill paragraph. Both properties are exactly computable;
+            // whether each word fits its gap is not, and stays prompt-enforced.
+            if (hasClusteredGaps(rest)) {
+              issues.push(
+                `Task ${i + 1} places gaps next to each other; each gap must sit inside its own phrase or sentence, with words between it and the next gap.`
+              );
+            }
+            if (countSentences(rest) < 2) {
+              issues.push(
+                `Task ${i + 1} is a gap-fill paragraph: it must be at least two sentences, not one sentence holding every blank.`
+              );
             }
           }
           // Sentence rephrasing: a complete `A)` sentence and a `B)` stem ending

@@ -551,28 +551,37 @@ function tableRequirementNote(
 }
 
 /**
- * Gap fill: the count contract (user instruction, 2026-10-19).
+ * Gap fill: the count and the paragraph shape (user instructions, 2026-10-19
+ * and 2026-10-20).
  *
- * A live run printed a 3-word bank (`awareness - impulsive - critical`) above a
- * paragraph with FOUR gaps, and the words did not fit their gaps. The COUNT is
- * mechanically checkable (`gapCount` in `export/gaps.ts` measures the gaps,
- * `extractWordBank` measures the bank), so the validator enforces it -- see
- * `validateCandidate` in `generate/index.ts`. Whether each word fits its gap in
- * grammar and meaning is NOT mechanically checkable and is prompt-enforced only,
- * exactly like answerability: this rule states the numbers literally because
- * prose does not bind (the same lesson as the item counts, the word band and the
- * table requirement).
+ * Two live failures drove this rule:
+ *  - a 3-word bank (`awareness - impulsive - critical`) above a paragraph with
+ *    FOUR gaps, where the words did not fit their gaps;
+ *  - four blanks in a row inside ONE sentence -- "how ___, ___, ___, ___ shape
+ *    our habits" -- instead of a paragraph with a missing word in each phrase.
+ *
+ * The COUNT and the SHAPE are mechanically checkable, so the validator enforces
+ * them (`validateCandidate` in `generate/index.ts`): `gapCount` measures the
+ * gaps, `hasClusteredGaps` rejects blanks separated only by punctuation, and
+ * `countSentences` rejects a one-sentence body -- all in `export/gaps.ts`.
+ * Whether each word fits its gap in grammar and meaning is NOT mechanically
+ * checkable and is prompt-enforced only, exactly like answerability. The
+ * numbers, the distribution rule and the worked example are stated literally
+ * because prose does not bind (the same lesson as the item counts, the word
+ * band and the table requirement).
  */
 function gapFillRule(skills: { family?: string | null; constraints?: { gapCount?: number } }[]): string {
   const rule = skills.find((s) => s.family === "GAP_FILL");
   if (!rule) return "";
   const n = rule.constraints?.gapCount ?? 4;
   return (
-    ` For the DISCOURSE task whose instruction is "Fill in the gaps with words from the list given.", the "prompt" must be ONE coherent paragraph on the ` +
-    `passage topic with EXACTLY ${n} gaps marked with three underscores ("___"). Its FIRST line is the word list, exactly ` +
-    `List: [word1, word2, word3, word4] -- EXACTLY ${n} words, one word for each gap, each word used only once, no extra words and no distractors. ` +
-    `Every gap must be a position where its word fits BOTH the grammar and the meaning of the sentence; after the words are inserted the paragraph must read as ` +
-    `correct, natural English. The "answer" field lists the ${n} words in gap order. `
+    ` For the DISCOURSE task whose instruction is "Fill in the gaps with words from the list given.", the "prompt" must be a short coherent PARAGRAPH of THREE OR FOUR SENTENCES on the passage topic, with EXACTLY ${n} gaps marked with three underscores ("___"). ` +
+    `Its FIRST line is the word list, exactly List: [word1, word2, word3, word4] -- EXACTLY ${n} words, one word for each gap, each word used only once, no extra words and no distractors. ` +
+    `DISTRIBUTE the gaps through the paragraph: one gap per sentence where possible, and NEVER two or more gaps next to each other or separated only by commas. Between any two gaps the paragraph must carry real words (a phrase or a clause), as in a normal text with missing words -- NOT a list of blanks such as "how ___, ___, ___, ___ shape our habits". ` +
+    `Each gap must be a position where its word fits BOTH the grammar and the meaning of its sentence (a noun where a noun is needed, an adjective where an adjective is needed, the right preposition or connector); after the words are inserted the whole paragraph must read as correct, natural English. ` +
+    `The "answer" field lists the ${n} words in gap order. ` +
+    `For example: List: [involved, consequences, obey, professional]\n` +
+    `Ethical behaviour and good citizenship can improve your ___ and social success. In order to be a good citizen, you should consider the ___ of your actions, ___ laws and be respectful. By being morally ___, you encourage others to do the same. `
   );
 }
 

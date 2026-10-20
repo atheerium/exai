@@ -4,7 +4,7 @@ import { getGuide, GUIDES } from "../../data/guides";
 import { candidateCount } from "./candidates";
 import { isBlankCell, tableKindFromHeaders } from "@/lib/export/tables";
 import { extractWordBank } from "@/lib/export/paper";
-import { gapCount } from "@/lib/export/gaps";
+import { countSentences, gapCount, hasClusteredGaps } from "@/lib/export/gaps";
 import { validateCandidate } from "./index";
 import {
   generateText,
@@ -474,6 +474,11 @@ test("every grade's primary GAP_FILL mock carries 4 gaps and 4 unique bank words
       `${grade}: bank words must be unique, got ${words.join(", ")}`
     );
     assert.equal(gapCount(rest), 4, `${grade}: task must carry 4 gaps, got ${gapCount(rest)}`);
+    // The paragraph shape, not just the count (teacher report 2026-10-20):
+    // four blanks in a row is still four gaps, so the mock must distribute them
+    // through a multi-sentence paragraph like the real providers are asked to.
+    assert.equal(hasClusteredGaps(rest), false, `${grade}: gaps must be distributed, not listed`);
+    assert.ok(countSentences(rest) >= 2, `${grade}: the gap-fill body must be a multi-sentence paragraph`);
     // And the guide validator accepts exactly the shape the mock produced.
     const v = validateCandidate("TEXT_EXPLORATION", tasks, guide.marks.textExploration, { guide });
     assert.ok(v.ok, `${grade}: ${v.issues.join("; ")}`);

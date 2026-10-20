@@ -121,6 +121,35 @@ test("the guide validator rejects a repeated word in a GAP_FILL list", async () 
   assert.match(v.issues.join(" "), /only once/);
 });
 
+test("the guide validator rejects gaps listed one after another in one sentence", async () => {
+  // Reported live 2026-10-20: "The psychology ... studies how ___, ___, ___,
+  // ___ shape our buying habits." Four gaps, four words, and still not a
+  // gap-fill task: the student sees a list of blanks, not a paragraph.
+  const ctx = buildContext(input);
+  const sets = await generateTextExplorationCandidates(ctx);
+  const set = structuredClone(sets[0]!);
+  const gap = set.find((t) => t.skill === "DISCOURSE")!;
+  gap.prompt = `List: [alpha, bravo, charlie, delta]\nThe text studies how ___, ___, ___, ___ shape our habits.`;
+  const v = validateCandidate("TEXT_EXPLORATION", set, ctx.guide.marks.textExploration, { guide: ctx.guide });
+  assert.equal(v.ok, false);
+  assert.match(v.issues.join(" "), /next to each other/);
+  assert.match(v.issues.join(" "), /at least two sentences/);
+});
+
+test("the guide validator accepts distributed gaps through a paragraph", async () => {
+  // The shape the rule asks for: every gap inside its own phrase, three
+  // sentences, no two blanks adjacent.
+  const ctx = buildContext(input);
+  const sets = await generateTextExplorationCandidates(ctx);
+  const set = structuredClone(sets[0]!);
+  const gap = set.find((t) => t.skill === "DISCOURSE")!;
+  gap.prompt =
+    `List: [involved, consequences, obey, professional]\n` +
+    `Ethical behaviour can improve your ___ and social success. A good citizen should consider the ___ of their actions, ___ laws and be respectful. By being morally ___, you encourage others to do the same.`;
+  const v = validateCandidate("TEXT_EXPLORATION", set, ctx.guide.marks.textExploration, { guide: ctx.guide });
+  assert.ok(v.ok, v.issues.join("; "));
+});
+
 test("generateWritingCandidates yields 3 valid writing pairs", async () => {
   const pairs = await generateWritingCandidates(buildContext(input));
   assert.equal(pairs.length, DEFAULT_CANDIDATES);

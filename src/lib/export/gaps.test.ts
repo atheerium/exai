@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gapCount, hasInlineGap, numberGaps, numberedGap } from "./gaps";
+import { countSentences, gapCount, hasClusteredGaps, hasInlineGap, numberGaps, numberedGap } from "./gaps";
 
 test("gapCount counts underscore and dot gaps", () => {
   assert.equal(gapCount("A good friend is honest ___ kind."), 1);
@@ -37,6 +37,36 @@ test("a trailing gap followed by punctuation is still trailing", () => {
   assert.equal(hasInlineGap("Friends are honest ___."), false);
   assert.equal(hasInlineGap("Families share duties ___,"), false);
   assert.equal(hasInlineGap("Friends are honest ___"), false);
+});
+
+test("hasClusteredGaps rejects blanks separated only by punctuation", () => {
+  // The reported live shape: four blanks in a row inside one sentence.
+  assert.equal(hasClusteredGaps("The text studies how ___, ___, ___, ___ shape our habits."), true);
+  assert.equal(hasClusteredGaps("The text studies how ___ ___ ___ ___ shape our habits."), true);
+  // Legacy dots behave the same way.
+  assert.equal(hasClusteredGaps("how ..., ..., ..., ... shape habits"), true);
+  // A distributed paragraph is fine, including a gap at a sentence start.
+  assert.equal(
+    hasClusteredGaps(
+      "A good friend is honest ___ kind. ___ they respect differences, classmates work together. ___ mistakes happen, forgiveness keeps the relationship strong."
+    ),
+    false
+  );
+  // A sentence boundary between two gaps is not a cluster: each gap still sits
+  // inside its own sentence.
+  assert.equal(hasClusteredGaps("Teams respect rules ___. ___ they break them, trust suffers."), false);
+  assert.equal(hasClusteredGaps("no gaps here"), false);
+});
+
+test("countSentences counts the paragraph, not the gaps", () => {
+  assert.equal(countSentences("The text studies how ___, ___, ___, ___ shape our habits."), 1);
+  assert.equal(countSentences("First ___. Second ___. Third ___."), 3);
+  // Ellipsis gaps are not sentence boundaries.
+  assert.equal(countSentences("First ... second ..."), 1);
+  assert.equal(countSentences("First ... second. Third ..."), 2);
+  // A text without a final terminator still counts its last fragment.
+  assert.equal(countSentences("no punctuation here"), 1);
+  assert.equal(countSentences(""), 0);
 });
 
 test("numberGaps prints the numbered blank in reading order, across lines", () => {
