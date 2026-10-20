@@ -176,6 +176,25 @@ test("chat: omits reasoning_effort entirely when not configured", async () => {
   assert.ok((lastBody.max_tokens ?? 0) >= 4000, "a default budget is always sent");
 });
 
+test("chat: sends chat_template_kwargs only when configured", async () => {
+  // Measured live 2026-10-20: NVIDIA Nemotron 3.5 Lightning returns EMPTY
+  // content with thinking on, because the reasoning trace consumes max_tokens.
+  // Turning it off is a wire requirement, not an optimisation.
+  mode = "ok";
+  await chat(config({ chatTemplateKwargs: { enable_thinking: false } }), { kind: "TEXT" });
+  assert.deepEqual(lastBody.chat_template_kwargs, { enable_thinking: false });
+  await chat(config(), { kind: "TEXT" });
+  assert.ok(!("chat_template_kwargs" in lastBody), "field must not be sent unless asked for");
+});
+
+test("chat: sends OpenRouter reasoning control only when configured", async () => {
+  mode = "ok";
+  await chat(config({ reasoning: { enabled: false } }), { kind: "TEXT" });
+  assert.deepEqual(lastBody.reasoning, { enabled: false });
+  await chat(config(), { kind: "TEXT" });
+  assert.ok(!("reasoning" in lastBody), "field must not be sent unless asked for");
+});
+
 test("chat: temperature defaults to prose and honours an explicit override", async () => {
   // Structured tasks must not sample: a task that must emit a) b) c) on every
   // retry should produce the same shape each time.
@@ -549,4 +568,45 @@ test("TEXT_EXPLORATION request states the gap-fill count when the guide has GAP_
     /List: \[word1, word2, word3, word4\]/,
     "the example bank must carry four words, matching the four-gap contract"
   );
+});
+
+// --- Passage shape: the LAST thing the model reads (2026-10-20) --------------
+//
+// Measured live on NVIDIA Nemotron 3.5 Lightning: the word band and paragraph
+// count appeared only in the payload (`lengthWords`, `paragraphCount`), and the
+// model returned 1 paragraph / 75 words for a request that needed 3 / 96-144.
+// `validateCandidate` rejected the whole run. The numbers must therefore be
+// stated in the REQUEST, at the END, where the model cannot read past them.
+
+test("TEXT request ends with the literal paragraph and word-count requirements", async () => {
+  mode = "ok";
+  const ctx = buildContext({
+    level: "secondary",
+    grade: "3as",
+    stream: "Lettres et Langues Étrangères",
+    length: 200,
+    unit: "u-ancient",
+    topic: "Ancient civilisations",
+    examId: "exam-passage-shape",
+    paragraphCount: 4,
+  });
+  await createCompatibleGenerators(() => config()).generateTextCandidates(ctx).catch(() => undefined);
+  const userMessage = lastBody.messages.find((m: any) => m.role === "user").content as string;
+
+  const paragraphs = ctx.paragraphCount ?? 3;
+  const minWords = Math.floor(ctx.length * 0.8);
+  const maxWords = Math.ceil(ctx.length * 1.2);
+
+  // The user message is a serialised JSON object, so embedded quotes arrive as
+  // \" and the word band reads "word count ... between X and Y".
+  assert.match(userMessage, /HARD REQUIREMENTS for the/);
+  assert.match(userMessage, new RegExp(`exactly ${paragraphs} paragraphs`));
+  assert.match(userMessage, new RegExp(`between ${minWords} and ${maxWords}`));
+
+  // It must follow the source rule, not precede it: a hard constraint that sits
+  // above the JSON schema is one the model reads as background.
+  const sourceAt = userMessage.indexOf("Never invent an author");
+  const shapeAt = userMessage.indexOf("HARD REQUIREMENTS");
+  assert.ok(sourceAt >= 0, "the source rule must still be present");
+  assert.ok(shapeAt > sourceAt, "the hard shape rule must come after the source rule");
 });

@@ -34,6 +34,22 @@ export interface ProviderConfig {
    * Providers that reject the field must not send it — see `supportsReasoning`.
    */
   reasoningEffort?: "low" | "medium" | "high";
+  /**
+   * Provider-specific chat-template arguments.
+   *
+   * NVIDIA's Nemotron 3.5 Lightning thinks by default, and the reasoning trace
+   * shares `max_tokens` with the visible answer. Measured live 2026-10-20 with
+   * `response_format: json_object` and `max_tokens: 4000`: thinking on returned
+   * `finish_reason: "length"`, 4000 reasoning tokens and an EMPTY content
+   * string; `chat_template_kwargs.enable_thinking: false` returned valid JSON
+   * in 4-9s. Only send this when the endpoint documents the field.
+   */
+  chatTemplateKwargs?: Record<string, unknown>;
+  /**
+   * OpenRouter's reasoning switch. Nemotron reached through OpenRouter has the
+   * same empty-content hazard, so reasoning is disabled there too.
+   */
+  reasoning?: { enabled: boolean };
   /** Generous by default: a task prompt asks for 3 candidate sets. */
   maxTokens?: number;
 }
@@ -65,6 +81,8 @@ export async function chat(
         // Only sent when the provider config asks for it; several OpenAI-compatible
         // endpoints reject the unknown field outright.
         ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {}),
+        ...(config.chatTemplateKwargs ? { chat_template_kwargs: config.chatTemplateKwargs } : {}),
+        ...(config.reasoning ? { reasoning: config.reasoning } : {}),
         ...(opts.useJsonMode === false ? {} : { response_format: { type: "json_object" } }),
         messages: [
           { role: "system", content: SYSTEM },
@@ -279,6 +297,28 @@ function coherenceNote(ctx: GenContext): string {
       ? `Work these teacher keywords into the passage naturally, wherever they belong -- do NOT repeat them in every paragraph: ${ctx.teacherKeywords}. `
       : "") +
     repair
+  );
+}
+
+/**
+ * The passage shape, restated at the END of the request.
+ *
+ * `coherenceNote` already states the same numbers, but it sits mid-request and
+ * Nemotron 3.5 Lightning ignored it: measured live 2026-10-20, the same prompt
+ * returned 1 paragraph / 75 words, and the validator rejected it twice (original
+ * + repair). Moving an explicit `HARD REQUIREMENTS ... INVALID` block to the end,
+ * immediately before the JSON schema, returned 3 paragraphs / 134 words. Models
+ * weight the last instruction; keep this block last and keep the numbers literal.
+ */
+function passageShapeRule(ctx: GenContext): string {
+  const paragraphs = ctx.paragraphCount ?? 3;
+  const minWords = Math.floor(ctx.length * 0.8);
+  const maxWords = Math.ceil(ctx.length * 1.2);
+  return (
+    ` HARD REQUIREMENTS for the "text" field: it MUST contain exactly ${paragraphs} paragraphs ` +
+    `separated by two newlines (\\n\\n), and its word count MUST be between ${minWords} and ${maxWords}. ` +
+    "A one-paragraph answer or a passage outside that word range is INVALID. Count the paragraphs and " +
+    "words before you reply; if your draft fails either check, rewrite it before returning JSON."
   );
 }
 
@@ -963,7 +1003,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         request:
           'Write an original, level-appropriate reading passage of about ' + ctx.length +
           ' words on the topic "' + ctx.topic + '".' +
-          keywordNote(ctx) + difficultyNote(ctx) + coherenceNote(ctx) + SOURCE_NOTE +
+          keywordNote(ctx) + difficultyNote(ctx) + coherenceNote(ctx) + SOURCE_NOTE + passageShapeRule(ctx) +
           ' Return exactly {"candidates":[{"title":"...","text":"...","source":{"title":"...","author":"...","publication":"...","url":"...","adaptationNote":"..."}}]}' +
           countNote(n, "different candidate" + (n === 1 ? "" : "s")) + '.',
       },

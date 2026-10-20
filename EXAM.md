@@ -1093,32 +1093,55 @@ Measured against live keys on 2026-10-11:
   Gemma on OpenRouter returns a ```json fence even when asked. `parseLooseJson`
   salvages that rather than failing a whole exam.
 
+Measured against live keys on 2026-10-20:
+
+- `nvidia/nemotron-3.5-lightning-30b-a3b` is served by the NVIDIA endpoint and
+  is a **reasoning model**. With thinking on and `max_tokens: 4000` it returned
+  `finish_reason: length`, 4000 reasoning tokens and **empty content**;
+  `chat_template_kwargs.enable_thinking: false` returned valid JSON in 4-9s.
+- `nvidia/nemotron-3-ultra-550b-a55b` also accepts the same switch.
+  `nvidia/nemotron-3-super-120b-a12b` appeared in `/models` but answered 404 for
+  the test account, so it is not a usable direct entry.
+- OpenRouter `thinkingmachines/inkling:free` answers 403 "only available on
+  agentic harnesses"; `nvidia/nemotron-3-super-120b-a12b:free` returned an
+  upstream 404; `google/gemma-4-31b-it:free` was temporarily 429. Free
+  OpenRouter capacity remains unreliable by nature.
+- A per-model 403/404 of this kind is classified as `unavailable`, so the chain
+  advances instead of treating it as a bad API key. The switch is in
+  `chain.ts` (`MODEL_UNAVAILABLE`).
+
 ### 12.3a Default chain (no configuration required)
 
-With `AI_PROVIDER_CHAIN` unset, any one of `GROQ_API_KEY`, `OPENROUTER_API_KEY`
-or `NVIDIA_API_KEY` selects the built-in chain. GPT-OSS leads, per user
-instruction (2026-10-11). No second config step, and an empty-string key counts
-as unset so the `KEY=""` placeholders in `.env.local` are safe.
+With `AI_PROVIDER_CHAIN` unset, a configured key selects the matching entries of
+the built-in chain. User instruction (2026-10-20): NVIDIA leads, the list stays
+short, and the fallbacks are the exact OpenRouter free models below. No second
+config step, and an empty-string key counts as unset so the `KEY=""`
+placeholders in `.env.local` are safe.
 
 | Order | Entry | Why this position |
 |---|---|---|
-| 1 | `groq:openai/gpt-oss-120b` | The model to judge: 6/6 valid JSON with the reasoning cap, best free prose |
-| 2 | `groq:openai/gpt-oss-20b` | Same family, smaller; fallback not partner |
-| 3 | `groq:qwen/qwen3.8-27b` | Served on Groq free generally; blocked on some project keys |
-| 4 | `nvidia:nvidia/nemotron-3-ultra-550b-a55b` | 2/2 direct, but needs the large token budget the chain sets |
-| 5 | `openrouter:nvidia/nemotron-3-ultra-550b-a55b:free` | Last resort only; shared capacity, unreliable by nature |
+| 1 | `nvidia:nvidia/nemotron-3.5-lightning-30b-a3b` | Requested primary; fast once thinking is disabled |
+| 2 | `openrouter:nvidia/nemotron-3-super-120b-a12b:free` | First requested fallback; reasoning disabled |
+| 3 | `openrouter:thinkingmachines/inkling:free` | Requested fallback; currently API-restricted, advances |
+| 4 | `openrouter:google/gemma-4-31b-it:free` | Last requested fallback; non-reasoning, returns fenced JSON |
+
+A key for a provider outside this roster (for example a Groq-only deployment)
+still resolves to that provider's single model, so pasting any one key is enough
+to go live.
 
 `AI_PROVIDER=mock` overrides everything, including when a key is present. That is
 what keeps the test suite offline — see `AGENTS.md`.
 
 **A blocked model must not stop the chain.** `gpt-oss-20b` and `qwen3.8-27b`
-both returned `403 blocked at the project level` on a key that otherwise worked.
-A 403 about the *model* is per-entry and advances; a 403 about the *key* is fatal.
+both returned `403 blocked at the project level` on a key that otherwise worked,
+and `inkling:free` answers 403 "only available on agentic harnesses". A 403
+about the *model* is per-entry and advances; a 403 about the *key* is fatal.
 
 ### 12.4 What a live free-tier run actually exposed
 
-Everything above was verified against a live Groq key, not assumed. Running a
-real full exam found four defects that no unit test had:
+Everything above was verified against live keys, not assumed. Running a real
+full exam found these defects; the first four on Groq (2026-10-11), the last on
+NVIDIA Nemotron 3.5 Lightning (2026-10-20), none of which a unit test had:
 
 | Failure seen live | Cause | Fix |
 |---|---|---|
@@ -1126,6 +1149,7 @@ real full exam found four defects that no unit test had:
 | `AI output missing task sets` | Same, for the `sets` schema | Key is resolved **per call site**, never guessed |
 | Every Part One task carried a table | Told tables are "never" used, the model still emitted one-row tables | Rule now says omit the `table` field **entirely** |
 | 429 on most sections | Three sections fired concurrently, each carrying the full passage, over Groq's 8000 TPM limit | Phase B is **sequential** |
+| Passage returned 1 paragraph / 75 words where 3 / 96-144 were required | The numbers were stated mid-request, and Nemotron 3.5 Lightning ignored them | `passageShapeRule()` restates them as a `HARD REQUIREMENTS` block at the **end** of the request |
 
 The `candidates`/`sets` split is the subtle one: hardcoding a single wrap key
 "fixed" the passage and then made Part One worse, because a bare array was

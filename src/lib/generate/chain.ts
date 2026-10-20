@@ -1,7 +1,7 @@
 // Provider fallback chain.
 //
 // One env string names an ordered list of provider entries, e.g.
-//   AI_PROVIDER_CHAIN="groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,openrouter:qwen/qwen3.8-27b:free"
+//   AI_PROVIDER_CHAIN="nvidia:nvidia/nemotron-3.5-lightning-30b-a3b,openrouter:google/gemma-4-31b-it:free"
 //
 // Why this exists: free-tier endpoints are shared-capacity and 429 or return
 // "provider returned error" at random (measured 2026-10-11: the same OpenRouter
@@ -85,7 +85,7 @@ export class ChainError extends Error {
  * "unauthorized") and still stops the chain.
  */
 const MODEL_UNAVAILABLE =
-  /blocked at the project level|model is blocked|model not found|no such model|deprecated model|only available on age|is unavailable for free|model_not_found/;
+  /blocked at the project level|model is blocked|model not found|no such model|deprecated model|only available on age|is unavailable for free|model_not_found|only available on agentic harnesses|not found for account/;
 
 /** Classify a thrown error so the caller can decide whether to advance. */
 export function classifyFailure(e: unknown): ChainFailure {
@@ -128,6 +128,19 @@ const DEFAULTS: Record<ChainEntry["provider"], { baseUrl: string; keyVar: string
 };
 
 /**
+ * The legacy single-provider model, used only when `AI_PROVIDER` is set or when
+ * a key exists for a provider that is not in `DEFAULT_CHAIN` (e.g. a
+ * Groq-only deployment). Keeping that path alive is what makes a single key
+ * sufficient without forcing every operator onto the default roster.
+ */
+const SINGLE_PROVIDER_MODEL: Record<ChainEntry["provider"], { envVar: string; model: string }> = {
+  groq: { envVar: "GROQ_MODEL", model: "openai/gpt-oss-120b" },
+  openai: { envVar: "OPENAI_MODEL", model: "gpt-4o-mini" },
+  openrouter: { envVar: "OPENROUTER_MODEL", model: "openai/gpt-oss-120b" },
+  nvidia: { envVar: "NVIDIA_MODEL", model: "nvidia/nemotron-3.5-lightning-30b-a3b" },
+};
+
+/**
  * Models that need `reasoning_effort` capped to return content at all.
  *
  * gpt-oss is a reasoning model: measured on Groq 2026-10-11 with
@@ -138,6 +151,19 @@ const DEFAULTS: Record<ChainEntry["provider"], { baseUrl: string; keyVar: string
  * silently reintroduce empty responses.
  */
 const NEEDS_REASONING_CAP = /gpt-oss/i;
+
+/**
+ * Models that must be told to skip their reasoning trace.
+ *
+ * Nemotron 3.5 Lightning (and Ultra) spend the whole `max_tokens` budget thinking
+ * when it is left on: measured live 2026-10-20, a JSON request returned
+ * `finish_reason: "length"` with 4000 reasoning tokens and no content. NVIDIA
+ * exposes the switch as `chat_template_kwargs.enable_thinking: false`.
+ */
+const NEEDS_THINKING_DISABLED = /nemotron-3(?:\.5)?/i;
+
+/** The same models reached through OpenRouter use its `reasoning` switch. */
+const OPENROUTER_REASONING_MODEL = /nemotron-3/i;
 
 /** Parse `provider:model` pairs. Malformed entries are dropped, not fatal. */
 export function parseChain(raw: string | undefined | null): ChainEntry[] {
@@ -188,6 +214,15 @@ export function resolveChain(
       model: entry.model,
       providerLabel: d.label,
       ...(NEEDS_REASONING_CAP.test(entry.model) ? { reasoningEffort: "low" as const } : {}),
+      // A reasoning trace is charged against `max_tokens`, and these models
+      // otherwise return an empty answer. The field is provider-specific, so it
+      // is only sent to the endpoint that documents it.
+      ...(entry.provider === "nvidia" && NEEDS_THINKING_DISABLED.test(entry.model)
+        ? { chatTemplateKwargs: { enable_thinking: false } }
+        : {}),
+      ...(entry.provider === "openrouter" && OPENROUTER_REASONING_MODEL.test(entry.model)
+        ? { reasoning: { enabled: false } }
+        : {}),
       maxTokens: 4000,
     });
   }
@@ -197,30 +232,25 @@ export function resolveChain(
 /**
  * The chain used when `AI_PROVIDER_CHAIN` is not set.
  *
- * User instruction, 2026-10-11: GPT-OSS is the model, so it goes first and the
- * chain exists to keep a flaky free tier from costing a teacher an exam.
- * Verified live against real keys on 2026-10-11; see `EXAM.md` §12.3-12.5.
+ * User instruction, 2026-10-20: use NVIDIA first and keep the chain short — the
+ * previous five-entry Groq-first chain spent the whole run budget walking models
+ * that were blocked or returned the wrong number of tasks.
  *
- * Order is by trust, not by speed:
- *   1. gpt-oss-120b — 6/6 valid JSON with the reasoning cap chain.ts applies,
- *      and the best prose of the free options. This is the model to judge.
- *   2. gpt-oss-20b — same family, smaller. Not known to be worse at JSON, just
- *      smaller, so it is a fallback rather than a partner.
- *   3. qwen3.8-27b — blocked at project level on the key used for testing, but
- *      served generally on Groq free. Harmless to list: the chain skips or
- *      advances past it.
- *   4. NVIDIA Nemotron-3 Ultra — 2/2 valid JSON direct, but only with a large
- *      token budget (600 was not enough; reasoning consumed it).
- *   5. OpenRouter Nemotron :free — last resort, never a primary. Shared
- *      capacity: the same model succeeded and failed across identical requests
- *      minutes apart.
+ *   1. NVIDIA Nemotron 3.5 Lightning — the requested primary, on the direct
+ *      NVIDIA endpoint. Thinking is disabled in `resolveChain`; with it on the
+ *      model spends all 4000 tokens reasoning and returns nothing.
+ *   2-4. OpenRouter free models, in the operator's stated order. These are
+ *      shared-capacity fallbacks, never primaries: the same model can succeed
+ *      and fail minutes apart. `thinkingmachines/inkling:free` currently answers
+ *      403 "only available on agentic harnesses"; it is kept because the
+ *      operator asked for that exact roster, and the 403 is classified as a
+ *      per-entry `unavailable` so the chain advances instead of aborting.
  */
 export const DEFAULT_CHAIN: readonly ChainEntry[] = [
-  { provider: "groq", model: "openai/gpt-oss-120b" },
-  { provider: "groq", model: "openai/gpt-oss-20b" },
-  { provider: "groq", model: "qwen/qwen3.8-27b" },
-  { provider: "nvidia", model: "nvidia/nemotron-3-ultra-550b-a55b" },
-  { provider: "openrouter", model: "nvidia/nemotron-3-ultra-550b-a55b:free" },
+  { provider: "nvidia", model: "nvidia/nemotron-3.5-lightning-30b-a3b" },
+  { provider: "openrouter", model: "nvidia/nemotron-3-super-120b-a12b:free" },
+  { provider: "openrouter", model: "thinkingmachines/inkling:free" },
+  { provider: "openrouter", model: "google/gemma-4-31b-it:free" },
 ] as const;
 
 /** True when the operator explicitly asked for a chain that cannot be used. */
@@ -234,8 +264,8 @@ export function chainIsExplicit(env: EnvLike = process.env): boolean {
  * An empty result means "no live provider configured" and the caller falls back
  * to the mock. `AI_PROVIDER` is still honoured for the legacy single-provider
  * path so existing deployments keep working, but it is no longer REQUIRED: a
- * deployment that only has `GROQ_API_KEY` set gets the live model, which is what
- * makes the chain genuinely optional rather than a config step to remember.
+ * deployment that only has `NVIDIA_API_KEY` set gets the live model, which is
+ * what makes the chain genuinely optional rather than a config step to remember.
  */
 export function chainFromEnv(env: EnvLike = process.env): ChainEntry[] {
   const parsed = parseChain(env.AI_PROVIDER_CHAIN);
@@ -249,20 +279,25 @@ export function chainFromEnv(env: EnvLike = process.env): ChainEntry[] {
   if (single === "mock") return [];
   if (single && single in DEFAULTS) {
     const provider = single as ChainEntry["provider"];
-    const model =
-      provider === "groq"
-        ? env.GROQ_MODEL || "openai/gpt-oss-120b"
-        : provider === "openai"
-          ? env.OPENAI_MODEL || "gpt-4o-mini"
-          : provider === "openrouter"
-            ? env.OPENROUTER_MODEL || "openai/gpt-oss-120b"
-            : env.NVIDIA_MODEL || "nvidia/nemotron-3-super-120b-a12b";
-    return [{ provider, model }];
+    const spec = SINGLE_PROVIDER_MODEL[provider];
+    return [{ provider, model: env[spec.envVar] || spec.model }];
   }
 
-  // No chain configured. If ANY provider key is present, still go live: the user
-  // pasted a key precisely because they want a model, and silently falling back
-  // to mock text would look like success while producing test-double passages.
-  const anyKey = Object.values(DEFAULTS).some((d) => (env[d.keyVar] ?? "").trim() !== "");
-  return anyKey ? [...DEFAULT_CHAIN] : [];
+  // No chain configured. Keep only default-chain entries whose key is present:
+  // listing an entry with no key would make resolveChain skip it anyway, and a
+  // Groq-only deployment (no entry in the current default) would otherwise see
+  // every entry skipped rather than falling through to its own provider.
+  const configured = DEFAULT_CHAIN.filter((e) => (env[DEFAULTS[e.provider].keyVar] ?? "").trim() !== "");
+  if (configured.length > 0) return [...configured];
+
+  // A key for a provider outside the default chain still means "go live": the
+  // user pasted it precisely because they want a model, and silently falling
+  // back to mock text would look like success while producing test-double prose.
+  const providers: ChainEntry["provider"][] = ["nvidia", "openrouter", "groq", "openai"];
+  for (const provider of providers) {
+    if ((env[DEFAULTS[provider].keyVar] ?? "").trim() === "") continue;
+    const spec = SINGLE_PROVIDER_MODEL[provider];
+    return [{ provider, model: env[spec.envVar] || spec.model }];
+  }
+  return [];
 }

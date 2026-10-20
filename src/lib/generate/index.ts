@@ -252,7 +252,7 @@ async function withChain<T>(
     // know the difference without a log line. This is the one case where mock
     // output is expected rather than a misconfiguration.
     console.warn(
-      "[generate] No live provider configured (no GROQ_API_KEY / OPENROUTER_API_KEY / NVIDIA_API_KEY). " +
+      "[generate] No live provider configured (no NVIDIA_API_KEY / OPENROUTER_API_KEY / GROQ_API_KEY). " +
         "Using the offline mock provider: passages are template-generated and will read as generic."
     );
     return run(mock);
