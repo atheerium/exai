@@ -66,7 +66,7 @@ async function runWithBudget(runDeadlineMs?: number, stall = 0) {
 }
 
 test("the budget defaults to 120s", () => {
-  assert.equal(runBudgetMs(), 120_000);
+  assert.equal(runBudgetMs(), 180_000);
 });
 
 test("AI_RUN_BUDGET_MS overrides it for a slower provider or a paid tier", () => {
@@ -87,7 +87,7 @@ test("a malformed or zero budget falls back rather than disabling the cap", () =
     // restoring the hang the deadline exists to prevent.
     for (const raw of ["0", "-5", "not-a-number", ""]) {
       process.env.AI_RUN_BUDGET_MS = raw;
-      assert.equal(runBudgetMs(), 120_000, `AI_RUN_BUDGET_MS=${JSON.stringify(raw)}`);
+      assert.equal(runBudgetMs(), 180_000, `AI_RUN_BUDGET_MS=${JSON.stringify(raw)}`);
     }
   } finally {
     if (saved === undefined) delete process.env.AI_RUN_BUDGET_MS;
@@ -122,7 +122,10 @@ test("the SECOND chain entry is never tried once the budget is spent", async () 
   assert.equal(hits, 1, "only the first entry may be dialled");
 });
 
-test("no deadline means no cap: a throttled run still advances the chain", async () => {
+test("no deadline means no cap: a throttled run still walks the whole chain", async () => {
+  // Two entries, and each entry gets one transport retry on itself before the
+  // chain advances (free tiers recover in seconds on the same endpoint). Four
+  // dials, then the last error is what the teacher sees.
   await assert.rejects(() => runWithBudget(undefined), /upstream exploded|500/);
-  assert.equal(hits, 2, "per-section generation keeps the full fallback chain");
+  assert.equal(hits, 4, "both entries, each retried once, is the full fallback chain");
 });

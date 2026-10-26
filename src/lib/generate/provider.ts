@@ -11,6 +11,7 @@ import { stripAnswerLines } from "@/lib/export/answer-lines";
 import { candidateCount, DEFAULT_CANDIDATES } from "./candidates";
 import { minParagraphWords } from "./paragraph-balance";
 import { isReferentWord, locateReferent, pickReferents } from "./referents";
+import { passageVocabulary } from "./grounding";
 import type { GenContext } from "./index";
 
 // The system prompt lives in its own file because every generation sends it and
@@ -570,6 +571,48 @@ function tableRequirementNote(
  * because prose does not bind (the same lesson as the item counts, the word
  * band and the table requirement).
  */
+/**
+ * The vocabulary ("closest in meaning") task needs a literal item shape for the
+ * same reason gap-fill does.
+ *
+ * Measured live 2026-10-26 on 1as, twice in one session:
+ *   - one run printed the MEANINGS in the target slot, so the section failed
+ *     grounding with five "which is a phrase" issues;
+ *   - another run printed `List: [exchange, perspective, barrier]` followed by
+ *     the instruction and NO items at all — the model read "the following" as a
+ *     word bank, because `WORD_BANK_RULE` tells it to emit one whenever the
+ *     instruction refers to a list.
+ *
+ * EXAM.md section 8 (1A) is explicit: the printed items are DEFINITIONS with a
+ * gap, and the target words are underlined in the passage. So the rule below
+ * states the exact field, the exact count and a worked example — the same shape
+ * as `gapFillRule` and `REWRITE_RULE`, and for the same reason: a prose
+ * instruction does not bind.
+ */
+function vocabularyRule(skills: { skill?: string | null }[], ctx: GenContext): string {
+  if (!skills.some((s) => (s.skill ?? "").toUpperCase() === "VOCABULARY")) return "";
+  // The CLOSED SET, not a constraint to satisfy by sampling. Measured live
+  // 2026-10-26: the model invented `preserve` and `consequence`, neither of which
+  // the passage contains, and both chain entries then burned a corrective call
+  // failing to fix it. Naming the words that DO occur makes the requirement true
+  // by construction — the same move as `pickReferents` for referents.
+  const allowed = ctx.groundingText
+    ? passageVocabulary(ctx.groundingText, 30)
+        .map((v) => v.word)
+        .join(", ")
+    : "";
+  return (
+    ` For the VOCABULARY task whose instruction is "Find in the text words or phrases that are closest in meaning to the following.", the "prompt" must be EXACTLY THREE numbered lines and NOTHING ELSE: each line is a short DEFINITION followed by a dotted blank. ` +
+    `Do NOT print the target words in the prompt and do NOT emit a "List:" line for this task: the student must find the words in the passage, so printing them answers the task. ` +
+    `The definitions must be worded so that ONE single word from the passage fits each one. ` +
+    (allowed
+      ? `Each of the three target words MUST be copied from this list, every word of which occurs in the passage: ${allowed}. Do not use a word that is not on this list. `
+      : "") +
+    `For example: "1. a person who studies ancient objects .........\\n2. to protect something from harm .........\\n3. proof that something is true ........." ` +
+    `The "answer" field must be one line per item in exactly this form: "1. word = definition", "2. word = definition", "3. word = definition", where each word is ONE word copied literally from the passage. `
+  );
+}
+
 function gapFillRule(skills: { family?: string | null; constraints?: { gapCount?: number } }[]): string {
   const rule = skills.find((s) => s.family === "GAP_FILL");
   if (!rule) return "";
@@ -829,29 +872,43 @@ export interface TaskFamilySpec {
  */
 function regroupByFamily(tasks: GeneratedTask[], families: TaskFamilySpec[], count: number): GeneratedTask[] {
   if (tasks.length === count) return tasks;
-  const expected = families.reduce((n, f) => n + (f.itemCount ?? 1), 0);
-  if (tasks.length !== expected || tasks.length <= count) return tasks;
 
-  const out: GeneratedTask[] = [];
-  let i = 0;
-  for (const spec of families) {
-    const take = tasks.slice(i, i + (spec.itemCount ?? 1));
-    i += spec.itemCount ?? 1;
+  // Preferred path: the model tagged every item with its own family. Grouping by
+  // that tag survives the live case where it ALSO dropped or added an item, which
+  // is common — measured 2026-10-26 on 3as, `AI output has 12 tasks (expected 4)`
+  // for a 4+3+4+3=14 shape. The slice-by-count path below cannot fire then, so
+  // the whole section was thrown away as a parse error instead of being regrouped
+  // and handed to the validator (which would have named the one short family).
+  const tagged = tasks.length > count && tasks.every((t) => families.some((f) => f.family === t.family));
+  let groups: GeneratedTask[][];
+  if (tagged) {
+    groups = families.map((spec) => tasks.filter((t) => t.family === spec.family));
+  } else {
+    const expected = families.reduce((n, f) => n + (f.itemCount ?? 1), 0);
+    if (tasks.length !== expected || tasks.length <= count) return tasks;
+    let i = 0;
+    groups = families.map((spec) => {
+      const take = tasks.slice(i, i + (spec.itemCount ?? 1));
+      i += spec.itemCount ?? 1;
+      return take;
+    });
+  }
+
+  return groups.map((take, index) => {
+    const spec = families[index]!;
     const first = take[0];
-    out.push({
-      ...first,
+    return {
       prompt: take.map((t) => t.prompt).filter(Boolean).join("\n"),
       // Only one of the items may carry an answer, otherwise the teacher sees the
       // same mark repeated itemCount times.
       answer: take.map((t) => t.answer).find((a) => a !== undefined),
       marks: spec.marks,
-      skill: first.skill ?? "READING",
+      skill: first?.skill ?? "READING",
       family: spec.family,
-      instruction: spec.instruction ?? first.instruction ?? "",
+      instruction: spec.instruction ?? first?.instruction ?? "",
       table: take.find((t) => t.table)?.table,
-    });
-  }
-  return out;
+    };
+  });
 }
 
 export function parseTaskSets(
@@ -1092,7 +1149,13 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
           skill: "READING",
           marks: spec.marks,
           family: spec.family,
-          instruction: task.instruction || (spec.exactWording ?? spec.instruction),
+          // Prescribed wording is COMPUTED, not the model's echo. `validateCandidate`
+          // demands `task.instruction === rule.exactWording` verbatim, so trusting
+          // the model's copy here turned a paraphrase into a 422 for the whole
+          // section — the same trap as marks and family, which are already stamped.
+          // A rule without `exactWording` keeps the model's wording, falling back
+          // to the guide's.
+          instruction: spec.exactWording ?? (task.instruction || spec.instruction),
         };
         // A referent target is not wording the model may invent: it must be a
         // pronoun that exists in the printed passage, so it is stamped from the
@@ -1135,6 +1198,7 @@ export function createCompatibleGenerators(config: () => ProviderConfig) {
         'The exam paper carries no answers: every table cell the student must fill in must be an EMPTY string, and the correct value goes only in the "answer" field. ' +
         CHOICE_LABEL_RULE +
         WORD_BANK_RULE +
+        vocabularyRule(guideSkills, ctx) +
         (guideSkills.some((s) => s.family === "GAP_FILL") ? gapFillRule(guideSkills) : "") +
         REWRITE_RULE +
         `Produce exactly ${ctx.guide.textExploration.skills.length} task objects, one per skill, in the order given. ` +

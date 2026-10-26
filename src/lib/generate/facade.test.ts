@@ -150,6 +150,22 @@ test("the guide validator accepts distributed gaps through a paragraph", async (
   assert.ok(v.ok, v.issues.join("; "));
 });
 
+test("a vocabulary task that prints no numbered items is rejected", async () => {
+  // Measured live 2026-10-26 (1as): the model read "the following" as a word
+  // bank, emitted `List: [...]` plus the instruction, and printed no items at
+  // all. That passed every other check and would have shipped an unanswerable
+  // question, so the shape is enforced here.
+  const ctx = buildContext(input);
+  const sets = await generateTextExplorationCandidates(ctx);
+  const set = structuredClone(sets[0]!);
+  const vocab = set.find((t) => (t.skill ?? "").toUpperCase() === "VOCABULARY")!;
+  vocab.prompt =
+    "List: [exchange, perspective, barrier]\nFind in the text words or phrases that are closest in meaning to the following.";
+  const v = validateCandidate("TEXT_EXPLORATION", set, ctx.guide.marks.textExploration, { guide: ctx.guide });
+  assert.equal(v.ok, false);
+  assert.match(v.issues.join(" "), /numbered item/);
+});
+
 test("generateWritingCandidates yields 3 valid writing pairs", async () => {
   const pairs = await generateWritingCandidates(buildContext(input));
   assert.equal(pairs.length, DEFAULT_CANDIDATES);
@@ -337,4 +353,43 @@ test("validateCandidate rejects a task with an empty prompt", () => {
   ], 7);
   assert.ok(!v.ok);
   assert.match(v.issues.join(" "), /Task 1 has no content/);
+});
+
+test("a tabular task carries its content in the chart, so no prompt is required", () => {
+  // Measured live 2026-10-26: morphology came back with a correct derivation
+  // chart and an empty `prompt`, and the empty-prompt rule rejected the whole
+  // Text Exploration section — twice, on two different models. A tabular task
+  // prints no lettered items (`tabularTaskPrintsItems`); its words are the cells.
+  const tabular = [
+    {
+      prompt: "",
+      instruction: "Complete the chart as shown in the example.",
+      marks: 7,
+      skill: "MORPHOLOGY",
+      family: "MORPHOLOGY",
+      table: {
+        headers: ["Verb", "Noun", "Adjective"],
+        rows: [
+          ["preserve", "preservation", "preservative"],
+          ["", "", ""],
+        ],
+      },
+    },
+  ];
+  const ok = validateCandidate("TEXT_EXPLORATION", tabular, 7);
+  assert.ok(ok.ok, ok.issues.join("; "));
+
+  // Without the instruction the paper prints a bare chart nobody can act on, so
+  // the exemption is specifically "table AND instruction", not "any table".
+  const noInstruction = structuredClone(tabular);
+  noInstruction[0]!.instruction = "";
+  const bad = validateCandidate("TEXT_EXPLORATION", noInstruction, 7);
+  assert.equal(bad.ok, false);
+  assert.match(bad.issues.join(" "), /Task 1 has no content/);
+
+  // And a table with no rows is not content either.
+  const emptyRows = structuredClone(tabular);
+  emptyRows[0]!.table.rows = [];
+  const empty = validateCandidate("TEXT_EXPLORATION", emptyRows, 7);
+  assert.equal(empty.ok, false);
 });

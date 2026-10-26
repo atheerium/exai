@@ -565,6 +565,20 @@ Every word used as a target in a Part Two vocabulary or morphology task must be
 present in the passage the student is given. Targets are drawn from the passage's
 own content words (`passageVocabulary`), not from the unit corpus.
 
+For a vocabulary task in the 1A/1C direction — *"Find in the text words or
+phrases that are closest in meaning to..."* — the printed items are the
+**definitions**, so the word that has to occur is the one in the **answer key**
+(`1. word = meaning`). `checkTaskLinkage` therefore reads the answer first and
+falls back to the prompt; checking the printed definition rejected five correct
+items on 1as (measured 2026-10-26).
+
+The printed shape is three numbered definitions, each ending in a dotted blank,
+and **no word bank**: printing the target words would answer the task. The
+model gets that shape from `vocabularyRule()` in `provider.ts`, and
+`validateCandidate` rejects a `MEANING` task with fewer than two numbered lines —
+a word bank satisfies every other check, so without this an unanswerable
+question could ship.
+
 Matching tolerates regular inflections: target `friend` matches `friends`,
 `friendly`, `friend's`. It does **not** use open-ended stemming — an unrelated
 word must never satisfy the check.
@@ -1271,23 +1285,42 @@ The prompt now states the container literally, including *"Do NOT key the output
 by family name"*, and spells out counts (`TRUE_FALSE (exactly 4 item(s), 2
 marks)`). Told only "EXACTLY the item counts below", the model does not bind.
 
-### 12.8 One repair attempt, bounded
+### 12.8 One repair attempt per model, then the next model
 
-`repairGeneration()` in `full-exam.ts` allows exactly **one** corrective call per
-section — the passage, and each of Part One, Text Exploration and Writing —
-carrying the validator's own issue strings back to the model verbatim.
+Validation happens **inside** the provider chain (`runChainLadder` in
+`generate/index.ts`). Per entry the order is exact:
 
-- Different from `withRetry()`, which only helps with *transport* failures. A
+1. one attempt, and on a *transport* failure one retry on that same entry;
+2. validate the reply;
+3. on a validation failure, **exactly one** corrective call on the **same**
+   entry, carrying the validator's own issue strings back verbatim;
+4. only when that also fails, advance to the next entry and start again at 1.
+
+An **unreadable reply** (invalid JSON, empty content, a task object with no
+`prompt`) skips the blind retry and goes straight to step 3, because re-rolling
+an identical prompt reproduces a shape error. Only 429 / 5xx / timeout are
+retried verbatim.
+
+- Different from the transport retry, which only helps with 429/5xx/timeouts. A
   validation failure means the model answered and was wrong; re-rolling the same
-  prompt at the same temperature reproduces the same mistake.
-- Bounded at one because a prompt that must satisfy a validator becomes a
-  conversation, and conversations cost more tokens than they save on a free tier.
-- At most three extra calls per exam, and only on the failure path.
-- When the repair fails, the **original** issues are returned, never the
+  prompt at the same temperature reproduces the same mistake, so the corrective
+  call states what was wrong instead.
+- **Repair before advancing is deliberate.** Advancing first would spend a colder
+  model's quota on a near miss the warm one can fix when told what is wrong.
+- Bounded at one per entry because a prompt that must satisfy a validator becomes
+  a conversation, and conversations cost more tokens than they save on a free tier.
+- When every entry fails, the **original** issues are returned, never the
   repair's downstream symptom — and never a transport error from the retry.
 - The repair is re-validated with the **identical** opts, `groundingText`
   included. Checking a "repaired" section more loosely than the original would let
   exactly the defect being repaired through.
+
+**Why step 4 exists.** Until 2026-10-26 validation ran *after* the chain walk, so
+the first model to answer won even when its answer was wrong. A NVIDIA-first
+chain therefore failed every exam with `1 paragraph(s) instead of 3` while a model
+that produces valid passages sat unused behind it. A bad model does not need a
+second opinion; it needs replacing.
+
 
 **The issue strings must reach the prompt.** `ctx.repairOf` also travels as a
 payload field, and on its own it is inert: before 2026-10-13 no task request string

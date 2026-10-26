@@ -9,12 +9,19 @@
 // flaky endpoint is not a reason to lose a teacher's whole exam.
 //
 // Advance policy, deliberately asymmetric:
-//   - 429 / 5xx / timeout / unusable reply -> try the next entry
+//   - 429 / 5xx / timeout / unusable reply -> try the next entry (after one
+//     short retry on the same entry; free tiers recover in seconds)
 //   - 401 / 403 -> STOP. That is a credential or endpoint problem; cycling
 //     through the rest of the chain only turns one clear error into a confusing
 //     one, and burns the fallback quota while failing anyway.
-//   - validation failure (the model answered, the answer was wrong) -> STOP.
-//     A different model will not know more about this exam's guide rules.
+//   - validation failure (the model answered, the answer was wrong) -> one
+//     corrective call on the SAME entry, then ADVANCE.
+//
+// That last rule is the 2026-10-26 fix. Until then validation lived outside the
+// chain, so the first model to answer won even when its answer was wrong: every
+// exam failed on Nemotron 3.5 Lightning's 1-paragraph passages while Groq sat
+// unused behind it. The reasoning is in `runChainLadder` (index.ts) — a bad
+// model does not need a second opinion, it needs replacing.
 //
 // The chain is parsed and resolved without network access so it can be unit
 // tested; `AGENTS.md` records that no test may touch the network.
@@ -100,6 +107,12 @@ export function classifyFailure(e: unknown): ChainFailure {
     return "throttle";
   if (/\b(429|500|502|503|504)\b/.test(lower) || /rate limit|overloaded|temporarily unavailable/.test(lower))
     return "throttle";
+  // Shape failures from the parsers, not transport failures. They are repairable:
+  // the model answered in the wrong shape, and re-rolling the identical prompt
+  // reproduces it. Measured 2026-10-26 on NVIDIA: "AI output has 12 tasks
+  // (expected 4)" was classified `server`, so the ladder re-dialled verbatim
+  // instead of telling the model to emit one task per family.
+  if (/has \d+ tasks \(expected|task marks total|task sets: got keys/.test(lower)) return "content";
   if (/invalid json|no content|missing /.test(lower)) return "content";
   return "server";
 }
@@ -107,16 +120,21 @@ export function classifyFailure(e: unknown): ChainFailure {
 /**
  * True when advancing to another entry could plausibly help.
  *
- * `auth` and `validation` are the two that stop the chain. `unavailable` is a
- * per-ENTRY problem (this model is blocked, retired or not free) and is the
- * clearest case of advancing: a different model is the entire point.
+ * `auth` is the only failure that stops the chain: a bad key or a revoked
+ * credential is not something another model can fix.
+ *
+ * `validation` advances, but only AFTER the same entry has had its one
+ * corrective call — that ordering lives in `runChainLadder`, because it needs the
+ * validator. Without it, advancing on validation would re-roll the prompt on a
+ * colder model before telling the warm one what was wrong.
  */
 export function shouldAdvance(failure: ChainFailure): boolean {
   return (
     failure === "throttle" ||
     failure === "server" ||
     failure === "content" ||
-    failure === "unavailable"
+    failure === "unavailable" ||
+    failure === "validation"
   );
 }
 
@@ -137,7 +155,10 @@ const SINGLE_PROVIDER_MODEL: Record<ChainEntry["provider"], { envVar: string; mo
   groq: { envVar: "GROQ_MODEL", model: "openai/gpt-oss-120b" },
   openai: { envVar: "OPENAI_MODEL", model: "gpt-4o-mini" },
   openrouter: { envVar: "OPENROUTER_MODEL", model: "openai/gpt-oss-120b" },
-  nvidia: { envVar: "NVIDIA_MODEL", model: "nvidia/nemotron-3.5-lightning-30b-a3b" },
+  // Measured 2026-10-26: nemotron-3.5-lightning returns 1 paragraph / ~43 words on
+  // every run, so the single-provider default must not point at it. Ultra answered
+  // with a valid 3-paragraph passage twice.
+  nvidia: { envVar: "NVIDIA_MODEL", model: "nvidia/nemotron-3-ultra-550b-a55b" },
 };
 
 /**
@@ -232,16 +253,31 @@ export function resolveChain(
 /**
  * The chain used when `AI_PROVIDER_CHAIN` is not set.
  *
- * Updated 2026-10-26 after live model testing against `.env.local` keys:
- * Groq `openai/gpt-oss-120b` produced valid passages (3 paragraphs, 120-180 words)
- * consistently; NVIDIA `nemotron-3.5-lightning-30b-a3b` returned 1-paragraph /
- * 43-word passages on every run; OpenRouter free fallbacks (nemotron-3-super,
- * inkling, gemma-4) returned 404/403/429. The chain is kept short: one
- * reliable primary, NVIDIA as a secondary only.
+ * Measured live 2026-10-26 against the real keys (`scripts/probe-roster.ts`,
+ * `npx tsx scripts/test-models.ts`), one passage request per model:
+ *
+ *   groq:openai/gpt-oss-120b                  142w/3p PASS, then 116w on re-test
+ *   nvidia:nvidia/nemotron-3-ultra-550b-a55b   164w/3p PASS, 147w/3p on re-test
+ *   nvidia:nvidia/nemotron-3.5-lightning-30b-a3b  43w/1p FAIL every run
+ *   nvidia:nemotron-4-340b / nemotron-3-super / llama-3.1-*  404 for this account
+ *   groq:gpt-oss-20b, qwen3.8-27b, allam-2-7b   403 blocked at the project level
+ *   openrouter:*                             403 "Key limit exceeded" — the key is
+ *                                            over its total budget, so the whole
+ *                                            provider is unusable, not one model
+ *
+ * Two entries, both independent quotas on independent providers. That is the
+ * real constraint: OpenRouter is dead for this account, so listing its free
+ * models would only add round trips that always fail.
+ *
+ * Groq leads on latency (~2s vs ~5-16s) and its occasional miss is an
+ * under-length passage — the exact defect the corrective call fixes, because the
+ * validator's word count reaches the model verbatim. NVIDIA Ultra is the entry
+ * that answers when Groq is rate-limited, and it produced a valid passage on
+ * both live runs.
  */
 export const DEFAULT_CHAIN: readonly ChainEntry[] = [
   { provider: "groq", model: "openai/gpt-oss-120b" },
-  { provider: "nvidia", model: "nvidia/nemotron-3.5-lightning-30b-a3b" },
+  { provider: "nvidia", model: "nvidia/nemotron-3-ultra-550b-a55b" },
 ] as const;
 
 /** True when the operator explicitly asked for a chain that cannot be used. */

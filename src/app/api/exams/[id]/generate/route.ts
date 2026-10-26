@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withRls, type DbClient } from "@/lib/db";
 import { requireUser, requireCsrf } from "@/lib/auth";
 import { loadExamDto, touchLastOpened } from "@/lib/serialize";
-import { buildContext, generateTextCandidates, generatePartOneCandidates, generateTextExplorationCandidates, generateWritingCandidates, generateRewriteCandidates, validateCandidate, providerName } from "@/lib/generate";
+import { buildContext, generateValidated, validateCandidate, providerName } from "@/lib/generate";
 import { generateFullExam, FULL_EXAM_QUOTA_COST } from "@/lib/generate/full-exam";
 import { track } from "@/lib/events";
 import { recordFamilyStat } from "@/lib/feedback-data";
@@ -12,6 +12,31 @@ import type { GeneratedSource, GeneratedTask, GeneratedTextCandidate, GeneratedT
 
 function textOnly(candidate: { title: string; text: string }): { title: string; text: string } {
   return { title: candidate.title, text: candidate.text };
+}
+
+/** Fold a list of validator verdicts into one, keeping every issue string. */
+function collectIssues(verdicts: { ok: boolean; issues: string[] }[]): { ok: boolean; issues: string[] } {
+  const issues = verdicts.flatMap((v) => v.issues);
+  return { ok: issues.length === 0, issues };
+}
+
+/**
+ * The passage rules in one place, used for TEXT and for a REWRITE of it.
+ *
+ * Both are passages the teacher prints, so both must satisfy the same shape: word
+ * band, paragraph count and balance. A rewrite checked more loosely than the
+ * original would let a drifting text through the replacement panel.
+ */
+function validatePassageCandidate(
+  c: GeneratedTextCandidate,
+  ctx: { length: number; paragraphCount?: number; topic: string; teacherKeywords?: string | null }
+): { ok: boolean; issues: string[] } {
+  return validateCandidate("TEXT", { text: c.text, title: c.title }, undefined, {
+    length: ctx.length,
+    paragraphCount: ctx.paragraphCount,
+    topic: ctx.topic,
+    teacherKeywords: ctx.teacherKeywords,
+  });
 }
 
 const DEFAULT_SOURCE: GeneratedSource = {
@@ -99,13 +124,21 @@ type Phase2Data =
   | { kind: "TASK_ALT"; sets: GeneratedTask[][]; task: { id: string; order: number; family?: string | null; skill?: string | null; section: { id: string; type: string } } }
   | { kind: "TOPIC_ALT"; cands: { guided: GeneratedTopic; free: GeneratedTopic | null }[]; topic: { id: string; kind: string }; singleTopic: boolean };
 
+/**
+ * A full exam is four sequential sections, each of which may try two chain
+ * entries and make one corrective call on each. The run's own budget
+ * (`runBudgetMs`, 180s) decides when to give up; this stops the platform from
+ * killing the request first and turning a diagnosable generation error into an
+ * opaque gateway timeout.
+ */
+export const maxDuration = 300;
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireCsrf(req.headers);
     const user = await requireUser();
     const { id } = await params;
-    const body = (await req.json()) as {
-      type: string;
+    const body = (await req.json()) as {      type: string;
       taskId?: string;
       topicId?: string;
       target?: "simpler" | "harder";
@@ -367,63 +400,72 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     let phase2Data: Phase2Data | null = null;
 
     if (type === "TEXT") {
-      const candidates = await generateTextCandidates(ctx);
-      const issues: string[] = [];
-      for (const c of candidates) {
-        const v = validateCandidate("TEXT", { text: c.text, title: c.title }, undefined, {
-          length: ctx.length,
-          paragraphCount: ctx.paragraphCount,
-          topic: ctx.topic,
-          teacherKeywords: ctx.teacherKeywords,
-        });
-        if (!v.ok) issues.push(...v.issues);
-      }
-      if (issues.length > 0) {
-        validationIssues = issues;
+      // Validated INSIDE the chain: a model that answers wrongly is repaired on
+      // the same entry and then replaced by the next one. Validating out here
+      // meant the first model to answer won even when its answer was wrong.
+      const res = await generateValidated<GeneratedTextCandidate[]>({
+        ctx,
+        run: (impl, c) => impl.generateTextCandidates(c),
+        validate: (candidates) => collectIssues(candidates.map((c) => validatePassageCandidate(c, ctx))),
+      });
+      if (res.ok) {
+        phase2Data = { kind: "TEXT", candidates: res.value };
+      } else if (res.issues.length > 0) {
+        validationIssues = res.issues;
       } else {
-        phase2Data = { kind: "TEXT", candidates };
+        throw res.error ?? new Error("Generation failed.");
       }
     } else if (type === "PART_ONE" || type === "TEXT_EXPLORATION") {
-      const sets = type === "PART_ONE" ? await generatePartOneCandidates(ctx) : await generateTextExplorationCandidates(ctx);
-      const guideMarks = type === "PART_ONE" ? ctx.guide.marks.partOne : ctx.guide.marks.textExploration;
-      const v = validateCandidate(type, sets[0], guideMarks, { guide: ctx.guide });
-      if (!v.ok) {
-        validationIssues = v.issues;
+      const sectionType: "PART_ONE" | "TEXT_EXPLORATION" = type;
+      const guideMarks = sectionType === "PART_ONE" ? ctx.guide.marks.partOne : ctx.guide.marks.textExploration;
+      const res = await generateValidated<GeneratedTask[][]>({
+        ctx,
+        run: (impl, c) =>
+          sectionType === "PART_ONE" ? impl.generatePartOneCandidates(c) : impl.generateTextExplorationCandidates(c),
+        validate: (sets) =>
+          sets[0]
+            ? validateCandidate(sectionType, sets[0], guideMarks, { guide: ctx.guide })
+            : { ok: false, issues: ["No tasks were generated."] },
+      });
+      if (res.ok) {
+        phase2Data = { kind: sectionType, sets: res.value };
+      } else if (res.issues.length > 0) {
+        validationIssues = res.issues;
       } else {
-        phase2Data = { kind: type, sets };
+        throw res.error ?? new Error("Generation failed.");
       }
     } else if (type === "WRITING") {
-      const cands = await generateWritingCandidates(ctx);
       const singleTopic = !!ctx.guide.writing.singleTopic;
-      const v = validateCandidate("WRITING", cands[0], undefined, singleTopic ? { singleTopic: true } : undefined);
-      if (!v.ok) {
-        validationIssues = v.issues;
+      const res = await generateValidated<{ guided: GeneratedTopic; free: GeneratedTopic | null }[]>({
+        ctx,
+        run: (impl, c) => impl.generateWritingCandidates(c),
+        validate: (cands) =>
+          cands[0]
+            ? validateCandidate("WRITING", cands[0], undefined, singleTopic ? { singleTopic: true } : undefined)
+            : { ok: false, issues: ["No writing topics were generated."] },
+      });
+      if (res.ok) {
+        phase2Data = { kind: "WRITING", cands: res.value, singleTopic };
+      } else if (res.issues.length > 0) {
+        validationIssues = res.issues;
       } else {
-        phase2Data = { kind: "WRITING", cands, singleTopic };
+        throw res.error ?? new Error("Generation failed.");
       }
     } else if (type === "REWRITE") {
       const textSection = sectionOf(exam.sections, "TEXT");
       const current = JSON.parse(textSection.content);
       const target = body.target === "harder" ? "harder" : "simpler";
-      const rewriteResult = await generateRewriteCandidates(ctx, {
-        text: current.text,
-        title: current.title,
-        target,
+      const res = await generateValidated<GeneratedTextCandidate[]>({
+        ctx,
+        run: (impl, c) => impl.generateRewriteCandidates(c, { text: current.text, title: current.title, target }),
+        validate: (candidates) => collectIssues(candidates.map((c) => validatePassageCandidate(c, ctx))),
       });
-      const issues: string[] = [];
-      for (const c of rewriteResult) {
-        const v = validateCandidate("TEXT", { text: c.text, title: c.title }, undefined, {
-          length: ctx.length,
-          paragraphCount: ctx.paragraphCount,
-          topic: ctx.topic,
-          teacherKeywords: ctx.teacherKeywords,
-        });
-        if (!v.ok) issues.push(...v.issues);
-      }
-      if (issues.length > 0) {
-        validationIssues = issues;
+      if (res.ok) {
+        phase2Data = { kind: "REWRITE", rewriteResult: res.value, target };
+      } else if (res.issues.length > 0) {
+        validationIssues = res.issues;
       } else {
-        phase2Data = { kind: "REWRITE", rewriteResult, target };
+        throw res.error ?? new Error("Generation failed.");
       }
     } else if (type === "TASK_ALT" && body.taskId && lookup?.task) {
       const task = lookup.task;
@@ -441,37 +483,50 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       const altCtx = storedText ? { ...ctx, groundingText: storedText } : ctx;
       const guideMarks = task.section.type === "PART_ONE" ? ctx.guide.marks.partOne : ctx.guide.marks.textExploration;
-      const sets = task.section.type === "PART_ONE"
-        ? await generatePartOneCandidates(altCtx)
-        : await generateTextExplorationCandidates(altCtx);
-      const issues: string[] = [];
-      // Validate every set, not just the alternatives: the primary is what gets
-      // persisted, and it was previously trusted without a check.
-      for (const set of sets) {
-        const v = validateCandidate(task.section.type as "PART_ONE" | "TEXT_EXPLORATION", set, guideMarks, {
-          guide: ctx.guide,
-          groundingText: storedText || undefined,
-        });
-        if (!v.ok) issues.push(...v.issues);
-      }
-      if (issues.length > 0) {
-        validationIssues = issues;
+      const res = await generateValidated<GeneratedTask[][]>({
+        ctx: altCtx,
+        run: (impl, c) =>
+          task.section.type === "PART_ONE" ? impl.generatePartOneCandidates(c) : impl.generateTextExplorationCandidates(c),
+        // Validate every set, not just the alternatives: the primary is what gets
+        // persisted, and it was previously trusted without a check.
+        validate: (sets) =>
+          collectIssues(
+            sets.map((set) =>
+              validateCandidate(task.section.type as "PART_ONE" | "TEXT_EXPLORATION", set, guideMarks, {
+                guide: ctx.guide,
+                groundingText: storedText || undefined,
+              })
+            )
+          ),
+      });
+      if (res.ok) {
+        phase2Data = { kind: "TASK_ALT", sets: res.value, task };
+      } else if (res.issues.length > 0) {
+        validationIssues = res.issues;
       } else {
-        phase2Data = { kind: "TASK_ALT", sets, task };
+        throw res.error ?? new Error("Generation failed.");
       }
     } else if (type === "TOPIC_ALT" && body.topicId && lookup?.topic) {
       const topic = lookup.topic;
-      const cands = await generateWritingCandidates(ctx);
       const singleTopic = !!ctx.guide.writing.singleTopic;
-      const issues: string[] = [];
-      for (const c of cands.slice(1)) {
-        const v = validateCandidate("WRITING", c, undefined, singleTopic ? { singleTopic: true } : undefined);
-        if (!v.ok) issues.push(...v.issues);
-      }
-      if (issues.length > 0) {
-        validationIssues = issues;
+      const res = await generateValidated<{ guided: GeneratedTopic; free: GeneratedTopic | null }[]>({
+        ctx,
+        run: (impl, c) => impl.generateWritingCandidates(c),
+        validate: (cands) =>
+          collectIssues(
+            cands
+              .slice(1)
+              .map((c) =>
+                validateCandidate("WRITING", c, undefined, singleTopic ? { singleTopic: true } : undefined)
+              )
+          ),
+      });
+      if (res.ok) {
+        phase2Data = { kind: "TOPIC_ALT", cands: res.value, topic, singleTopic };
+      } else if (res.issues.length > 0) {
+        validationIssues = res.issues;
       } else {
-        phase2Data = { kind: "TOPIC_ALT", cands, topic, singleTopic };
+        throw res.error ?? new Error("Generation failed.");
       }
     } else {
       return NextResponse.json({ error: "Unsupported generation type." }, { status: 400 });

@@ -144,6 +144,12 @@ text appears on it, including when a generated prompt accidentally contains one.
   earlier state back.
 - **AI drafts are drafts.** The app checks structure, marks and passage grounding,
   but the teacher is the last line of defence on wording and answerability.
+- **A generation that misses a rule is retried, not lost.** If the passage comes
+  back the wrong length or the wrong number of paragraphs, the same model is asked
+  once more with the exact problem quoted back; if that also misses, a different
+  model is tried before the button reports an error. A full exam can therefore take
+  longer than a single draft — up to about three minutes — but a rejection is rare
+  and it names what was wrong.
 
 ---
 

@@ -127,11 +127,16 @@ test("classifyFailure separates a blocked MODEL from a bad KEY", () => {
   assert.equal(classifyFailure(new Error("AI provider error 401: Unauthorized")), "auth");
 });
 
-test("advance policy: never advance past an auth or validation failure", () => {
+test("advance policy: only a credential failure stops the chain", () => {
   // Advancing on 401 turns one clear credential error into a confusing one and
   // burns the fallback quota while failing anyway.
   assert.equal(shouldAdvance("auth"), false);
-  assert.equal(shouldAdvance("validation"), false);
+  // A validation failure advances, but only AFTER the same entry has had its one
+  // corrective call. That ordering lives in `runChainLadder` because it needs the
+  // validator; the predicate itself is policy, not sequence. Measured 2026-10-26:
+  // stopping here meant one bad model failed every exam while a good one sat
+  // unused behind it.
+  assert.equal(shouldAdvance("validation"), true);
   assert.equal(shouldAdvance("throttle"), true);
   assert.equal(shouldAdvance("server"), true);
   assert.equal(shouldAdvance("content"), true);
@@ -200,10 +205,19 @@ test("a provider key alone selects the default chain, with no AI_PROVIDER set", 
   assert.equal(entries[0].provider, "groq");
 });
 
-test("the default chain is the reliable Groq + NVIDIA roster, in order", () => {
+test("the default chain is the measured Groq + NVIDIA Ultra roster", () => {
+  // Pinned because it was measured, not guessed. Groq leads on latency and its
+  // occasional miss is an under-length passage the corrective call fixes; NVIDIA
+  // Ultra answered with a valid passage on both live runs and is the entry that
+  // covers Groq's TPM ceiling, which is a separate quota.
+  //
+  // OpenRouter is deliberately ABSENT: the key answers 403 "Key limit exceeded"
+  // for every model, so listing its free roster only adds round trips that always
+  // fail. nemotron-3.5-lightning is absent because it returns 1 paragraph / ~43
+  // words on every run.
   assert.deepEqual(DEFAULT_CHAIN, [
     { provider: "groq", model: "openai/gpt-oss-120b" },
-    { provider: "nvidia", model: "nvidia/nemotron-3.5-lightning-30b-a3b" },
+    { provider: "nvidia", model: "nvidia/nemotron-3-ultra-550b-a55b" },
   ]);
 });
 
@@ -215,7 +229,7 @@ test("resolveChain disables reasoning for Nemotron and sets reasoning cap for gp
   assert.equal(configs[0].reasoningEffort, "low", "gpt-oss needs reasoning cap");
   assert.deepEqual(configs[1].chatTemplateKwargs, { enable_thinking: false });
   assert.equal(configs[1].reasoningEffort, undefined, "NVIDIA uses the template switch");
-  assert.equal(configs[1].model, "nvidia/nemotron-3.5-lightning-30b-a3b");
+  assert.equal(configs[1].model, "nvidia/nemotron-3-ultra-550b-a55b");
 });
 
 test("the default chain keeps only providers whose key is present", () => {

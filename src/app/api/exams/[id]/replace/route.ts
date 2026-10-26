@@ -16,6 +16,9 @@ function clampMarks(marks: number): number {
   return Math.max(0, Math.min(100, marks));
 }
 
+/** See the generate route: the platform must not out-timeout the run budget. */
+export const maxDuration = 300;
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireCsrf(req.headers);

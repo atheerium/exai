@@ -14,6 +14,7 @@ import { createCompatibleGenerators, promptTargets, stampReferentTargets, type P
 import { buildContext } from "./index";
 import { GRADES, getGuide } from "@/data/guides";
 import { isBlankCell } from "@/lib/export/tables";
+import { passageVocabulary } from "./grounding";
 
 let server: http.Server;
 let port = 0;
@@ -167,6 +168,25 @@ test("Text Exploration payload carries the passage when grounding is requested",
   await createCompatibleGenerators(config).generateTextExplorationCandidates(ctx(PASSAGE));
   assert.equal(sent.length, 1);
   assert.equal(sent[0].passage, PASSAGE);
+});
+
+test("the vocabulary rule offers only passage words as targets", async () => {
+  // The CLOSED SET, not a constraint. Measured live 2026-10-26: the model invented
+  // `preserve` and `consequence`, neither of which the passage contains, and both
+  // chain entries then burned a corrective call failing to fix it.
+  sent = [];
+  await createCompatibleGenerators(config).generateTextExplorationCandidates(ctx(PASSAGE));
+  const request = String(sent[0].request);
+  assert.match(request, /MUST be copied from this list/, "the closed list must be present");
+  for (const word of passageVocabulary(PASSAGE, 5)) {
+    assert.match(
+      request,
+      new RegExp(`\\b${word.word}\\b`),
+      `"${word.word}" occurs in the passage but is not offered as a target`
+    );
+  }
+  // Printing the words would answer the task, so the rule must forbid it.
+  assert.match(request, /Do NOT print the target words/);
 });
 
 test("the prompt names the passage field it must ground on", async () => {

@@ -520,6 +520,23 @@ test("parseTaskSets regroups a flattened list into one task per family", () => {
   assert.match(tasks[0].prompt, /^Ruins show how cities were organised\./);
 });
 
+test("regrouping groups by the family TAG, so a short family still recovers", () => {
+  // Live 2026-10-26 (3as): 12 items arrived for a 14-item shape, so the
+  // slice-by-count path could not fire and the section died as a parse error.
+  // Every item carried its family, so grouping by the tag recovers four tasks and
+  // lets the validator name the one family that is short — a repairable issue
+  // instead of a discarded exam.
+  const flat = flattenedSet();
+  flat.sets[0].tasks.splice(11, 2);
+  const tasks = parseTaskSets(flat, 4, 7, FAMILIES)[0];
+  assert.equal(tasks.length, 4);
+  assert.deepEqual(
+    tasks.map((t) => t.family),
+    ["TRUE_FALSE", "QUESTIONS", "PARAGRAPH_ID", "COHESIVE_MARKERS"]
+  );
+  assert.equal(tasks[3].prompt.split("\n").length, 1, "the short family keeps the single item that arrived");
+});
+
 test("regrouping is refused when the item count does not match the guide", () => {
   // A list that is neither `count` tasks nor exactly the guide's total is some
   // other reply. It must still fail, not be sliced into something plausible.

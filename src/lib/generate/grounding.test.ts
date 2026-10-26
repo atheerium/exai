@@ -151,6 +151,29 @@ test("checkTaskLinkage flags a vocabulary target absent from the passage", () =>
   assert.match(issues[0], /cannot be answered/);
 });
 
+test("checkTaskLinkage grounds the ANSWER word, not the printed definition", () => {
+  // EXAM.md section 8 (1A): "Find in the text words or phrases that are closest
+  // in meaning to..." prints the DEFINITIONS and the student supplies the word,
+  // so the definition can never occur in the passage. Measured live 2026-10-26
+  // (1as): five correct items were rejected as ungrounded and the whole Text
+  // Exploration section failed — a validator bug, not a model error.
+  const passage = "Teachers promote curiosity, and good lessons enhance every classroom.";
+  const task = {
+    skill: "VOCABULARY",
+    family: "MEANING",
+    instruction: "Find in the text words or phrases that are closest in meaning to the following.",
+    prompt: "1. encourage the development of → .........\n2. improve the quality or value of → .........",
+    answer: "1. promote = encourage the development of\n2. enhance = improve the quality or value of",
+  };
+  assert.deepEqual(checkTaskLinkage([task], passage), []);
+
+  // The answer word must still be in the text: the rule is grounded, not skipped.
+  const wrong = [{ ...task, answer: "1. advocate = encourage the development of\n2. enhance = improve the quality or value of" }];
+  const issues = checkTaskLinkage(wrong, passage);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0], /advocate/);
+});
+
 test("checkTaskLinkage flags a prefilled answer cell", () => {
   const passage = "Curiosity shapes research.";
   const tasks = [

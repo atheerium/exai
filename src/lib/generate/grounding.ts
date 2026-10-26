@@ -183,6 +183,33 @@ export interface LinkableTask {
  * here would block a legitimate exam, and the teacher's review is the backstop
  * for semantics.
  */
+/**
+ * The words a vocabulary task asks the student to FIND, read from its answer key.
+ *
+ * The printed item of a "closest in meaning" task is the DEFINITION, and the
+ * passage is where the word lives, so the answer key — not the prompt — names the
+ * thing that has to occur. Both printed directions write the same shape
+ * (`provider.ts` and `mock.ts` agree):
+ *
+ *   answer: "1. promote = encourage the development of"
+ *
+ * A line that does not match, or a multi-word left side ("carry out"), is
+ * skipped: the caller then falls back to the prompt, so an unusual shape keeps
+ * the previous behaviour rather than silently grounding nothing.
+ */
+function extractAnswerTargets(task: LinkableTask): string[] {
+  const text = task.answer ?? "";
+  if (!text.trim()) return [];
+  const out: string[] = [];
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*\d+[.)]\s*(.+?)\s*=\s*(.+)$/);
+    if (!m) continue;
+    const w = normaliseToken(m[1]);
+    if (w.length >= 2 && !w.includes(" ") && !STOPWORDS.has(w)) out.push(w);
+  }
+  return out;
+}
+
 export function extractTaskTargets(task: LinkableTask): string[] {
   const text = [task.prompt, task.instruction].filter(Boolean).join("\n");
   const out: string[] = [];
@@ -480,7 +507,21 @@ export function checkTaskLinkage(tasks: LinkableTask[], passage: string): string
     const isReferent = (task.family ?? "").toUpperCase().includes("COHESIVE");
 
     if (lexical || isReferent) {
-      const targets = extractTaskTargets(task);
+      // For VOCABULARY the target that must occur in the passage is the ANSWER
+      // word, not the printed item. EXAM.md section 8 (1A) prints "Find in the
+      // text words or phrases that are closest in meaning to...", so the paper
+      // carries the DEFINITIONS and the student supplies the word — the
+      // definition never occurs in the passage, by construction. Measured live
+      // 2026-10-26 (1as): five correct definition items were rejected as
+      // ungrounded and the whole Text Exploration section failed.
+      //
+      // The answer always names the word in `1. word = meaning` form, whichever
+      // direction the printed task runs (`provider.ts` and `mock.ts` both write
+      // it), so the answer is the one field that is direction-independent.
+      // Falling back to the prompt keeps every task that does not use that shape
+      // on exactly the old behaviour.
+      const fromAnswer = skill === "VOCABULARY" ? extractAnswerTargets(task) : [];
+      const targets = fromAnswer.length > 0 ? fromAnswer : extractTaskTargets(task);
       for (const t of targets) {
         // The referent question underlines a pronoun or a substitution, never a
         // content word: "Consequently" occurring in the passage does not make it
@@ -488,6 +529,17 @@ export function checkTaskLinkage(tasks: LinkableTask[], passage: string): string
         if (isReferent && !isReferentWord(t)) {
           issues.push(
             `${label} targets "${t}", which is not a pronoun or repetition-avoiding substitute; question 4 can only underline referents.`
+          );
+          continue;
+        }
+        // A multi-word LEXICAL target is a category error: the student is asked to
+        // find ONE word in the text, and a phrase can never be that word. Measured
+        // live 2026-10-26 (1as): the model put the MEANING in the target slot
+        // ("unity and togetherness in society"), which no amount of re-sampling
+        // fixes but which is obvious once the reason is named.
+        if (!isReferent && /\s/.test(t.trim())) {
+          issues.push(
+            `${label} targets "${t}", which is a phrase; each target must be ONE word copied from the passage.`
           );
           continue;
         }
