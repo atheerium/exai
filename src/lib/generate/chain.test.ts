@@ -193,47 +193,37 @@ test("a full chain resolves end to end with all three keys present", () => {
 // should not require a second config step to be remembered.
 
 test("a provider key alone selects the default chain, with no AI_PROVIDER set", () => {
-  // The whole point of the default chain: an operator who pasted a key wants a
-  // model. Requiring them to also set AI_PROVIDER is the config step that
-  // silently leaves the app on mock.
-  const entries = chainFromEnv({ NVIDIA_API_KEY: "a", OPENROUTER_API_KEY: "b" } satisfies EnvLike);
+  const entries = chainFromEnv({ GROQ_API_KEY: "a", NVIDIA_API_KEY: "b" } satisfies EnvLike);
   assert.equal(entries.length, DEFAULT_CHAIN.length);
   assert.deepEqual(entries[0], DEFAULT_CHAIN[0]);
-  assert.equal(entries[0].model, "nvidia/nemotron-3.5-lightning-30b-a3b");
-  assert.equal(entries[0].provider, "nvidia");
+  assert.equal(entries[0].model, "openai/gpt-oss-120b");
+  assert.equal(entries[0].provider, "groq");
 });
 
-test("the default chain is the requested NVIDIA + OpenRouter roster, in order", () => {
-  // User instruction, 2026-10-20. The old five-entry Groq-first chain burned
-  // the run budget on blocked models and wrong-shaped replies.
+test("the default chain is the reliable Groq + NVIDIA roster, in order", () => {
   assert.deepEqual(DEFAULT_CHAIN, [
+    { provider: "groq", model: "openai/gpt-oss-120b" },
     { provider: "nvidia", model: "nvidia/nemotron-3.5-lightning-30b-a3b" },
-    { provider: "openrouter", model: "nvidia/nemotron-3-super-120b-a12b:free" },
-    { provider: "openrouter", model: "thinkingmachines/inkling:free" },
-    { provider: "openrouter", model: "google/gemma-4-31b-it:free" },
   ]);
 });
 
-test("resolveChain disables reasoning for Nemotron models", () => {
-  // Measured live 2026-10-20: with thinking on, Nemotron 3.5 Lightning spent
-  // all 4000 max_tokens on reasoning and returned EMPTY content. NVIDIA takes
-  // the chat-template switch; OpenRouter takes `reasoning.enabled`.
+test("resolveChain disables reasoning for Nemotron and sets reasoning cap for gpt-oss", () => {
   const { configs } = resolveChain([...DEFAULT_CHAIN], {
-    NVIDIA_API_KEY: "a",
-    OPENROUTER_API_KEY: "b",
+    GROQ_API_KEY: "a",
+    NVIDIA_API_KEY: "b",
   } satisfies EnvLike);
-  assert.deepEqual(configs[0].chatTemplateKwargs, { enable_thinking: false });
-  assert.equal(configs[0].reasoningEffort, undefined, "NVIDIA uses the template switch");
-  assert.equal(configs[1].model, "nvidia/nemotron-3-super-120b-a12b:free");
-  assert.deepEqual(configs[1].reasoning, { enabled: false });
+  assert.equal(configs[0].reasoningEffort, "low", "gpt-oss needs reasoning cap");
+  assert.deepEqual(configs[1].chatTemplateKwargs, { enable_thinking: false });
+  assert.equal(configs[1].reasoningEffort, undefined, "NVIDIA uses the template switch");
+  assert.equal(configs[1].model, "nvidia/nemotron-3.5-lightning-30b-a3b");
 });
 
 test("the default chain keeps only providers whose key is present", () => {
   // Otherwise a Groq-only deployment would list four NVIDIA/OpenRouter entries,
   // skip all of them for missing keys, and fail instead of falling back to the
   // one provider it actually configured.
-  assert.deepEqual(chainFromEnv({ OPENROUTER_API_KEY: "k" } satisfies EnvLike), DEFAULT_CHAIN.slice(1));
-  assert.deepEqual(chainFromEnv({ NVIDIA_API_KEY: "k" } satisfies EnvLike), [DEFAULT_CHAIN[0]]);
+  assert.deepEqual(chainFromEnv({ NVIDIA_API_KEY: "k" } satisfies EnvLike), [DEFAULT_CHAIN[1]]);
+  assert.deepEqual(chainFromEnv({ GROQ_API_KEY: "k" } satisfies EnvLike), [DEFAULT_CHAIN[0]]);
 });
 
 test("a key for a provider outside the default chain still goes live", () => {

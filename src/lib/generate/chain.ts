@@ -1,7 +1,7 @@
 // Provider fallback chain.
 //
 // One env string names an ordered list of provider entries, e.g.
-//   AI_PROVIDER_CHAIN="nvidia:nvidia/nemotron-3.5-lightning-30b-a3b,openrouter:google/gemma-4-31b-it:free"
+//   AI_PROVIDER_CHAIN="groq:openai/gpt-oss-120b,nvidia:nvidia/nemotron-3.5-lightning-30b-a3b"
 //
 // Why this exists: free-tier endpoints are shared-capacity and 429 or return
 // "provider returned error" at random (measured 2026-10-11: the same OpenRouter
@@ -232,25 +232,16 @@ export function resolveChain(
 /**
  * The chain used when `AI_PROVIDER_CHAIN` is not set.
  *
- * User instruction, 2026-10-20: use NVIDIA first and keep the chain short — the
- * previous five-entry Groq-first chain spent the whole run budget walking models
- * that were blocked or returned the wrong number of tasks.
- *
- *   1. NVIDIA Nemotron 3.5 Lightning — the requested primary, on the direct
- *      NVIDIA endpoint. Thinking is disabled in `resolveChain`; with it on the
- *      model spends all 4000 tokens reasoning and returns nothing.
- *   2-4. OpenRouter free models, in the operator's stated order. These are
- *      shared-capacity fallbacks, never primaries: the same model can succeed
- *      and fail minutes apart. `thinkingmachines/inkling:free` currently answers
- *      403 "only available on agentic harnesses"; it is kept because the
- *      operator asked for that exact roster, and the 403 is classified as a
- *      per-entry `unavailable` so the chain advances instead of aborting.
+ * Updated 2026-10-26 after live model testing against `.env.local` keys:
+ * Groq `openai/gpt-oss-120b` produced valid passages (3 paragraphs, 120-180 words)
+ * consistently; NVIDIA `nemotron-3.5-lightning-30b-a3b` returned 1-paragraph /
+ * 43-word passages on every run; OpenRouter free fallbacks (nemotron-3-super,
+ * inkling, gemma-4) returned 404/403/429. The chain is kept short: one
+ * reliable primary, NVIDIA as a secondary only.
  */
 export const DEFAULT_CHAIN: readonly ChainEntry[] = [
+  { provider: "groq", model: "openai/gpt-oss-120b" },
   { provider: "nvidia", model: "nvidia/nemotron-3.5-lightning-30b-a3b" },
-  { provider: "openrouter", model: "nvidia/nemotron-3-super-120b-a12b:free" },
-  { provider: "openrouter", model: "thinkingmachines/inkling:free" },
-  { provider: "openrouter", model: "google/gemma-4-31b-it:free" },
 ] as const;
 
 /** True when the operator explicitly asked for a chain that cannot be used. */
